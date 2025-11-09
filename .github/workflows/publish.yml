@@ -1,0 +1,277 @@
+name: Test & Publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: Pytest (ubuntu-latest)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect doc-only changes
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+            BASE_REF="${BASE_SHA}"
+          else
+            if [ "$(git rev-list --count HEAD)" -le 1 ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            BASE_REF="HEAD^"
+          fi
+
+          changed_files="$(git diff --name-only "${BASE_REF}" HEAD)"
+          if [ -z "${changed_files}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          doc_only=true
+          while IFS= read -r file; do
+            if [[ "$file" == *.py ]]; then
+              doc_only=false
+              break
+            fi
+          done <<< "${changed_files}"
+
+          if [ "${doc_only}" = true ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Docs-only changes (skip)
+        if: steps.detect.outputs.changed != 'true'
+        shell: bash
+        run: |
+          echo "Only documentation files changed; skipping tests."
+
+      - name: Setup Python
+        if: steps.detect.outputs.changed == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        if: steps.detect.outputs.changed == 'true'
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+          pip install pytest pytest-cov
+
+      - name: Run pytest with coverage
+        if: steps.detect.outputs.changed == 'true'
+        shell: bash
+        run: |
+          python -m pytest -q --cov=vexor --cov-report=xml
+
+      # CODECOV_TOKEN is configured in repository secrets
+      - name: Upload coverage to Codecov
+        if: steps.detect.outputs.changed == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: unittests
+          fail_ci_if_error: false
+          verbose: false
+
+  prepare_release:
+    name: Prepare release metadata
+    needs: pytest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      release_changed: ${{ steps.detect_release.outputs.changed }}
+      version: ${{ steps.version.outputs.value }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect version change
+        id: detect_release
+        shell: bash
+        run: |
+          if [ "$(git rev-list --count HEAD)" -le 1 ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet HEAD^ HEAD -- vexor/__init__.py; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Python
+        if: steps.detect_release.outputs.changed == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Extract version
+        id: version
+        if: steps.detect_release.outputs.changed == 'true'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          init_file = pathlib.Path("vexor/__init__.py")
+          text = init_file.read_text(encoding="utf-8")
+          match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", text)
+          if not match:
+              raise SystemExit("Unable to find __version__ in vexor/__init__.py")
+          version = match.group(1)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"value={version}\n")
+          PY
+
+  build_release:
+    name: Build executables (${{ matrix.os }})
+    needs: prepare_release
+    if: needs.prepare_release.outputs.release_changed == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            python-version: '3.10'
+            artifact-suffix: windows.exe
+            built-binary: dist/vexor.exe
+          - os: ubuntu-latest
+            python-version: '3.10'
+            artifact-suffix: linux
+            built-binary: dist/vexor
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Clean previous builds
+        shell: bash
+        run: |
+          rm -rf dist build
+
+      - name: Build executable
+        shell: bash
+        run: |
+          pyinstaller vexor.spec
+
+      - name: Prepare release asset
+        shell: bash
+        run: |
+          VERSION="${{ needs.prepare_release.outputs.version }}"
+          mkdir -p release
+          cp "${{ matrix.built-binary }}" "release/vexor-${VERSION}-${{ matrix.artifact-suffix }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vexor-${{ matrix.artifact-suffix }}
+          path: release/
+          if-no-files-found: error
+
+  publish_release:
+    name: Publish GitHub release
+    needs:
+      - prepare_release
+      - build_release
+    if: needs.prepare_release.outputs.release_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.prepare_release.outputs.version }}
+          name: Vexor v${{ needs.prepare_release.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(needs.prepare_release.outputs.version, 'a') || contains(needs.prepare_release.outputs.version, 'b') || contains(needs.prepare_release.outputs.version, 'rc') }}
+          files: release/*
+          body: |
+            Automated release for Vexor v${{ needs.prepare_release.outputs.version }}.
+
+  publish_pypi:
+    name: Publish to PyPI
+    needs: prepare_release
+    if: needs.prepare_release.outputs.release_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install build hatchling twine
+
+      - name: Clean previous builds
+        shell: bash
+        run: |
+          rm -rf dist build
+
+      - name: Build distribution
+        shell: bash
+        run: |
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.13.0
