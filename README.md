@@ -1,12 +1,27 @@
+<div align="center">
+
+![Vexor](https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/assets/vexor.svg)
+
 # Vexor
+
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/downloads/)
+[![PyPI](https://img.shields.io/pypi/v/vexor.svg)](https://pypi.org/project/vexor/)
+[![CI](https://img.shields.io/github/actions/workflow/status/scarletkc/vexor/publish.yml?branch=main)](https://github.com/scarletkc/vexor/actions/workflows/publish.yml)
+[![Codecov](https://img.shields.io/codecov/c/github/scarletkc/vexor/main)](https://codecov.io/github/scarletkc/vexor)
+[![License](https://img.shields.io/github/license/scarletkc/vexor.svg)](https://github.com/scarletkc/vexor/blob/main/LICENSE)
+
+</div>
+
+---
 
 Vexor is a vector-powered CLI that searches file names semantically. It uses Google GenAI's `gemini-embedding-001` model to embed file names and queries, then ranks matches with cosine similarity.
 
 ## Install
+Download from [releases](https://github.com/scarletkc/vexor/releases) without python, or with:
 ```bash
-pip install -e .
+pip install vexor # or use pipx, uv
 ```
-The CLI entry point is `vexor` (or `python -m vexor`).
+The CLI entry point is `vexor`.
 
 ## Configure
 Set the Gemini API key once and reuse it everywhere:
@@ -49,13 +64,3 @@ Tips:
 | `vexor search QUERY --path PATH [--top K] [--include-hidden]` | Loads the cached embeddings for `PATH` and ranks matches for `QUERY`. |
 | `vexor config --set-api-key/--clear-api-key` | Manage the stored Gemini API key. |
 | `vexor config --set-model/--set-batch-size/--show` | Manage default model and batch size. |
-
-## Development
-Run tests with:
-```bash
-pip install -e .[dev]
-pytest
-```
-Tests rely on fake embedding backends, so no network access is required.
-
-Cache files and configuration live in `~/.vexor`. Adjust `_label_for_path` or `VexorSearcher._prepare_text` if you need to encode additional context (e.g., relative paths).
