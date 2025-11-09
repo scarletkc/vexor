@@ -1,6 +1,6 @@
 <div align="center">
 
-![Vexor](https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/assets/vexor.svg)
+<img src="https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/assets/vexor.svg" alt="Vexor" width="50%" height="auto">
 
 # Vexor
 
