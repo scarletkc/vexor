@@ -12,7 +12,7 @@ license = { text = "MIT" }
 requires-python = ">=3.9"
 keywords = ["semantic-search", "cli", "typer", "ai"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
@@ -39,6 +39,8 @@ dynamic = ["version"]
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
+    "build>=1.2.1",
+    "twine>=5.1.1",
 ]
 
 [project.urls]
