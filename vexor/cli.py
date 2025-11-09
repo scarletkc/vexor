@@ -142,6 +142,11 @@ def index(
         "--include-hidden",
         help=Messages.HELP_INDEX_INCLUDE,
     ),
+    clear: bool = typer.Option(
+        False,
+        "--clear",
+        help=Messages.HELP_INDEX_CLEAR,
+    ),
 ) -> None:
     """Create or refresh the cached index for the given directory."""
     config = load_config()
@@ -149,6 +154,29 @@ def index(
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
 
     directory = resolve_directory(path)
+    if clear:
+        removed = _clear_index_cache(directory, include_hidden)
+        if removed:
+            plural = "ies" if removed > 1 else "y"
+            console.print(
+                _styled(
+                    Messages.INFO_INDEX_CLEARED.format(
+                        path=directory,
+                        count=removed,
+                        plural=plural,
+                    ),
+                    Styles.SUCCESS,
+                )
+            )
+        else:
+            console.print(
+                _styled(
+                    Messages.INFO_INDEX_CLEAR_NONE.format(path=directory),
+                    Styles.INFO,
+                )
+            )
+        return
+
     console.print(_styled(Messages.INFO_INDEX_RUNNING.format(path=directory), Styles.INFO))
     files = collect_files(directory, include_hidden=include_hidden)
     if not files:
@@ -294,6 +322,12 @@ def _store_index(**kwargs):
     from .cache import store_index  # local import
 
     return store_index(**kwargs)
+
+
+def _clear_index_cache(root: Path, include_hidden: bool, model: str | None = None) -> int:
+    from .cache import clear_index  # local import
+
+    return clear_index(root=root, include_hidden=include_hidden, model=model)
 
 
 def _is_cache_current(

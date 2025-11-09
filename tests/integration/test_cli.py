@@ -137,6 +137,25 @@ def test_index_skips_when_up_to_date(tmp_path, monkeypatch):
     assert "matches the current directory" in result.stdout
 
 
+def test_index_clear_option(tmp_path, monkeypatch):
+    runner = CliRunner()
+    called = {}
+
+    def fake_clear(root, include_hidden):
+        called["root"] = root
+        called["include_hidden"] = include_hidden
+        return 1
+
+    monkeypatch.setattr("vexor.cli._clear_index_cache", fake_clear)
+
+    result = runner.invoke(app, ["index", "--path", str(tmp_path), "--clear", "--include-hidden"])
+
+    assert result.exit_code == 0
+    assert "Removed" in result.stdout
+    assert called["root"] == tmp_path
+    assert called["include_hidden"] is True
+
+
 def test_search_warns_when_stale(tmp_path, monkeypatch):
     runner = CliRunner()
     sample_file = tmp_path / "alpha.txt"

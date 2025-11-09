@@ -90,3 +90,30 @@ def test_compare_snapshot_detects_changes(tmp_path, monkeypatch):
     # missing file
     file_a.unlink()
     assert cache.compare_snapshot(root, False, cached) is False
+
+
+def test_clear_index_removes_cached_entries(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
+    root = tmp_path / "project"
+    root.mkdir()
+    files = []
+    for name in ["a.txt", "b.txt"]:
+        file_path = root / name
+        file_path.write_text("data")
+        files.append(file_path)
+
+    embeddings = np.eye(2, dtype=np.float32)
+
+    cache.store_index(root=root, model="model-a", include_hidden=False, files=files, embeddings=embeddings)
+    cache.store_index(root=root, model="model-b", include_hidden=False, files=files, embeddings=embeddings)
+
+    removed = cache.clear_index(root=root, include_hidden=False)
+    assert removed == 2
+
+    with pytest.raises(FileNotFoundError):
+        cache.load_index(root=root, model="model-a", include_hidden=False)
+
+    # unrelated include_hidden flag should remain untouched
+    cache.store_index(root=root, model="model-c", include_hidden=True, files=files, embeddings=embeddings)
+    removed_hidden = cache.clear_index(root=root, include_hidden=True, model="model-c")
+    assert removed_hidden == 1
