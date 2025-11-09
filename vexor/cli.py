@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
+import shutil
+import re
 
 import typer
 from rich.console import Console
@@ -21,6 +23,10 @@ from .config import (
 )
 from .text import Messages, Styles
 from .utils import collect_files, resolve_directory, format_path, ensure_positive
+
+REMOTE_VERSION_URL = "https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/vexor/__init__.py"
+PROJECT_URL = "https://github.com/scarletkc/vexor"
+PYPI_URL = "https://pypi.org/project/vexor/"
 
 console = Console()
 app = typer.Typer(
@@ -276,6 +282,51 @@ def config(
         )
 
 
+@app.command()
+def doctor() -> None:
+    """Check whether the `vexor` command is available on PATH."""
+    console.print(_styled(Messages.INFO_DOCTOR_CHECKING, Styles.INFO))
+    command_path = shutil.which("vexor")
+    if command_path:
+        console.print(
+            _styled(Messages.INFO_DOCTOR_FOUND.format(path=command_path), Styles.SUCCESS)
+        )
+        return
+    console.print(_styled(Messages.ERROR_DOCTOR_MISSING, Styles.ERROR))
+    raise typer.Exit(code=1)
+
+
+@app.command()
+def update() -> None:
+    """Check whether a newer release is available online."""
+    console.print(_styled(Messages.INFO_UPDATE_CHECKING, Styles.INFO))
+    console.print(_styled(Messages.INFO_UPDATE_CURRENT.format(current=__version__), Styles.INFO))
+    try:
+        latest = _fetch_remote_version()
+    except RuntimeError as exc:
+        console.print(
+            _styled(Messages.ERROR_UPDATE_FETCH.format(reason=str(exc)), Styles.ERROR)
+        )
+        raise typer.Exit(code=1)
+
+    if _version_tuple(latest) > _version_tuple(__version__):
+        console.print(
+            _styled(
+                Messages.INFO_UPDATE_AVAILABLE.format(
+                    latest=latest,
+                    github=PROJECT_URL,
+                    pypi=PYPI_URL,
+                ),
+                Styles.WARNING,
+            )
+        )
+        return
+
+    console.print(
+        _styled(Messages.INFO_UPDATE_UP_TO_DATE.format(latest=latest), Styles.SUCCESS)
+    )
+
+
 def _render_results(results: Sequence[DisplayResult], base: Path, backend: str | None) -> None:
     console.print(_styled(Messages.TABLE_TITLE, Styles.TITLE))
     if backend:
@@ -328,6 +379,51 @@ def _clear_index_cache(root: Path, include_hidden: bool, model: str | None = Non
     from .cache import clear_index  # local import
 
     return clear_index(root=root, include_hidden=include_hidden, model=model)
+
+
+def _fetch_remote_version(url: str = REMOTE_VERSION_URL) -> str:
+    from urllib import request, error
+
+    try:
+        with request.urlopen(url, timeout=10) as response:
+            if response.status != 200:
+                raise RuntimeError(f"HTTP {response.status}")
+            text = response.read().decode("utf-8")
+    except error.URLError as exc:  # pragma: no cover - network error
+        raise RuntimeError(str(exc)) from exc
+
+    match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", text)
+    if not match:
+        raise RuntimeError("Version string not found")
+    return match.group(1)
+
+
+def _version_tuple(raw: str) -> tuple[int, int, int, int]:
+    raw = raw.strip()
+    release_parts: list[int] = []
+    suffix_number = 0
+
+    for piece in raw.split('.'):
+        match = re.match(r"^(\d+)", piece)
+        if not match:
+            break
+        release_parts.append(int(match.group(1)))
+        remainder = piece[match.end():]
+        if remainder:
+            suffix_match = re.match(r"[A-Za-z]+(\d+)", remainder)
+            if suffix_match:
+                suffix_number = int(suffix_match.group(1))
+            break
+        if len(release_parts) >= 4:
+            break
+
+    while len(release_parts) < 4:
+        release_parts.append(0)
+
+    if suffix_number:
+        release_parts[3] = suffix_number
+
+    return tuple(release_parts[:4])
 
 
 def _is_cache_current(

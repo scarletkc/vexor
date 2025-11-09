@@ -20,6 +20,8 @@ class Messages:
     HELP_INDEX_PATH = "Root directory to scan recursively for indexing."
     HELP_INDEX_INCLUDE = "Include hidden files and directories when building the index."
     HELP_INDEX_CLEAR = "Remove the cached index for the specified path (respecting include-hidden)."
+    HELP_DOCTOR = "Check whether the `vexor` command is available on the current PATH."
+    HELP_UPDATE = "Check if a newer Vexor release is available online."
     HELP_SET_API_KEY = "Persist an API key in ~/.vexor/config.json."
     HELP_CLEAR_API_KEY = "Remove the stored API key."
     HELP_SET_MODEL = "Set the default embedding model."
@@ -60,6 +62,18 @@ class Messages:
         "Default batch size: {batch}"
     )
     INFO_SEARCH_RUNNING = "Searching cached index under {path}..."
+    INFO_DOCTOR_CHECKING = "Checking if `vexor` is on PATH..."
+    INFO_DOCTOR_FOUND = "`vexor` command is available at {path}."
+    ERROR_DOCTOR_MISSING = (
+        "`vexor` command is not on PATH. Install with pip or add the script directory to PATH."
+    )
+    INFO_UPDATE_CHECKING = "Checking latest Vexor version..."
+    INFO_UPDATE_CURRENT = "You are running Vexor v{current}."
+    INFO_UPDATE_AVAILABLE = (
+        "New version available: v{latest}. Visit {github} or {pypi} to download the update."
+    )
+    INFO_UPDATE_UP_TO_DATE = "You already have the latest version (v{latest})."
+    ERROR_UPDATE_FETCH = "Unable to fetch latest version information ({reason})."
 
     TABLE_TITLE = "Vexor semantic file search results"
     TABLE_HEADER_INDEX = "#"

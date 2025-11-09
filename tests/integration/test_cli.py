@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
+from vexor import __version__
 from vexor.cli import app
 
 
@@ -229,3 +230,57 @@ def test_config_clear_api_key(tmp_path):
     assert result.exit_code == 0
     data = json.loads(config_path.read_text())
     assert "api_key" not in data
+
+
+def test_doctor_reports_success(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli.shutil.which", lambda cmd: "/usr/local/bin/vexor")
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "available" in result.stdout
+
+
+def test_doctor_reports_failure(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli.shutil.which", lambda cmd: None)
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 1
+    assert "not on PATH" in result.stdout
+
+
+def test_update_detects_newer_version(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli._fetch_remote_version", lambda: "9.9.9")
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 0
+    assert "New version available" in result.stdout
+
+
+def test_update_reports_up_to_date(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli._fetch_remote_version", lambda: __version__)
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 0
+    assert "latest version" in result.stdout
+
+
+def test_update_handles_fetch_error(monkeypatch):
+    runner = CliRunner()
+
+    def boom():
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr("vexor.cli._fetch_remote_version", boom)
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 1
+    assert "Unable to fetch" in result.stdout

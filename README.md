@@ -62,5 +62,7 @@ Tips:
 | ------- | ----------- |
 | `vexor index --path PATH [--include-hidden] [--clear]` | Recursively scans `PATH`, embeds file names, and writes a cache under `~/.vexor`. |
 | `vexor search QUERY --path PATH [--top K] [--include-hidden]` | Loads the cached embeddings for `PATH` and ranks matches for `QUERY`. |
+| `vexor doctor` | Checks whether the `vexor` command is available on the current `PATH`. |
+| `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |
 | `vexor config --set-api-key/--clear-api-key` | Manage the stored Gemini API key. |
 | `vexor config --set-model/--set-batch-size/--show` | Manage default model and batch size. |
