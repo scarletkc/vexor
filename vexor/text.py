@@ -46,6 +46,7 @@ class Messages:
     INFO_INDEX_EMPTY = "Index contains no files."
     INFO_INDEX_UP_TO_DATE = "Index already matches the current directory; nothing to do."
     WARNING_INDEX_STALE = "Cached index for {path} appears outdated; run `vexor index --path \"{path}\"` to refresh."
+    INFO_INDEX_RUNNING = "Indexing files under {path}..."
     INFO_API_SAVED = "API key saved."
     INFO_API_CLEARED = "API key cleared."
     INFO_MODEL_SET = "Default model set to {value}."
@@ -55,6 +56,7 @@ class Messages:
         "Default model: {model}\n"
         "Default batch size: {batch}"
     )
+    INFO_SEARCH_RUNNING = "Searching cached index under {path}..."
 
     TABLE_TITLE = "Vexor semantic file search results"
     TABLE_HEADER_INDEX = "#"

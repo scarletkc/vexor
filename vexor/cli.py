@@ -88,6 +88,7 @@ def search(
         raise typer.BadParameter(str(exc), param_name="top") from exc
 
     directory = resolve_directory(path)
+    console.print(_styled(Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO))
     try:
         cached_paths, file_vectors, meta = _load_index(directory, model_name, include_hidden)
     except FileNotFoundError:
@@ -148,6 +149,7 @@ def index(
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
 
     directory = resolve_directory(path)
+    console.print(_styled(Messages.INFO_INDEX_RUNNING.format(path=directory), Styles.INFO))
     files = collect_files(directory, include_hidden=include_hidden)
     if not files:
         console.print(_styled(Messages.INFO_NO_FILES, Styles.WARNING))
