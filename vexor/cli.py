@@ -23,7 +23,11 @@ from .text import Messages, Styles
 from .utils import collect_files, resolve_directory, format_path, ensure_positive
 
 console = Console()
-app = typer.Typer(help=Messages.APP_HELP, no_args_is_help=True)
+app = typer.Typer(
+    help=Messages.APP_HELP,
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 
 
 @dataclass(slots=True)
@@ -43,6 +47,7 @@ def main(
     version: bool = typer.Option(
         False,
         "--version",
+        "-v",
         callback=_version_callback,
         is_eager=True,
         help="Show version and exit.",
