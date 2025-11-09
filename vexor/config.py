@@ -12,6 +12,7 @@ CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_MODEL = "gemini-embedding-001"
 DEFAULT_BATCH_SIZE = 0
+ENV_API_KEY = "GOOGLE_GENAI_API_KEY"
 
 
 @dataclass

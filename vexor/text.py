@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 class Styles:
     ERROR = "red"
     WARNING = "yellow"
@@ -27,11 +26,11 @@ class Messages:
     HELP_SHOW_CONFIG = "Show current configuration."
 
     ERROR_API_KEY_MISSING = (
-        "GOOGLE_GENAI_API_KEY is missing or still set to the placeholder. "
-        "Please configure a valid API key via environment variables or .env."
+        "Gemini API key is missing or still set to the placeholder. "
+        "Configure it via `vexor config --set-api-key <token>` or an environment variable."
     )
     ERROR_API_KEY_INVALID = (
-        "Gemini API key is invalid. Verify GOOGLE_GENAI_API_KEY and try again."
+        "Gemini API key is invalid. Verify the stored token and try again."
     )
     ERROR_GENAI_PREFIX = "Gemini API request failed: "
     ERROR_NO_EMBEDDINGS = "Gemini API returned no embeddings."

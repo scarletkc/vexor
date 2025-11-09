@@ -13,13 +13,8 @@ from google import genai
 from google.genai import errors as genai_errors
 from sklearn.metrics.pairwise import cosine_similarity
 
-from .config import load_config
+from .config import DEFAULT_MODEL, ENV_API_KEY, load_config
 from .text import Messages
-
-from .text import Messages
-
-DEFAULT_MODEL = "gemini-embedding-001"
-ENV_API_KEY = "GOOGLE_GENAI_API_KEY"
 
 
 @dataclass(slots=True)
