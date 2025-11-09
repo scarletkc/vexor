@@ -1,8 +1,12 @@
-"""Entry point for `python -m vexor`."""
+"""Entry point for `python -m vexor` and frozen builds."""
 
 from __future__ import annotations
 
-from .cli import run
+try:
+    # Normal package execution path
+    from .cli import run
+except ImportError:  # pragma: no cover - happens in frozen single-file builds
+    from vexor.cli import run  # type: ignore[import]
 
 
 def main() -> None:
@@ -11,4 +15,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
