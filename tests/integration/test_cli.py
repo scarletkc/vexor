@@ -1,9 +1,13 @@
 import json
+
+import numpy as np
 import pytest
 from typer.testing import CliRunner
 
 from vexor import __version__
 from vexor.cli import app
+from vexor.config import DEFAULT_MODEL
+import vexor.cache as cache
 from vexor.search import SearchResult
 from vexor.services.index_service import IndexResult, IndexStatus
 from vexor.services.search_service import SearchResponse
@@ -30,7 +34,7 @@ def test_search_outputs_table(tmp_path, monkeypatch):
         return SearchResponse(
             base_path=tmp_path,
             backend="fake-backend",
-            results=[SearchResult(path=sample_file, score=0.99)],
+            results=[SearchResult(path=sample_file, score=0.99, preview="alpha")],
             is_stale=False,
             index_empty=False,
         )
@@ -570,3 +574,60 @@ def test_update_handles_fetch_error(monkeypatch):
 
     assert result.exit_code == 1
     assert "Unable to fetch" in result.stdout
+
+def test_head_mode_end_to_end(tmp_path, monkeypatch):
+    class DummySearcher:
+        def __init__(self, *args, **kwargs):
+            self.device = "dummy"
+
+        def embed_texts(self, texts):
+            if not texts:
+                return np.zeros((0, 3), dtype=np.float32)
+            return np.ones((len(texts), 3), dtype=np.float32)
+
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr("vexor.cache.CACHE_DIR", cache_dir)
+    runner = CliRunner()
+    project = tmp_path / "proj"
+    project.mkdir()
+    file_path = project / "sample.txt"
+    file_path.write_text("Intro line\nMore content\n")
+    from vexor.services.content_extract_service import extract_head
+    assert extract_head(file_path).startswith("Intro line")
+
+    index_result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(project),
+            "--mode",
+            "head",
+        ],
+    )
+    assert index_result.exit_code == 0
+    data = cache.load_index(
+        project,
+        DEFAULT_MODEL,
+        include_hidden=False,
+        mode="head",
+        recursive=True,
+    )
+    previews = [entry.get("preview") for entry in data.get("files", [])]
+    assert previews and previews[0].startswith("Intro line")
+
+    search_result = runner.invoke(
+        app,
+        [
+            "search",
+            "intro",
+            "--path",
+            str(project),
+            "--mode",
+            "head",
+        ],
+    )
+    assert search_result.exit_code == 0
+    assert "Preview" in search_result.stdout
+    assert "Intro line" in search_result.stdout

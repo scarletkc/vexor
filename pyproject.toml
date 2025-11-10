@@ -32,6 +32,8 @@ dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
     "charset-normalizer>=3.3.0",
+    "pypdf>=4.0.0",
+    "python-docx>=0.8.11",
 ]
 dynamic = ["version"]
 

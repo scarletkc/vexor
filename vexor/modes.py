@@ -53,7 +53,7 @@ class HeadStrategy(IndexModeStrategy):
         if snippet:
             label = f"{file.name} :: {snippet}"
             preview = _trim_preview(snippet)
-            return ModePayload(label=label, preview=file.name)
+            return ModePayload(label=label, preview=preview)
         return self.fallback.payload_for_file(file)
 
 

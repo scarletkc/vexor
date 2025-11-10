@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Dict, Protocol
 
 from charset_normalizer import from_path
+from docx import Document
+from pypdf import PdfReader
 
 HEAD_CHAR_LIMIT = 1000
 
@@ -62,6 +64,58 @@ def _read_text_head(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None
     return _cleanup_snippet(snippet)
 
 
+def _pdf_extractor(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None:
+    try:
+        reader = PdfReader(str(path))
+    except Exception:
+        return None
+    buffer: list[str] = []
+    total_chars = 0
+    for page in reader.pages:
+        try:
+            text = page.extract_text() or ""
+        except Exception:
+            text = ""
+        text = text.strip()
+        if not text:
+            continue
+        buffer.append(text)
+        total_chars += len(text)
+        if total_chars >= char_limit:
+            break
+    combined = "\n".join(buffer)
+    if not combined:
+        return None
+    cleaned = _cleanup_snippet(combined)
+    if not cleaned:
+        return None
+    return cleaned[:char_limit]
+
+
+def _docx_extractor(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None:
+    try:
+        document = Document(str(path))
+    except Exception:
+        return None
+    buffer: list[str] = []
+    total_chars = 0
+    for paragraph in document.paragraphs:
+        text = paragraph.text.strip()
+        if not text:
+            continue
+        buffer.append(text)
+        total_chars += len(text)
+        if total_chars >= char_limit:
+            break
+    combined = "\n".join(buffer)
+    if not combined:
+        return None
+    cleaned = _cleanup_snippet(combined)
+    if not cleaned:
+        return None
+    return cleaned[:char_limit]
+
+
 def _cleanup_snippet(snippet: str) -> str | None:
     lines = [line.strip() for line in snippet.splitlines() if line.strip()]
     joined = " ".join(lines)
@@ -79,17 +133,25 @@ register_extractor(
             ".md",
             ".py",
             ".js",
+            ".ts",
             ".json",
             ".yaml",
             ".yml",
+            ".html",
+            ".htm",
         ),
         extractor=_read_text_head,
     )
 )
 
 register_extractor(
-    ExtractorEntry(
-        extensions=(".pdf", ".docx", ".pptx", ".html"),
-        extractor=_unimplemented_extractor,
-    )
+    ExtractorEntry((".pdf",), _pdf_extractor)
+)
+
+register_extractor(
+    ExtractorEntry((".docx",), _docx_extractor)
+)
+
+register_extractor(
+    ExtractorEntry((".pptx",), _unimplemented_extractor)
 )

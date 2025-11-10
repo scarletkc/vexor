@@ -49,12 +49,12 @@ class Messages:
     INFO_NO_FILES = "No files found in the selected directory."
     INFO_NO_RESULTS = "No matching files found."
     ERROR_INDEX_MISSING = (
-        "No cached index found for {path}. Run `vexor index --path \"{path}\"` first."
+        "No cached index found for {path}. Run `vexor index` first."
     )
     INFO_INDEX_SAVED = "Index saved to {path}."
     INFO_INDEX_EMPTY = "Index contains no files."
     INFO_INDEX_UP_TO_DATE = "Index already matches the current directory; nothing to do."
-    WARNING_INDEX_STALE = "Cached index for {path} appears outdated; run `vexor index --path \"{path}\"` to refresh."
+    WARNING_INDEX_STALE = "Cached index for {path} appears outdated; run `vexor index` to refresh."
     INFO_INDEX_RUNNING = "Indexing files under {path}..."
     INFO_INDEX_CLEARED = "Removed {count} cached index entr{plural} for {path}."
     INFO_INDEX_CLEAR_NONE = "No cached index found for {path}."

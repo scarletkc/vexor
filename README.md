@@ -65,7 +65,7 @@ Tips:
 - Toggle `--no-recursive` (or `-n`) on both `index` and `search` when you only care about the current directory; recursive and non-recursive caches are stored separately.
 - Hidden files are included only if both `index` and `search` use `--include-hidden`.
 - Re-running `vexor index` only re-embeds files whose names changed (or were added/removed); if more than half the files differ, it automatically falls back to a full rebuild for consistency.
-- Specify the indexing mode with `--mode`; currently `name` (file names only) and `head` (first chunk of supported text files) are available, each with its own cache.
+- Specify the indexing mode with `--mode`; currently `name` (file names only) and `head` (first chunk of supported text/code/PDF/DOCX/etc. files) are available, each with its own cache.
 
 ## Commands
 | Command | Description |

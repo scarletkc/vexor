@@ -17,7 +17,7 @@ def test_head_strategy_uses_snippet(tmp_path):
     strategy = HeadStrategy()
     payload = strategy.payload_for_file(file_path)
     assert payload.label.startswith("sample.txt :: Title Body")
-    assert payload.preview == "sample.txt"
+    assert payload.preview.startswith("Title Body")
 
 
 def test_head_strategy_fallback(tmp_path):
