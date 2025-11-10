@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
-import shutil
-import re
+from typing import Sequence, TYPE_CHECKING
 
 import typer
 from rich.console import Console
@@ -17,12 +14,20 @@ from .config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_MODEL,
     load_config,
-    set_api_key,
-    set_batch_size,
-    set_model,
+)
+from .services.config_service import apply_config_updates, get_config_snapshot
+from .services.index_service import IndexStatus, build_index, clear_index_entries
+from .services.search_service import SearchRequest, perform_search
+from .services.system_service import (
+    fetch_remote_version,
+    find_command_on_path,
+    version_tuple,
 )
 from .text import Messages, Styles
-from .utils import collect_files, resolve_directory, format_path, ensure_positive
+from .utils import resolve_directory, format_path, ensure_positive
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .search import SearchResult
 
 REMOTE_VERSION_URL = "https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/vexor/__init__.py"
 PROJECT_URL = "https://github.com/scarletkc/vexor"
@@ -35,11 +40,6 @@ app = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 
-
-@dataclass(slots=True)
-class DisplayResult:
-    path: Path
-    score: float
 
 
 def _version_callback(value: bool) -> None:
@@ -95,44 +95,37 @@ def search(
 
     directory = resolve_directory(path)
     console.print(_styled(Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO))
+    request = SearchRequest(
+        query=clean_query,
+        directory=directory,
+        include_hidden=include_hidden,
+        top_k=top,
+        model_name=model_name,
+        batch_size=batch_size,
+    )
     try:
-        cached_paths, file_vectors, meta = _load_index(directory, model_name, include_hidden)
+        response = perform_search(request)
     except FileNotFoundError:
         console.print(
             _styled(Messages.ERROR_INDEX_MISSING.format(path=directory), Styles.ERROR)
         )
         raise typer.Exit(code=1)
-
-    _warn_if_stale(directory, include_hidden, meta.get("files", []))
-
-    if not cached_paths:
-        console.print(_styled(Messages.INFO_INDEX_EMPTY, Styles.WARNING))
-        raise typer.Exit(code=0)
-
-    searcher = _create_searcher(model_name=model_name, batch_size=batch_size)
-    try:
-        query_vector = searcher.embed_texts([clean_query])[0]
     except RuntimeError as exc:
         console.print(_styled(str(exc), Styles.ERROR))
         raise typer.Exit(code=1)
 
-    from sklearn.metrics.pairwise import cosine_similarity  # local import
-
-    similarities = cosine_similarity(
-        query_vector.reshape(1, -1), file_vectors
-    )[0]
-    scored = [
-        DisplayResult(path=path, score=float(score))
-        for path, score in zip(cached_paths, similarities)
-    ]
-    scored.sort(key=lambda item: item.score, reverse=True)
-    results = scored[:top]
-
-    if not results:
+    if response.index_empty:
+        console.print(_styled(Messages.INFO_INDEX_EMPTY, Styles.WARNING))
+        raise typer.Exit(code=0)
+    if response.is_stale:
+        console.print(
+            _styled(Messages.WARNING_INDEX_STALE.format(path=directory), Styles.WARNING)
+        )
+    if not response.results:
         console.print(_styled(Messages.INFO_NO_RESULTS, Styles.WARNING))
         raise typer.Exit(code=0)
 
-    _render_results(results, directory, searcher.device)
+    _render_results(response.results, response.base_path, response.backend)
 
 
 @app.command()
@@ -161,7 +154,7 @@ def index(
 
     directory = resolve_directory(path)
     if clear:
-        removed = _clear_index_cache(directory, include_hidden)
+        removed = clear_index_entries(directory, include_hidden=include_hidden)
         if removed:
             plural = "ies" if removed > 1 else "y"
             console.print(
@@ -184,34 +177,22 @@ def index(
         return
 
     console.print(_styled(Messages.INFO_INDEX_RUNNING.format(path=directory), Styles.INFO))
-    files = collect_files(directory, include_hidden=include_hidden)
-    if not files:
+    result = build_index(
+        directory,
+        include_hidden=include_hidden,
+        model_name=model_name,
+        batch_size=batch_size,
+    )
+    if result.status == IndexStatus.EMPTY:
         console.print(_styled(Messages.INFO_NO_FILES, Styles.WARNING))
         raise typer.Exit(code=0)
-
-    existing_meta = _load_index_metadata_safe(directory, model_name, include_hidden)
-    if existing_meta:
-        cached_files = existing_meta.get("files", [])
-        if cached_files and _is_cache_current(
-            directory, include_hidden, cached_files, current_files=files
-        ):
-            console.print(
-                _styled(Messages.INFO_INDEX_UP_TO_DATE.format(path=directory), Styles.INFO)
-            )
-            return
-
-    searcher = _create_searcher(model_name=model_name, batch_size=batch_size)
-    file_labels = [_label_for_path(file) for file in files]
-    embeddings = searcher.embed_texts(file_labels)
-
-    cache_path = _store_index(
-        root=directory,
-        model=model_name,
-        include_hidden=include_hidden,
-        files=files,
-        embeddings=embeddings,
-    )
-    console.print(_styled(Messages.INFO_INDEX_SAVED.format(path=cache_path), Styles.SUCCESS))
+    if result.status == IndexStatus.UP_TO_DATE:
+        console.print(
+            _styled(Messages.INFO_INDEX_UP_TO_DATE.format(path=directory), Styles.INFO)
+        )
+        return
+    if result.cache_path is not None:
+        console.print(_styled(Messages.INFO_INDEX_SAVED.format(path=result.cache_path), Styles.SUCCESS))
 
 
 @app.command()
@@ -243,33 +224,31 @@ def config(
     ),
 ) -> None:
     """Manage Vexor configuration stored in ~/.vexor/config.json."""
-    changed = False
+    if set_batch_option is not None and set_batch_option < 0:
+        raise typer.BadParameter(Messages.ERROR_BATCH_NEGATIVE)
 
-    if set_api_key_option is not None:
-        set_api_key(set_api_key_option)
+    updates = apply_config_updates(
+        api_key=set_api_key_option,
+        clear_api_key=clear_api_key,
+        model=set_model_option,
+        batch_size=set_batch_option,
+    )
+
+    if updates.api_key_set:
         console.print(_styled(Messages.INFO_API_SAVED, Styles.SUCCESS))
-        changed = True
-    if clear_api_key:
-        set_api_key(None)
+    if updates.api_key_cleared:
         console.print(_styled(Messages.INFO_API_CLEARED, Styles.SUCCESS))
-        changed = True
-    if set_model_option is not None:
-        set_model(set_model_option)
+    if updates.model_set and set_model_option is not None:
         console.print(
             _styled(Messages.INFO_MODEL_SET.format(value=set_model_option), Styles.SUCCESS)
         )
-        changed = True
-    if set_batch_option is not None:
-        if set_batch_option < 0:
-            raise typer.BadParameter(Messages.ERROR_BATCH_NEGATIVE)
-        set_batch_size(set_batch_option)
+    if updates.batch_size_set and set_batch_option is not None:
         console.print(
             _styled(Messages.INFO_BATCH_SET.format(value=set_batch_option), Styles.SUCCESS)
         )
-        changed = True
 
-    if show or not changed:
-        cfg = load_config()
+    if show or not updates.changed:
+        cfg = get_config_snapshot()
         console.print(
             _styled(
                 Messages.INFO_CONFIG_SUMMARY.format(
@@ -286,7 +265,7 @@ def config(
 def doctor() -> None:
     """Check whether the `vexor` command is available on PATH."""
     console.print(_styled(Messages.INFO_DOCTOR_CHECKING, Styles.INFO))
-    command_path = shutil.which("vexor")
+    command_path = find_command_on_path("vexor")
     if command_path:
         console.print(
             _styled(Messages.INFO_DOCTOR_FOUND.format(path=command_path), Styles.SUCCESS)
@@ -302,14 +281,14 @@ def update() -> None:
     console.print(_styled(Messages.INFO_UPDATE_CHECKING, Styles.INFO))
     console.print(_styled(Messages.INFO_UPDATE_CURRENT.format(current=__version__), Styles.INFO))
     try:
-        latest = _fetch_remote_version()
+        latest = fetch_remote_version(REMOTE_VERSION_URL)
     except RuntimeError as exc:
         console.print(
             _styled(Messages.ERROR_UPDATE_FETCH.format(reason=str(exc)), Styles.ERROR)
         )
         raise typer.Exit(code=1)
 
-    if _version_tuple(latest) > _version_tuple(__version__):
+    if version_tuple(latest) > version_tuple(__version__):
         console.print(
             _styled(
                 Messages.INFO_UPDATE_AVAILABLE.format(
@@ -327,7 +306,7 @@ def update() -> None:
     )
 
 
-def _render_results(results: Sequence[DisplayResult], base: Path, backend: str | None) -> None:
+def _render_results(results: Sequence["SearchResult"], base: Path, backend: str | None) -> None:
     console.print(_styled(Messages.TABLE_TITLE, Styles.TITLE))
     if backend:
         console.print(_styled(f"{Messages.TABLE_BACKEND_PREFIX}{backend}", Styles.INFO))
@@ -342,116 +321,6 @@ def _render_results(results: Sequence[DisplayResult], base: Path, backend: str |
             format_path(result.path, base),
         )
     console.print(table)
-
-
-def _create_searcher(model_name: str, batch_size: int):
-    from .search import VexorSearcher  # Local import keeps CLI startup fast
-
-    return VexorSearcher(model_name=model_name, batch_size=batch_size)
-
-
-def _label_for_path(path: Path) -> str:
-    return path.name.replace("_", " ")
-
-
-def _load_index(root: Path, model: str, include_hidden: bool):
-    from .cache import load_index_vectors  # local import
-
-    return load_index_vectors(root, model, include_hidden)
-
-
-def _load_index_metadata_safe(root: Path, model: str, include_hidden: bool):
-    from .cache import load_index  # local import
-
-    try:
-        return load_index(root, model, include_hidden)
-    except FileNotFoundError:
-        return None
-
-
-def _store_index(**kwargs):
-    from .cache import store_index  # local import
-
-    return store_index(**kwargs)
-
-
-def _clear_index_cache(root: Path, include_hidden: bool, model: str | None = None) -> int:
-    from .cache import clear_index  # local import
-
-    return clear_index(root=root, include_hidden=include_hidden, model=model)
-
-
-def _fetch_remote_version(url: str = REMOTE_VERSION_URL) -> str:
-    from urllib import request, error
-
-    try:
-        with request.urlopen(url, timeout=10) as response:
-            if response.status != 200:
-                raise RuntimeError(f"HTTP {response.status}")
-            text = response.read().decode("utf-8")
-    except error.URLError as exc:  # pragma: no cover - network error
-        raise RuntimeError(str(exc)) from exc
-
-    match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", text)
-    if not match:
-        raise RuntimeError("Version string not found")
-    return match.group(1)
-
-
-def _version_tuple(raw: str) -> tuple[int, int, int, int]:
-    raw = raw.strip()
-    release_parts: list[int] = []
-    suffix_number = 0
-
-    for piece in raw.split('.'):
-        match = re.match(r"^(\d+)", piece)
-        if not match:
-            break
-        release_parts.append(int(match.group(1)))
-        remainder = piece[match.end():]
-        if remainder:
-            suffix_match = re.match(r"[A-Za-z]+(\d+)", remainder)
-            if suffix_match:
-                suffix_number = int(suffix_match.group(1))
-            break
-        if len(release_parts) >= 4:
-            break
-
-    while len(release_parts) < 4:
-        release_parts.append(0)
-
-    if suffix_number:
-        release_parts[3] = suffix_number
-
-    return tuple(release_parts[:4])
-
-
-def _is_cache_current(
-    root: Path,
-    include_hidden: bool,
-    cached_files: Sequence[dict],
-    *,
-    current_files: Sequence[Path] | None = None,
-) -> bool:
-    if not cached_files:
-        return False
-    from .cache import compare_snapshot  # local import
-
-    return compare_snapshot(
-        root,
-        include_hidden,
-        cached_files,
-        current_files=current_files,
-    )
-
-
-def _warn_if_stale(root: Path, include_hidden: bool, cached_files: Sequence[dict]) -> None:
-    if not cached_files:
-        return
-    if not _is_cache_current(root, include_hidden, cached_files):
-        console.print(
-            _styled(Messages.WARNING_INDEX_STALE.format(path=root), Styles.WARNING)
-        )
 
 
 def _styled(text: str, style: str) -> str:

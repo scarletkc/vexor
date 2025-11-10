@@ -1,10 +1,12 @@
 import json
-import numpy as np
 import pytest
 from typer.testing import CliRunner
 
 from vexor import __version__
 from vexor.cli import app
+from vexor.search import SearchResult
+from vexor.services.index_service import IndexResult, IndexStatus
+from vexor.services.search_service import SearchResponse
 
 
 @pytest.fixture(autouse=True)
@@ -16,27 +18,21 @@ def temp_config_home(tmp_path, monkeypatch):
     return config_file
 
 
-class FakeSearcher:
-    def __init__(self, *args, **kwargs):
-        self.device = "fake-backend"
-
-    def embed_texts(self, texts):
-        vectors = []
-        for text in texts:
-            vectors.append([float(len(text)), 1.0])
-        return np.asarray(vectors, dtype=np.float32)
-
-
 def test_search_outputs_table(tmp_path, monkeypatch):
     runner = CliRunner()
     sample_file = tmp_path / "alpha.txt"
     sample_file.write_text("data")
 
-    def fake_load_index(root, model, include_hidden):
-        return [sample_file], np.asarray([[1.0, 1.0]], dtype=np.float32), {"files": []}
+    def fake_perform_search(request):
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[SearchResult(path=sample_file, score=0.99)],
+            is_stale=False,
+            index_empty=False,
+        )
 
-    monkeypatch.setattr("vexor.cli._load_index", fake_load_index)
-    monkeypatch.setattr("vexor.cli._create_searcher", lambda **kwargs: FakeSearcher())
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
 
     result = runner.invoke(
         app,
@@ -58,10 +54,10 @@ def test_search_outputs_table(tmp_path, monkeypatch):
 def test_search_missing_index_prompts_user(tmp_path, monkeypatch):
     runner = CliRunner()
 
-    def missing_cache(*args, **kwargs):
+    def missing_cache(request):
         raise FileNotFoundError
 
-    monkeypatch.setattr("vexor.cli._load_index", missing_cache)
+    monkeypatch.setattr("vexor.cli.perform_search", missing_cache)
 
     result = runner.invoke(app, ["search", "query", "--path", str(tmp_path)])
 
@@ -72,10 +68,10 @@ def test_search_missing_index_prompts_user(tmp_path, monkeypatch):
 def test_index_handles_empty_directory(tmp_path, monkeypatch):
     runner = CliRunner()
 
-    def fake_collect(root, include_hidden=False):
-        return []
+    def fake_build_index(*args, **kwargs):
+        return IndexResult(status=IndexStatus.EMPTY)
 
-    monkeypatch.setattr("vexor.cli.collect_files", fake_collect)
+    monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
 
     result = runner.invoke(app, ["index", "--path", str(tmp_path)])
 
@@ -88,26 +84,17 @@ def test_index_writes_cache(tmp_path, monkeypatch):
     sample_file = tmp_path / "alpha.txt"
     sample_file.write_text("data")
 
-    def fake_collect(root, include_hidden=False):
-        return [sample_file]
+    cache_file = tmp_path / "cache.json"
 
-    monkeypatch.setattr("vexor.cli.collect_files", fake_collect)
-    monkeypatch.setattr("vexor.cli._create_searcher", lambda **kwargs: FakeSearcher())
-    monkeypatch.setattr("vexor.cli._load_index_metadata_safe", lambda *args, **kwargs: None)
+    def fake_build_index(*args, **kwargs):
+        return IndexResult(status=IndexStatus.STORED, cache_path=cache_file, files_indexed=1)
 
-    stored = {}
-
-    def fake_store_index(**kwargs):
-        stored.update(kwargs)
-        return tmp_path / "cache.json"
-
-    monkeypatch.setattr("vexor.cli._store_index", fake_store_index)
+    monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
 
     result = runner.invoke(app, ["index", "--path", str(tmp_path)])
 
     assert result.exit_code == 0
     assert "Index saved" in result.stdout
-    assert stored["files"] == [sample_file]
 
 
 def test_index_skips_when_up_to_date(tmp_path, monkeypatch):
@@ -115,22 +102,10 @@ def test_index_skips_when_up_to_date(tmp_path, monkeypatch):
     sample_file = tmp_path / "alpha.txt"
     sample_file.write_text("data")
 
-    def fake_collect(root, include_hidden=False):
-        return [sample_file]
+    def fake_build_index(*args, **kwargs):
+        return IndexResult(status=IndexStatus.UP_TO_DATE)
 
-    monkeypatch.setattr("vexor.cli.collect_files", fake_collect)
-    monkeypatch.setattr("vexor.cli._create_searcher", lambda **kwargs: FakeSearcher())
-    meta = {
-        "files": [
-            {
-                "path": "alpha.txt",
-                "mtime": sample_file.stat().st_mtime,
-                "size": sample_file.stat().st_size,
-            }
-        ]
-    }
-    monkeypatch.setattr("vexor.cli._load_index_metadata_safe", lambda *args, **kwargs: meta)
-    monkeypatch.setattr("vexor.cli._is_cache_current", lambda *args, **kwargs: True)
+    monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
 
     result = runner.invoke(app, ["index", "--path", str(tmp_path)])
 
@@ -142,12 +117,12 @@ def test_index_clear_option(tmp_path, monkeypatch):
     runner = CliRunner()
     called = {}
 
-    def fake_clear(root, include_hidden):
+    def fake_clear(root, include_hidden, model=None):
         called["root"] = root
         called["include_hidden"] = include_hidden
         return 1
 
-    monkeypatch.setattr("vexor.cli._clear_index_cache", fake_clear)
+    monkeypatch.setattr("vexor.cli.clear_index_entries", fake_clear)
 
     result = runner.invoke(app, ["index", "--path", str(tmp_path), "--clear", "--include-hidden"])
 
@@ -162,21 +137,16 @@ def test_search_warns_when_stale(tmp_path, monkeypatch):
     sample_file = tmp_path / "alpha.txt"
     sample_file.write_text("data")
 
-    def fake_load_index(root, model, include_hidden):
-        meta = {
-            "files": [
-                {
-                    "path": "alpha.txt",
-                    "mtime": sample_file.stat().st_mtime,
-                    "size": sample_file.stat().st_size,
-                }
-            ]
-        }
-        return [sample_file], np.asarray([[1.0, 1.0]], dtype=np.float32), meta
+    def fake_perform_search(request):
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[SearchResult(path=sample_file, score=0.9)],
+            is_stale=True,
+            index_empty=False,
+        )
 
-    monkeypatch.setattr("vexor.cli._load_index", fake_load_index)
-    monkeypatch.setattr("vexor.cli._create_searcher", lambda **kwargs: FakeSearcher())
-    monkeypatch.setattr("vexor.cli._is_cache_current", lambda *args, **kwargs: False)
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
 
     result = runner.invoke(
         app,
@@ -234,7 +204,7 @@ def test_config_clear_api_key(tmp_path):
 
 def test_doctor_reports_success(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.shutil.which", lambda cmd: "/usr/local/bin/vexor")
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: "/usr/local/bin/vexor")
 
     result = runner.invoke(app, ["doctor"])
 
@@ -244,7 +214,7 @@ def test_doctor_reports_success(monkeypatch):
 
 def test_doctor_reports_failure(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.shutil.which", lambda cmd: None)
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: None)
 
     result = runner.invoke(app, ["doctor"])
 
@@ -254,7 +224,7 @@ def test_doctor_reports_failure(monkeypatch):
 
 def test_update_detects_newer_version(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli._fetch_remote_version", lambda: "9.9.9")
+    monkeypatch.setattr("vexor.cli.fetch_remote_version", lambda url: "9.9.9")
 
     result = runner.invoke(app, ["update"])
 
@@ -264,7 +234,7 @@ def test_update_detects_newer_version(monkeypatch):
 
 def test_update_reports_up_to_date(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli._fetch_remote_version", lambda: __version__)
+    monkeypatch.setattr("vexor.cli.fetch_remote_version", lambda url: __version__)
 
     result = runner.invoke(app, ["update"])
 
@@ -275,10 +245,10 @@ def test_update_reports_up_to_date(monkeypatch):
 def test_update_handles_fetch_error(monkeypatch):
     runner = CliRunner()
 
-    def boom():
+    def boom(url):
         raise RuntimeError("network down")
 
-    monkeypatch.setattr("vexor.cli._fetch_remote_version", boom)
+    monkeypatch.setattr("vexor.cli.fetch_remote_version", boom)
 
     result = runner.invoke(app, ["update"])
 
