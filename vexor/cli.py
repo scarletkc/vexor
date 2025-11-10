@@ -17,6 +17,7 @@ from .config import (
     load_config,
 )
 from .modes import available_modes, get_strategy
+from .services.cache_service import load_index_metadata_safe
 from .services.config_service import apply_config_updates, get_config_snapshot
 from .services.index_service import IndexStatus, build_index, clear_index_entries
 from .services.search_service import SearchRequest, perform_search
@@ -187,6 +188,11 @@ def index(
         "--clear",
         help=Messages.HELP_INDEX_CLEAR,
     ),
+    show_cache: bool = typer.Option(
+        False,
+        "--show",
+        help=Messages.HELP_INDEX_SHOW,
+    ),
 ) -> None:
     """Create or refresh the cached index for the given directory."""
     config = load_config()
@@ -196,6 +202,43 @@ def index(
     directory = resolve_directory(path)
     mode_value = _validate_mode(mode)
     recursive = not no_recursive
+    if clear and show_cache:
+        raise typer.BadParameter(Messages.ERROR_INDEX_SHOW_CONFLICT)
+
+    if show_cache:
+        metadata = load_index_metadata_safe(
+            directory,
+            model_name,
+            include_hidden,
+            mode_value,
+            recursive,
+        )
+        if not metadata:
+            console.print(
+                _styled(
+                    Messages.INFO_INDEX_CLEAR_NONE.format(path=directory),
+                    Styles.INFO,
+                )
+            )
+            return
+
+        files = metadata.get("files", [])
+        console.print(
+            _styled(Messages.INFO_INDEX_SHOW_HEADER.format(path=directory), Styles.TITLE)
+        )
+        summary = Messages.INFO_INDEX_SHOW_SUMMARY.format(
+            mode=metadata.get("mode"),
+            model=metadata.get("model"),
+            hidden="yes" if metadata.get("include_hidden") else "no",
+            recursive="yes" if metadata.get("recursive") else "no",
+            files=len(files),
+            dimension=metadata.get("dimension"),
+            version=metadata.get("version"),
+            generated=metadata.get("generated_at"),
+        )
+        console.print(_styled(summary, Styles.INFO))
+        return
+
     if clear:
         removed = clear_index_entries(
             directory,

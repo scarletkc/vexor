@@ -7,6 +7,7 @@ from vexor.cli import app
 from vexor.search import SearchResult
 from vexor.services.index_service import IndexResult, IndexStatus
 from vexor.services.search_service import SearchResponse
+from vexor.text import Messages
 
 
 @pytest.fixture(autouse=True)
@@ -223,6 +224,78 @@ def test_index_no_recursive_flag(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert captured["recursive"] is False
+
+
+def test_index_show_displays_metadata(tmp_path, monkeypatch):
+    runner = CliRunner()
+    metadata = {
+        "mode": "name",
+        "model": "model-x",
+        "include_hidden": False,
+        "recursive": True,
+        "dimension": 256,
+        "version": 3,
+        "generated_at": "2024-01-02T00:00:00Z",
+        "files": [{}, {}],
+    }
+    monkeypatch.setattr("vexor.cli.load_index_metadata_safe", lambda *args, **kwargs: metadata)
+
+    result = runner.invoke(
+        app,
+        [
+            "index",
+            "--show",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Cached index details" in result.stdout
+    assert "model-x" in result.stdout
+    assert "Files: 2" in result.stdout
+
+
+def test_index_show_handles_missing_cache(tmp_path, monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli.load_index_metadata_safe", lambda *args, **kwargs: None)
+
+    result = runner.invoke(
+        app,
+        [
+            "index",
+            "--show",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "No cached index" in result.stdout
+
+
+def test_index_show_conflicts_with_clear(tmp_path):
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "index",
+            "--show",
+            "--clear",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert Messages.ERROR_INDEX_SHOW_CONFLICT in result.stderr
 
 
 def test_index_clear_option(tmp_path, monkeypatch):

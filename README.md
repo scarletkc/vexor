@@ -70,7 +70,7 @@ Tips:
 ## Commands
 | Command | Description |
 | ------- | ----------- |
-| `vexor index --path PATH --mode MODE [--include-hidden] [--no-recursive] [--clear]` | Scans `PATH` (recursively by default), embeds content according to `MODE` (`name` or `head`), and writes a cache under `~/.vexor`. |
+| `vexor index --path PATH --mode MODE [--include-hidden] [--no-recursive] [--clear/--show]` | Scans `PATH` (recursively by default), embeds content according to `MODE` (`name` or `head`), and writes a cache under `~/.vexor`. |
 | `vexor search QUERY --path PATH --mode MODE [--top K] [--include-hidden] [--no-recursive]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden settings), shows matches for `QUERY`. |
 | `vexor doctor` | Checks whether the `vexor` command is available on the current `PATH`. |
 | `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |
