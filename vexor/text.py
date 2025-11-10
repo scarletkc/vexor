@@ -19,7 +19,7 @@ class Messages:
     HELP_INCLUDE_HIDDEN = "Use the index built with hidden files included."
     HELP_INDEX_PATH = "Root directory to scan for indexing."
     HELP_INDEX_INCLUDE = "Include hidden files and directories when building the index."
-    HELP_INDEX_CLEAR = "Remove the cached index for the specified path (respecting include-hidden and recursion)."
+    HELP_INDEX_CLEAR = "Remove the cached index for the specified path (respecting include-hidden, mode and recursion)."
     HELP_RECURSIVE = "Recurse into subdirectories (default). Disable to work only on the specified directory."
     HELP_MODE = "Indexing mode (name=filename, head=head snippet) to control how embeddings are built."
     HELP_DOCTOR = "Check whether the `vexor` command is available on the current PATH."
