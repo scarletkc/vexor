@@ -7,6 +7,7 @@ from enum import Enum
 from pathlib import Path
 
 from .cache_service import load_index_metadata_safe
+from ..modes import get_strategy
 
 INCREMENTAL_CHANGE_THRESHOLD = 0.5
 MTIME_TOLERANCE = 5e-1
@@ -29,6 +30,7 @@ def build_index(
     directory: Path,
     *,
     include_hidden: bool,
+    mode: str,
     recursive: bool,
     model_name: str,
     batch_size: int,
@@ -43,9 +45,10 @@ def build_index(
     if not files:
         return IndexResult(status=IndexStatus.EMPTY)
 
-    existing_meta = load_index_metadata_safe(directory, model_name, include_hidden, recursive)
+    existing_meta = load_index_metadata_safe(directory, model_name, include_hidden, mode, recursive)
     cached_files = existing_meta.get("files", []) if existing_meta else []
 
+    strategy = get_strategy(mode)
     searcher = VexorSearcher(model_name=model_name, batch_size=batch_size)
 
     if cached_files:
@@ -60,10 +63,12 @@ def build_index(
                 directory=directory,
                 include_hidden=include_hidden,
                 recursive=recursive,
+                mode=mode,
                 model_name=model_name,
                 files=files,
                 diff=diff,
                 searcher=searcher,
+                strategy=strategy,
                 apply_fn=apply_index_updates,
             )
             return IndexResult(
@@ -72,13 +77,14 @@ def build_index(
                 files_indexed=len(files),
             )
 
-    file_labels = [_label_for_path(file) for file in files]
+    file_labels = strategy.labels_for_files(files)
     embeddings = searcher.embed_texts(file_labels)
 
     cache_path = store_index(
         root=directory,
         model=model_name,
         include_hidden=include_hidden,
+        mode=mode,
         recursive=recursive,
         files=files,
         embeddings=embeddings,
@@ -94,6 +100,7 @@ def clear_index_entries(
     directory: Path,
     *,
     include_hidden: bool,
+    mode: str,
     recursive: bool,
     model: str | None = None,
 ) -> int:
@@ -104,13 +111,10 @@ def clear_index_entries(
     return clear_index_cache(
         root=directory,
         include_hidden=include_hidden,
+        mode=mode,
         recursive=recursive,
         model=model,
     )
-
-
-def _label_for_path(path: Path) -> str:
-    return path.name.replace("_", " ")
 
 
 @dataclass(slots=True)
@@ -193,17 +197,19 @@ def _apply_incremental_update(
     *,
     directory: Path,
     include_hidden: bool,
+    mode: str,
     recursive: bool,
     model_name: str,
     files: list[Path],
     diff: FileDiff,
     searcher,
+    strategy,
     apply_fn,
 ) -> Path:
     changed_set = set(diff.changed_paths())
     if changed_set:
         targets = [path for path in files if path in changed_set]
-        labels = [_label_for_path(path) for path in targets]
+        labels = strategy.labels_for_files(targets)
         embeddings = searcher.embed_texts(labels)
         embedding_map = {
             _relative_to_root(path, directory): embeddings[idx]
@@ -217,6 +223,7 @@ def _apply_incremental_update(
         root=directory,
         model=model_name,
         include_hidden=include_hidden,
+        mode=mode,
         recursive=recursive,
         current_files=files,
         changed_files=targets,

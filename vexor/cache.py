@@ -14,13 +14,13 @@ import numpy as np
 from .utils import collect_files
 
 CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 DB_FILENAME = "index.db"
 
 
-def _cache_key(root: Path, include_hidden: bool, recursive: bool) -> str:
+def _cache_key(root: Path, include_hidden: bool, recursive: bool, mode: str) -> str:
     digest = hashlib.sha1(
-        f"{root.resolve()}|hidden={include_hidden}|recursive={recursive}".encode("utf-8")
+        f"{root.resolve()}|hidden={include_hidden}|recursive={recursive}|mode={mode}".encode("utf-8")
     ).hexdigest()
     return digest
 
@@ -53,6 +53,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             model TEXT NOT NULL,
             include_hidden INTEGER NOT NULL,
             recursive INTEGER NOT NULL DEFAULT 1,
+            mode TEXT NOT NULL,
             dimension INTEGER NOT NULL,
             version INTEGER NOT NULL,
             generated_at TEXT NOT NULL,
@@ -86,6 +87,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         # Column already exists; ignore error.
         pass
+    try:
+        conn.execute(
+            "ALTER TABLE index_metadata ADD COLUMN mode TEXT NOT NULL DEFAULT 'name'"
+        )
+    except sqlite3.OperationalError:
+        pass
 
 
 def store_index(
@@ -93,6 +100,7 @@ def store_index(
     root: Path,
     model: str,
     include_hidden: bool,
+    mode: str,
     recursive: bool,
     files: Sequence[Path],
     embeddings: np.ndarray,
@@ -101,7 +109,7 @@ def store_index(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive)
+        key = _cache_key(root, include_hidden, recursive, mode)
         generated_at = datetime.now(timezone.utc).isoformat()
         dimension = int(embeddings.shape[1] if embeddings.size else 0)
         include_flag = 1 if include_hidden else 0
@@ -121,10 +129,11 @@ def store_index(
                     model,
                     include_hidden,
                     recursive,
+                    mode,
                     dimension,
                     version,
                     generated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     key,
@@ -132,6 +141,7 @@ def store_index(
                     model,
                     include_flag,
                     recursive_flag,
+                    mode,
                     dimension,
                     CACHE_VERSION,
                     generated_at,
@@ -181,6 +191,7 @@ def apply_index_updates(
     root: Path,
     model: str,
     include_hidden: bool,
+    mode: str,
     recursive: bool,
     current_files: Sequence[Path],
     changed_files: Sequence[Path],
@@ -196,7 +207,7 @@ def apply_index_updates(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive)
+        key = _cache_key(root, include_hidden, recursive, mode)
         include_flag = 1 if include_hidden else 0
         recursive_flag = 1 if recursive else 0
 
@@ -206,9 +217,9 @@ def apply_index_updates(
                 """
                 SELECT id, dimension
                 FROM index_metadata
-                WHERE cache_key = ? AND model = ? AND include_hidden = ? AND recursive = ?
+                WHERE cache_key = ? AND model = ? AND include_hidden = ? AND recursive = ? AND mode = ?
                 """,
-                (key, model, include_flag, recursive_flag),
+                (key, model, include_flag, recursive_flag, mode),
             ).fetchone()
             if meta is None:
                 raise FileNotFoundError(db_path)
@@ -304,7 +315,7 @@ def apply_index_updates(
         conn.close()
 
 
-def load_index(root: Path, model: str, include_hidden: bool, recursive: bool) -> dict:
+def load_index(root: Path, model: str, include_hidden: bool, mode: str, recursive: bool) -> dict:
     db_path = cache_file(root, model, include_hidden)
     if not db_path.exists():
         raise FileNotFoundError(db_path)
@@ -312,16 +323,16 @@ def load_index(root: Path, model: str, include_hidden: bool, recursive: bool) ->
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive)
+        key = _cache_key(root, include_hidden, recursive, mode)
         include_flag = 1 if include_hidden else 0
         recursive_flag = 1 if recursive else 0
         meta = conn.execute(
             """
-            SELECT id, root_path, model, include_hidden, recursive, dimension, version, generated_at
+            SELECT id, root_path, model, include_hidden, recursive, mode, dimension, version, generated_at
             FROM index_metadata
-            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND recursive = ?
+            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND recursive = ? AND mode = ?
             """,
-            (key, model, include_flag, recursive_flag),
+            (key, model, include_flag, recursive_flag, mode),
         ).fetchone()
         if meta is None:
             raise FileNotFoundError(db_path)
@@ -357,6 +368,7 @@ def load_index(root: Path, model: str, include_hidden: bool, recursive: bool) ->
             "model": meta["model"],
             "include_hidden": bool(meta["include_hidden"]),
             "recursive": bool(meta["recursive"]),
+            "mode": meta["mode"],
             "dimension": meta["dimension"],
             "files": serialized_files,
         }
@@ -364,8 +376,8 @@ def load_index(root: Path, model: str, include_hidden: bool, recursive: bool) ->
         conn.close()
 
 
-def load_index_vectors(root: Path, model: str, include_hidden: bool, recursive: bool):
-    data = load_index(root, model, include_hidden, recursive)
+def load_index_vectors(root: Path, model: str, include_hidden: bool, mode: str, recursive: bool):
+    data = load_index(root, model, include_hidden, mode, recursive)
     files = data.get("files", [])
     paths = [root / Path(entry["path"]) for entry in files]
     embeddings = np.asarray([entry["embedding"] for entry in files], dtype=np.float32)
@@ -375,6 +387,7 @@ def load_index_vectors(root: Path, model: str, include_hidden: bool, recursive: 
 def clear_index(
     root: Path,
     include_hidden: bool,
+    mode: str,
     recursive: bool,
     model: str | None = None,
 ) -> int:
@@ -386,13 +399,14 @@ def clear_index(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive)
+        key = _cache_key(root, include_hidden, recursive, mode)
+        # when model is None we still need a mode; reuse provided mode
         if model is None:
-            query = "DELETE FROM index_metadata WHERE cache_key = ?"
-            params = (key,)
+            query = "DELETE FROM index_metadata WHERE cache_key = ? AND mode = ?"
+            params = (key, mode)
         else:
-            query = "DELETE FROM index_metadata WHERE cache_key = ? AND model = ?"
-            params = (key, model)
+            query = "DELETE FROM index_metadata WHERE cache_key = ? AND model = ? AND mode = ?"
+            params = (key, model, mode)
         with conn:
             cursor = conn.execute(query, params)
         return cursor.rowcount

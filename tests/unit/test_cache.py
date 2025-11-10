@@ -5,6 +5,8 @@ import pytest
 
 import vexor.cache as cache
 
+MODE = "name"
+
 
 def test_store_and_load_index(tmp_path, monkeypatch):
     # Redirect cache directory to temporary path
@@ -31,6 +33,7 @@ def test_store_and_load_index(tmp_path, monkeypatch):
         root=root,
         model="test-model",
         include_hidden=False,
+        mode=MODE,
         recursive=True,
         files=files,
         embeddings=embeddings,
@@ -42,6 +45,7 @@ def test_store_and_load_index(tmp_path, monkeypatch):
         root=root,
         model="test-model",
         include_hidden=False,
+        mode=MODE,
         recursive=True,
     )
 
@@ -54,7 +58,7 @@ def test_cache_file_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
     root = tmp_path / "missing"
     with pytest.raises(FileNotFoundError):
-        cache.load_index(root, "model", False, True)
+        cache.load_index(root, "model", False, MODE, True)
 
 
 def test_compare_snapshot_matches(tmp_path, monkeypatch):
@@ -110,6 +114,7 @@ def test_clear_index_removes_cached_entries(tmp_path, monkeypatch):
         root=root,
         model="model-a",
         include_hidden=False,
+        mode=MODE,
         recursive=True,
         files=files,
         embeddings=embeddings,
@@ -118,22 +123,24 @@ def test_clear_index_removes_cached_entries(tmp_path, monkeypatch):
         root=root,
         model="model-b",
         include_hidden=False,
+        mode=MODE,
         recursive=True,
         files=files,
         embeddings=embeddings,
     )
 
-    removed = cache.clear_index(root=root, include_hidden=False, recursive=True)
+    removed = cache.clear_index(root=root, include_hidden=False, mode=MODE, recursive=True)
     assert removed == 2
 
     with pytest.raises(FileNotFoundError):
-        cache.load_index(root=root, model="model-a", include_hidden=False, recursive=True)
+        cache.load_index(root=root, model="model-a", include_hidden=False, mode=MODE, recursive=True)
 
     # unrelated include_hidden flag should remain untouched
     cache.store_index(
         root=root,
         model="model-c",
         include_hidden=True,
+        mode=MODE,
         recursive=True,
         files=files,
         embeddings=embeddings,
@@ -141,6 +148,7 @@ def test_clear_index_removes_cached_entries(tmp_path, monkeypatch):
     removed_hidden = cache.clear_index(
         root=root,
         include_hidden=True,
+        mode=MODE,
         recursive=True,
         model="model-c",
     )
@@ -160,24 +168,26 @@ def test_recursive_and_non_recursive_caches_are_separate(tmp_path, monkeypatch):
         root=root,
         model="model",
         include_hidden=False,
+        mode=MODE,
         recursive=True,
         files=[file_path],
         embeddings=embeddings,
     )
 
     with pytest.raises(FileNotFoundError):
-        cache.load_index(root=root, model="model", include_hidden=False, recursive=False)
+        cache.load_index(root=root, model="model", include_hidden=False, mode=MODE, recursive=False)
 
     cache.store_index(
         root=root,
         model="model",
         include_hidden=False,
+        mode=MODE,
         recursive=False,
         files=[file_path],
         embeddings=embeddings,
     )
 
-    data = cache.load_index(root=root, model="model", include_hidden=False, recursive=False)
+    data = cache.load_index(root=root, model="model", include_hidden=False, mode=MODE, recursive=False)
     assert data["recursive"] is False
 
 
@@ -195,6 +205,7 @@ def test_apply_index_updates_handles_add_modify_delete(tmp_path, monkeypatch):
         root=root,
         model="model",
         include_hidden=False,
+        mode=MODE,
         recursive=True,
         files=[file_a, file_b],
         embeddings=embeddings,
@@ -215,6 +226,7 @@ def test_apply_index_updates_handles_add_modify_delete(tmp_path, monkeypatch):
         root=root,
         model="model",
         include_hidden=False,
+        mode=MODE,
         recursive=True,
         current_files=current,
         changed_files=current,
@@ -226,6 +238,7 @@ def test_apply_index_updates_handles_add_modify_delete(tmp_path, monkeypatch):
         root=root,
         model="model",
         include_hidden=False,
+        mode=MODE,
         recursive=True,
     )
 
@@ -249,6 +262,7 @@ def test_apply_index_updates_allows_deletions_without_embeddings(tmp_path, monke
         root=root,
         model="model",
         include_hidden=False,
+        mode=MODE,
         recursive=True,
         files=[file_a, file_b],
         embeddings=embeddings,
@@ -260,6 +274,7 @@ def test_apply_index_updates_allows_deletions_without_embeddings(tmp_path, monke
         root=root,
         model="model",
         include_hidden=False,
+        mode=MODE,
         recursive=True,
         current_files=[file_a],
         changed_files=[],
@@ -271,6 +286,7 @@ def test_apply_index_updates_allows_deletions_without_embeddings(tmp_path, monke
         root=root,
         model="model",
         include_hidden=False,
+        mode=MODE,
         recursive=True,
     )
 

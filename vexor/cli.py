@@ -15,6 +15,7 @@ from .config import (
     DEFAULT_MODEL,
     load_config,
 )
+from .modes import available_modes, get_strategy
 from .services.config_service import apply_config_updates, get_config_snapshot
 from .services.index_service import IndexStatus, build_index, clear_index_entries
 from .services.search_service import SearchRequest, perform_search
@@ -48,6 +49,17 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
+def _validate_mode(mode: str) -> str:
+    try:
+        get_strategy(mode)
+    except ValueError as exc:
+        allowed = ", ".join(available_modes())
+        raise typer.BadParameter(
+            Messages.ERROR_MODE_INVALID.format(value=mode, allowed=allowed)
+        ) from exc
+    return mode
+
+
 @app.callback()
 def main(
     version: bool = typer.Option(
@@ -78,6 +90,12 @@ def search(
         "--include-hidden",
         help=Messages.HELP_INCLUDE_HIDDEN,
     ),
+    mode: str = typer.Option(
+        ...,
+        "--mode",
+        "-m",
+        help=Messages.HELP_MODE,
+    ),
     no_recursive: bool = typer.Option(
         False,
         "--no-recursive",
@@ -100,12 +118,14 @@ def search(
         raise typer.BadParameter(str(exc), param_name="top") from exc
 
     directory = resolve_directory(path)
+    mode_value = _validate_mode(mode)
     recursive = not no_recursive
     console.print(_styled(Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO))
     request = SearchRequest(
         query=clean_query,
         directory=directory,
         include_hidden=include_hidden,
+        mode=mode_value,
         recursive=recursive,
         top_k=top,
         model_name=model_name,
@@ -149,6 +169,12 @@ def index(
         "--include-hidden",
         help=Messages.HELP_INDEX_INCLUDE,
     ),
+    mode: str = typer.Option(
+        ...,
+        "--mode",
+        "-m",
+        help=Messages.HELP_MODE,
+    ),
     no_recursive: bool = typer.Option(
         False,
         "--no-recursive",
@@ -167,11 +193,13 @@ def index(
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
 
     directory = resolve_directory(path)
+    mode_value = _validate_mode(mode)
     recursive = not no_recursive
     if clear:
         removed = clear_index_entries(
             directory,
             include_hidden=include_hidden,
+            mode=mode_value,
             recursive=recursive,
         )
         if removed:
@@ -199,6 +227,7 @@ def index(
     result = build_index(
         directory,
         include_hidden=include_hidden,
+        mode=mode_value,
         recursive=recursive,
         model_name=model_name,
         batch_size=batch_size,

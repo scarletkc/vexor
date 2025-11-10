@@ -14,6 +14,7 @@ class SearchRequest:
     query: str
     directory: Path
     include_hidden: bool
+    mode: str
     recursive: bool
     top_k: int
     model_name: str
@@ -40,6 +41,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         request.directory,
         request.model_name,
         request.include_hidden,
+        request.mode,
         request.recursive,
     )
     cached_files = metadata.get("files", [])

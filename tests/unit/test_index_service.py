@@ -39,6 +39,7 @@ def test_build_index_runs_incremental_update(tmp_path, monkeypatch):
     first = build_index(
         root,
         include_hidden=False,
+        mode="name",
         recursive=True,
         model_name="model",
         batch_size=0,
@@ -53,6 +54,7 @@ def test_build_index_runs_incremental_update(tmp_path, monkeypatch):
     second = build_index(
         root,
         include_hidden=False,
+        mode="name",
         recursive=True,
         model_name="model",
         batch_size=0,
@@ -68,6 +70,7 @@ def test_build_index_runs_incremental_update(tmp_path, monkeypatch):
     third = build_index(
         root,
         include_hidden=False,
+        mode="name",
         recursive=True,
         model_name="model",
         batch_size=0,
@@ -76,7 +79,7 @@ def test_build_index_runs_incremental_update(tmp_path, monkeypatch):
     assert len(DummySearcher.calls) == 1
     assert len(DummySearcher.calls[0]) == 1  # only c.txt embedded
 
-    paths, _, _ = cache.load_index_vectors(root, "model", False, True)
+    paths, _, _ = cache.load_index_vectors(root, "model", False, "name", True)
     assert sorted(p.name for p in paths) == ["a.txt", "b.txt", "c.txt"]
 
 
@@ -93,12 +96,12 @@ def test_build_index_falls_back_to_full_rebuild(tmp_path, monkeypatch):
         path.write_text(name)
         files.append(path)
 
-    build_index(root, include_hidden=False, recursive=True, model_name="model", batch_size=0)
+    build_index(root, include_hidden=False, mode="name", recursive=True, model_name="model", batch_size=0)
     DummySearcher.calls = []
 
     for file in files[:3]:
         file.write_text(file.read_text() + "!")
 
-    build_index(root, include_hidden=False, recursive=True, model_name="model", batch_size=0)
+    build_index(root, include_hidden=False, mode="name", recursive=True, model_name="model", batch_size=0)
     assert len(DummySearcher.calls) == 1
     assert len(DummySearcher.calls[0]) == 4  # full rebuild embeds every file

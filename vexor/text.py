@@ -21,6 +21,7 @@ class Messages:
     HELP_INDEX_INCLUDE = "Include hidden files and directories when building the index."
     HELP_INDEX_CLEAR = "Remove the cached index for the specified path (respecting include-hidden and recursion)."
     HELP_RECURSIVE = "Recurse into subdirectories (default). Disable to work only on the specified directory."
+    HELP_MODE = "Indexing mode to control how file content is embedded (required)."
     HELP_DOCTOR = "Check whether the `vexor` command is available on the current PATH."
     HELP_UPDATE = "Check if a newer Vexor release is available online."
     HELP_SET_API_KEY = "Persist an API key in ~/.vexor/config.json."
@@ -40,6 +41,7 @@ class Messages:
     ERROR_NO_EMBEDDINGS = "Gemini API returned no embeddings."
     ERROR_EMPTY_QUERY = "Query text must not be empty."
     ERROR_BATCH_NEGATIVE = "Batch size must be >= 0"
+    ERROR_MODE_INVALID = "Unsupported mode '{value}'. Allowed values: {allowed}."
 
     INFO_NO_FILES = "No files found in the selected directory."
     INFO_NO_RESULTS = "No matching files found."

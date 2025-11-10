@@ -38,11 +38,11 @@ Configuration is stored in `~/.vexor/config.json`.
 ## Workflow
 1. **Index** the project root (includes every subdirectory):
    ```bash
-   vexor index --path ~/projects/demo --include-hidden
+   vexor index --path ~/projects/demo --mode name --include-hidden
    ```
 2. **Search** from anywhere, pointing to the same path:
    ```bash
-   vexor search "api client config" --path ~/projects/demo --top 5
+   vexor search "api client config" --path ~/projects/demo --mode name --top 5
    ```
    Output example:
    ```
@@ -58,12 +58,13 @@ Tips:
 - Toggle `--no-recursive` (or `-n`) on both `index` and `search` when you only care about the current directory; recursive and non-recursive caches are stored separately.
 - Hidden files are included only if both `index` and `search` use `--include-hidden`.
 - Re-running `vexor index` only re-embeds files whose names changed (or were added/removed); if more than half the files differ, it automatically falls back to a full rebuild for consistency.
+- Specify the indexing mode with `--mode`; currently `name` (based on file names) is available, and each mode maintains its own cache.
 
 ## Commands
 | Command | Description |
 | ------- | ----------- |
-| `vexor index --path PATH [--include-hidden] [--no-recursive] [--clear]` | Scans `PATH` (recursively by default), embeds file names, and writes a cache under `~/.vexor`. |
-| `vexor search QUERY --path PATH [--top K] [--include-hidden] [--no-recursive]` | Loads the cached embeddings for `PATH` (matching the chosen recursion and hidden settings) and ranks matches for `QUERY`. |
+| `vexor index --path PATH --mode MODE [--include-hidden] [--no-recursive] [--clear]` | Scans `PATH` (recursively by default), embeds content according to `MODE`, and writes a cache under `~/.vexor`. |
+| `vexor search QUERY --path PATH --mode MODE [--top K] [--include-hidden] [--no-recursive]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden settings) and ranks matches for `QUERY`. |
 | `vexor doctor` | Checks whether the `vexor` command is available on the current `PATH`. |
 | `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |
 | `vexor config --set-api-key/--clear-api-key` | Manage the stored Gemini API key. |

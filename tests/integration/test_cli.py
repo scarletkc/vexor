@@ -45,6 +45,8 @@ def test_search_outputs_table(tmp_path, monkeypatch):
             str(tmp_path),
             "--top",
             "1",
+            "--mode",
+            "name",
         ],
     )
 
@@ -79,6 +81,8 @@ def test_search_respects_no_recursive_flag(tmp_path, monkeypatch):
             "alpha",
             "--path",
             str(tmp_path),
+            "--mode",
+            "name",
             "--no-recursive",
         ],
     )
@@ -95,7 +99,17 @@ def test_search_missing_index_prompts_user(tmp_path, monkeypatch):
 
     monkeypatch.setattr("vexor.cli.perform_search", missing_cache)
 
-    result = runner.invoke(app, ["search", "query", "--path", str(tmp_path)])
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "query",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+        ],
+    )
 
     assert result.exit_code == 1
     assert "No cached index" in result.stdout
@@ -109,7 +123,16 @@ def test_index_handles_empty_directory(tmp_path, monkeypatch):
 
     monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
 
-    result = runner.invoke(app, ["index", "--path", str(tmp_path)])
+    result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+        ],
+    )
 
     assert result.exit_code == 0
     assert "No files found" in result.stdout
@@ -129,7 +152,16 @@ def test_index_writes_cache(tmp_path, monkeypatch):
 
     monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
 
-    result = runner.invoke(app, ["index", "--path", str(tmp_path)])
+    result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+        ],
+    )
 
     assert result.exit_code == 0
     assert "Index saved" in result.stdout
@@ -148,7 +180,16 @@ def test_index_skips_when_up_to_date(tmp_path, monkeypatch):
 
     monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
 
-    result = runner.invoke(app, ["index", "--path", str(tmp_path)])
+    result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+        ],
+    )
 
     assert result.exit_code == 0
     assert "matches the current directory" in result.stdout
@@ -173,6 +214,8 @@ def test_index_no_recursive_flag(tmp_path, monkeypatch):
             "index",
             "--path",
             str(tmp_path),
+            "--mode",
+            "name",
             "--no-recursive",
         ],
     )
@@ -185,20 +228,33 @@ def test_index_clear_option(tmp_path, monkeypatch):
     runner = CliRunner()
     called = {}
 
-    def fake_clear(root, include_hidden, recursive, model=None):
+    def fake_clear(root, include_hidden, mode, recursive, model=None):
         called["root"] = root
         called["include_hidden"] = include_hidden
+        called["mode"] = mode
         called["recursive"] = recursive
         return 1
 
     monkeypatch.setattr("vexor.cli.clear_index_entries", fake_clear)
 
-    result = runner.invoke(app, ["index", "--path", str(tmp_path), "--clear", "--include-hidden"])
+    result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+            "--clear",
+            "--include-hidden",
+        ],
+    )
 
     assert result.exit_code == 0
     assert "Removed" in result.stdout
     assert called["root"] == tmp_path
     assert called["include_hidden"] is True
+    assert called["mode"] == "name"
     assert called["recursive"] is True
 
 
@@ -206,8 +262,9 @@ def test_index_clear_honors_no_recursive(tmp_path, monkeypatch):
     runner = CliRunner()
     called = {}
 
-    def fake_clear(root, include_hidden, recursive, model=None):
+    def fake_clear(root, include_hidden, mode, recursive, model=None):
         called["recursive"] = recursive
+        called["mode"] = mode
         return 0
 
     monkeypatch.setattr("vexor.cli.clear_index_entries", fake_clear)
@@ -218,6 +275,8 @@ def test_index_clear_honors_no_recursive(tmp_path, monkeypatch):
             "index",
             "--path",
             str(tmp_path),
+            "--mode",
+            "name",
             "--clear",
             "--no-recursive",
         ],
@@ -225,6 +284,7 @@ def test_index_clear_honors_no_recursive(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert called["recursive"] is False
+    assert called["mode"] == "name"
 
 
 def test_search_warns_when_stale(tmp_path, monkeypatch):
@@ -250,6 +310,8 @@ def test_search_warns_when_stale(tmp_path, monkeypatch):
             "alpha",
             "--path",
             str(tmp_path),
+            "--mode",
+            "name",
         ],
     )
 

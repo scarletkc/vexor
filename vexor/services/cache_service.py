@@ -28,12 +28,12 @@ def is_cache_current(
     )
 
 
-def load_index_metadata_safe(root: Path, model: str, include_hidden: bool, recursive: bool):
+def load_index_metadata_safe(root: Path, model: str, include_hidden: bool, mode: str, recursive: bool):
     """Load index metadata when present, returning None if missing."""
 
     from ..cache import load_index  # local import avoids eager heavy deps
 
     try:
-        return load_index(root, model, include_hidden, recursive)
+        return load_index(root, model, include_hidden, mode, recursive)
     except FileNotFoundError:
         return None
