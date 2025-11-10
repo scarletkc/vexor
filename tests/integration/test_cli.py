@@ -299,8 +299,7 @@ def test_index_show_conflicts_with_clear(tmp_path):
     )
 
     assert result.exit_code != 0
-    combined_output = result.stdout + result.stderr
-    assert Messages.ERROR_INDEX_SHOW_CONFLICT in combined_output
+    assert Messages.ERROR_INDEX_SHOW_CONFLICT in result.output
 
 
 def test_index_clear_option(tmp_path, monkeypatch):
