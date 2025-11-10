@@ -179,3 +179,101 @@ def test_recursive_and_non_recursive_caches_are_separate(tmp_path, monkeypatch):
 
     data = cache.load_index(root=root, model="model", include_hidden=False, recursive=False)
     assert data["recursive"] is False
+
+
+def test_apply_index_updates_handles_add_modify_delete(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    root = tmp_path / "project"
+    root.mkdir()
+    file_a = root / "a.txt"
+    file_b = root / "b.txt"
+    file_a.write_text("a")
+    file_b.write_text("b")
+
+    embeddings = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        recursive=True,
+        files=[file_a, file_b],
+        embeddings=embeddings,
+    )
+
+    file_a.write_text("updated")
+    file_b.unlink()
+    file_c = root / "c.txt"
+    file_c.write_text("c")
+
+    current = [file_a, file_c]
+    embeddings_map = {
+        str(file_a.relative_to(root)): np.array([0.2, 0.8], dtype=np.float32),
+        str(file_c.relative_to(root)): np.array([0.3, 0.7], dtype=np.float32),
+    }
+
+    cache.apply_index_updates(
+        root=root,
+        model="model",
+        include_hidden=False,
+        recursive=True,
+        current_files=current,
+        changed_files=current,
+        removed_rel_paths=["b.txt"],
+        embeddings=embeddings_map,
+    )
+
+    paths, vectors, meta = cache.load_index_vectors(
+        root=root,
+        model="model",
+        include_hidden=False,
+        recursive=True,
+    )
+
+    assert [p.name for p in paths] == ["a.txt", "c.txt"]
+    expected = np.stack([embeddings_map["a.txt"], embeddings_map["c.txt"]], dtype=np.float32)
+    assert np.allclose(vectors, expected)
+    assert meta["dimension"] == 2
+
+
+def test_apply_index_updates_allows_deletions_without_embeddings(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    root = tmp_path / "project"
+    root.mkdir()
+    file_a = root / "a.txt"
+    file_b = root / "b.txt"
+    file_a.write_text("a")
+    file_b.write_text("b")
+
+    embeddings = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        recursive=True,
+        files=[file_a, file_b],
+        embeddings=embeddings,
+    )
+
+    file_b.unlink()
+
+    cache.apply_index_updates(
+        root=root,
+        model="model",
+        include_hidden=False,
+        recursive=True,
+        current_files=[file_a],
+        changed_files=[],
+        removed_rel_paths=["b.txt"],
+        embeddings={},
+    )
+
+    paths, vectors, meta = cache.load_index_vectors(
+        root=root,
+        model="model",
+        include_hidden=False,
+        recursive=True,
+    )
+
+    assert [p.name for p in paths] == ["a.txt"]
+    assert vectors.shape == (1, 2)
+    assert meta["dimension"] == 2

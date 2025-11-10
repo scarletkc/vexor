@@ -7,7 +7,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 
@@ -108,6 +108,7 @@ def store_index(
         recursive_flag = 1 if recursive else 0
 
         with conn:
+            conn.execute("BEGIN IMMEDIATE;")
             conn.execute(
                 "DELETE FROM index_metadata WHERE cache_key = ? AND model = ?",
                 (key, model),
@@ -169,6 +170,134 @@ def store_index(
                     "INSERT INTO file_embedding (file_id, vector_blob) VALUES (?, ?)",
                     (file_cursor.lastrowid, vector_blob),
                 )
+
+        return db_path
+    finally:
+        conn.close()
+
+
+def apply_index_updates(
+    *,
+    root: Path,
+    model: str,
+    include_hidden: bool,
+    recursive: bool,
+    current_files: Sequence[Path],
+    changed_files: Sequence[Path],
+    removed_rel_paths: Sequence[str],
+    embeddings: Mapping[str, np.ndarray],
+) -> Path:
+    """Apply incremental updates to an existing cached index."""
+
+    db_path = cache_file(root, model, include_hidden)
+    if not db_path.exists():
+        raise FileNotFoundError(db_path)
+
+    conn = _connect(db_path)
+    try:
+        _ensure_schema(conn)
+        key = _cache_key(root, include_hidden, recursive)
+        include_flag = 1 if include_hidden else 0
+        recursive_flag = 1 if recursive else 0
+
+        with conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            meta = conn.execute(
+                """
+                SELECT id, dimension
+                FROM index_metadata
+                WHERE cache_key = ? AND model = ? AND include_hidden = ? AND recursive = ?
+                """,
+                (key, model, include_flag, recursive_flag),
+            ).fetchone()
+            if meta is None:
+                raise FileNotFoundError(db_path)
+            index_id = meta["id"]
+            existing_dimension = int(meta["dimension"])
+
+            if removed_rel_paths:
+                conn.executemany(
+                    "DELETE FROM indexed_file WHERE index_id = ? AND rel_path = ?",
+                    ((index_id, rel) for rel in removed_rel_paths),
+                )
+
+            vector_dimension = None
+            for path in changed_files:
+                rel_path = _relative_path(path, root)
+                vector = embeddings.get(rel_path)
+                if vector is None:
+                    raise ValueError(f"Missing embedding for updated file: {rel_path}")
+                vector = np.asarray(vector, dtype=np.float32)
+                if vector_dimension is None:
+                    vector_dimension = vector.shape[0]
+                stat = path.stat()
+                record = conn.execute(
+                    "SELECT id FROM indexed_file WHERE index_id = ? AND rel_path = ?",
+                    (index_id, rel_path),
+                ).fetchone()
+                if record is None:
+                    cursor = conn.execute(
+                        """
+                        INSERT INTO indexed_file (
+                            index_id,
+                            rel_path,
+                            abs_path,
+                            size_bytes,
+                            mtime,
+                            position
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            index_id,
+                            rel_path,
+                            str(path),
+                            stat.st_size,
+                            stat.st_mtime,
+                            0,
+                        ),
+                    )
+                    file_id = cursor.lastrowid
+                    conn.execute(
+                        "INSERT INTO file_embedding (file_id, vector_blob) VALUES (?, ?)",
+                        (file_id, vector.tobytes()),
+                    )
+                else:
+                    file_id = record["id"]
+                    conn.execute(
+                        """
+                        UPDATE indexed_file
+                        SET abs_path = ?, size_bytes = ?, mtime = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            str(path),
+                            stat.st_size,
+                            stat.st_mtime,
+                            file_id,
+                        ),
+                    )
+                    conn.execute(
+                        "UPDATE file_embedding SET vector_blob = ? WHERE file_id = ?",
+                        (vector.tobytes(), file_id),
+                    )
+
+            for position, file in enumerate(current_files):
+                rel_path = _relative_path(file, root)
+                conn.execute(
+                    "UPDATE indexed_file SET position = ? WHERE index_id = ? AND rel_path = ?",
+                    (position, index_id, rel_path),
+                )
+
+            generated_at = datetime.now(timezone.utc).isoformat()
+            new_dimension = vector_dimension or existing_dimension
+            conn.execute(
+                """
+                UPDATE index_metadata
+                SET generated_at = ?, dimension = ?
+                WHERE id = ?
+                """,
+                (generated_at, new_dimension, index_id),
+            )
 
         return db_path
     finally:
