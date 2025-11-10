@@ -1,4 +1,5 @@
 import json
+import re
 
 import numpy as np
 import pytest
@@ -12,6 +13,13 @@ from vexor.search import SearchResult
 from vexor.services.index_service import IndexResult, IndexStatus
 from vexor.services.search_service import SearchResponse
 from vexor.text import Messages
+
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def strip_ansi(text: str) -> str:
+    return ANSI_RE.sub("", text)
 
 
 @pytest.fixture(autouse=True)
@@ -299,7 +307,8 @@ def test_index_show_conflicts_with_clear(tmp_path):
     )
 
     assert result.exit_code != 0
-    assert Messages.ERROR_INDEX_SHOW_CONFLICT in result.output
+    combined = strip_ansi(result.output)
+    assert Messages.ERROR_INDEX_SHOW_CONFLICT in combined
 
 
 def test_index_clear_option(tmp_path, monkeypatch):
