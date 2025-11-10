@@ -77,3 +77,5 @@ Tips:
 | `vexor config --set-api-key/--clear-api-key` | Manage the stored Gemini API key. |
 | `vexor config --set-model/--set-batch-size/--show` | Manage default model and batch size. |
 | `vexor config --show-index-all/--clear-index-all` | Inspect or delete every cached index regardless of path/mode. |
+
+## [More Documentation](https://github.com/scarletkc/vexor/tree/main/docs)
