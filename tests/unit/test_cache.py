@@ -308,3 +308,74 @@ def test_apply_index_updates_allows_deletions_without_embeddings(tmp_path, monke
     assert [p.name for p in paths] == ["a.txt"]
     assert vectors.shape == (1, 2)
     assert meta["dimension"] == 2
+
+
+def test_list_cache_entries_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+
+    assert cache.list_cache_entries() == []
+
+
+def test_list_cache_entries_reports_metadata(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    root = tmp_path / "project"
+    root.mkdir()
+    file_path = root / "a.txt"
+    file_path.write_text("data")
+
+    embeddings = np.array([[1.0]], dtype=np.float32)
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        files=[file_path],
+        previews=[file_path.name],
+        embeddings=embeddings,
+    )
+
+    entries = cache.list_cache_entries()
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["root_path"] == str(root)
+    assert entry["file_count"] == 1
+    assert entry["include_hidden"] is False
+
+
+def test_clear_all_cache_removes_database(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(cache, "CACHE_DIR", cache_dir)
+    root = tmp_path / "project"
+    root.mkdir()
+    file_path = root / "a.txt"
+    file_path.write_text("data")
+
+    embeddings = np.array([[1.0]], dtype=np.float32)
+    cache.store_index(
+        root=root,
+        model="model-a",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        files=[file_path],
+        previews=[file_path.name],
+        embeddings=embeddings,
+    )
+    cache.store_index(
+        root=root,
+        model="model-b",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        files=[file_path],
+        previews=[file_path.name],
+        embeddings=embeddings,
+    )
+
+    removed = cache.clear_all_cache()
+    assert removed == 2
+    db_path = cache_dir / cache.DB_FILENAME
+    assert not db_path.exists()
+    assert cache.list_cache_entries() == []
+    assert cache.clear_all_cache() == 0

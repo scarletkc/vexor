@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from . import __version__
+from .cache import clear_all_cache, list_cache_entries
 from .config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_MODEL,
@@ -271,6 +272,16 @@ def config(
         "--show",
         help=Messages.HELP_SHOW_CONFIG,
     ),
+    show_index_all: bool = typer.Option(
+        False,
+        "--show-index-all",
+        help=Messages.HELP_SHOW_INDEX_ALL,
+    ),
+    clear_index_all: bool = typer.Option(
+        False,
+        "--clear-index-all",
+        help=Messages.HELP_CLEAR_INDEX_ALL,
+    ),
 ) -> None:
     """Manage Vexor configuration stored in ~/.vexor/config.json."""
     if set_batch_option is not None and set_batch_option < 0:
@@ -296,7 +307,21 @@ def config(
             _styled(Messages.INFO_BATCH_SET.format(value=set_batch_option), Styles.SUCCESS)
         )
 
-    if show or not updates.changed:
+    if clear_index_all:
+        removed = clear_all_cache()
+        if removed:
+            plural = "ies" if removed > 1 else "y"
+            console.print(
+                _styled(
+                    Messages.INFO_INDEX_ALL_CLEARED.format(count=removed, plural=plural),
+                    Styles.SUCCESS,
+                )
+            )
+        else:
+            console.print(_styled(Messages.INFO_INDEX_ALL_CLEAR_NONE, Styles.INFO))
+
+    show_summary = show or (not updates.changed and not (show_index_all or clear_index_all))
+    if show_summary:
         cfg = get_config_snapshot()
         console.print(
             _styled(
@@ -308,6 +333,32 @@ def config(
                 Styles.INFO,
             )
         )
+
+    if show_index_all:
+        entries = list_cache_entries()
+        if not entries:
+            console.print(_styled(Messages.INFO_INDEX_ALL_EMPTY, Styles.INFO))
+        else:
+            console.print(_styled(Messages.INFO_INDEX_ALL_HEADER, Styles.TITLE))
+            table = Table(show_header=True, header_style=Styles.TABLE_HEADER)
+            table.add_column(Messages.TABLE_INDEX_HEADER_ROOT)
+            table.add_column(Messages.TABLE_INDEX_HEADER_MODE)
+            table.add_column(Messages.TABLE_INDEX_HEADER_MODEL)
+            table.add_column(Messages.TABLE_INDEX_HEADER_HIDDEN, justify="center")
+            table.add_column(Messages.TABLE_INDEX_HEADER_RECURSIVE, justify="center")
+            table.add_column(Messages.TABLE_INDEX_HEADER_FILES, justify="right")
+            table.add_column(Messages.TABLE_INDEX_HEADER_GENERATED)
+            for entry in entries:
+                table.add_row(
+                    str(entry["root_path"]),
+                    str(entry["mode"]),
+                    str(entry["model"]),
+                    "yes" if entry["include_hidden"] else "no",
+                    "yes" if entry["recursive"] else "no",
+                    str(entry["file_count"]),
+                    str(entry["generated_at"]),
+                )
+            console.print(table)
 
 
 @app.command()

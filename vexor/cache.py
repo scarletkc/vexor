@@ -30,10 +30,16 @@ def ensure_cache_dir() -> Path:
     return CACHE_DIR
 
 
-def cache_file(root: Path, model: str, include_hidden: bool) -> Path:  # pragma: no cover - kept for API parity
-    """Return the on-disk cache artifact path (single SQLite DB)."""
+def cache_db_path() -> Path:
+    """Return the absolute path to the shared SQLite cache database."""
+
     ensure_cache_dir()
     return CACHE_DIR / DB_FILENAME
+
+
+def cache_file(root: Path, model: str, include_hidden: bool) -> Path:  # pragma: no cover - kept for API parity
+    """Return the on-disk cache artifact path (single SQLite DB)."""
+    return cache_db_path()
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -427,6 +433,82 @@ def clear_index(
         return cursor.rowcount
     finally:
         conn.close()
+
+
+def list_cache_entries() -> list[dict[str, object]]:
+    """Return metadata for every cached index currently stored."""
+
+    db_path = cache_db_path()
+    if not db_path.exists():
+        return []
+
+    conn = _connect(db_path)
+    try:
+        _ensure_schema(conn)
+        rows = conn.execute(
+            """
+            SELECT
+                root_path,
+                model,
+                include_hidden,
+                recursive,
+                mode,
+                dimension,
+                version,
+                generated_at,
+                (
+                    SELECT COUNT(*)
+                    FROM indexed_file
+                    WHERE index_id = index_metadata.id
+                ) AS file_count
+            FROM index_metadata
+            ORDER BY generated_at DESC
+            """
+        ).fetchall()
+
+        entries: list[dict[str, object]] = []
+        for row in rows:
+            entries.append(
+                {
+                    "root_path": row["root_path"],
+                    "model": row["model"],
+                    "include_hidden": bool(row["include_hidden"]),
+                    "recursive": bool(row["recursive"]),
+                    "mode": row["mode"],
+                    "dimension": row["dimension"],
+                    "version": row["version"],
+                    "generated_at": row["generated_at"],
+                    "file_count": int(row["file_count"] or 0),
+                }
+            )
+        return entries
+    finally:
+        conn.close()
+
+
+def clear_all_cache() -> int:
+    """Remove the entire cache database, returning number of entries removed."""
+
+    db_path = cache_db_path()
+    if not db_path.exists():
+        return 0
+
+    conn = _connect(db_path)
+    try:
+        _ensure_schema(conn)
+        count_row = conn.execute("SELECT COUNT(*) AS total FROM index_metadata").fetchone()
+        total = int(count_row["total"] if count_row is not None else 0)
+    finally:
+        conn.close()
+
+    if db_path.exists():
+        db_path.unlink()
+    for suffix in ("-wal", "-shm"):
+        sidecar = Path(f"{db_path}{suffix}")
+        if sidecar.exists():
+            sidecar.unlink()
+
+    return total
 
 
 def compare_snapshot(

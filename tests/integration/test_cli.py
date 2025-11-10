@@ -360,6 +360,59 @@ def test_config_clear_api_key(tmp_path):
     assert "api_key" not in data
 
 
+def test_config_show_index_all(tmp_path, monkeypatch):
+    runner = CliRunner()
+    root = tmp_path / "proj"
+    entries = [
+        {
+            "root_path": str(root),
+            "mode": "name",
+            "model": "model-x",
+            "include_hidden": False,
+            "recursive": True,
+            "file_count": 3,
+            "generated_at": "2024-01-01T00:00:00Z",
+        }
+    ]
+    monkeypatch.setattr("vexor.cli.list_cache_entries", lambda: entries)
+
+    result = runner.invoke(app, ["config", "--show-index-all"])
+
+    assert result.exit_code == 0
+    assert "Cached index overview" in result.stdout
+    assert "model-x" in result.stdout
+
+
+def test_config_show_index_all_empty(tmp_path, monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli.list_cache_entries", lambda: [])
+
+    result = runner.invoke(app, ["config", "--show-index-all"])
+
+    assert result.exit_code == 0
+    assert "No cached indexes" in result.stdout
+
+
+def test_config_clear_index_all(tmp_path, monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli.clear_all_cache", lambda: 5)
+
+    result = runner.invoke(app, ["config", "--clear-index-all"])
+
+    assert result.exit_code == 0
+    assert "Removed 5 cached index" in result.stdout
+
+
+def test_config_clear_index_all_noop(tmp_path, monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli.clear_all_cache", lambda: 0)
+
+    result = runner.invoke(app, ["config", "--clear-index-all"])
+
+    assert result.exit_code == 0
+    assert "Cache already empty" in result.stdout
+
+
 def test_doctor_reports_success(monkeypatch):
     runner = CliRunner()
     monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: "/usr/local/bin/vexor")

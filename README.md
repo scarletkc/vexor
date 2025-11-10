@@ -35,6 +35,12 @@ vexor config --set-batch-size 0   # 0 = single request
 ```
 Configuration is stored in `~/.vexor/config.json`.
 
+Inspect or reset every cached index:
+```bash
+vexor config --show-index-all
+vexor config --clear-index-all
+```
+
 ## Workflow
 1. **Index** the project root (includes every subdirectory):
    ```bash
@@ -70,3 +76,4 @@ Tips:
 | `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |
 | `vexor config --set-api-key/--clear-api-key` | Manage the stored Gemini API key. |
 | `vexor config --set-model/--set-batch-size/--show` | Manage default model and batch size. |
+| `vexor config --show-index-all/--clear-index-all` | Inspect or delete every cached index regardless of path/mode. |
