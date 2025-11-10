@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shlex
+import subprocess
 from pathlib import Path
 from typing import Sequence, TYPE_CHECKING
 
@@ -9,7 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import __version__
+from . import __version__, config as config_module
 from .cache import clear_all_cache, list_cache_entries
 from .config import (
     DEFAULT_BATCH_SIZE,
@@ -24,6 +26,7 @@ from .services.search_service import SearchRequest, perform_search
 from .services.system_service import (
     fetch_remote_version,
     find_command_on_path,
+    resolve_editor_command,
     version_tuple,
 )
 from .text import Messages, Styles
@@ -363,8 +366,19 @@ def config(
         else:
             console.print(_styled(Messages.INFO_INDEX_ALL_CLEAR_NONE, Styles.INFO))
 
-    show_summary = show or (not updates.changed and not (show_index_all or clear_index_all))
-    if show_summary:
+    should_edit = not any(
+        (
+            updates.changed,
+            show,
+            show_index_all,
+            clear_index_all,
+        )
+    )
+    if should_edit:
+        _edit_config_file()
+        return
+
+    if show:
         cfg = get_config_snapshot()
         console.print(
             _styled(
@@ -487,3 +501,53 @@ def run(argv: list[str] | None = None) -> None:
         app()
     else:
         app(args=list(argv))
+
+
+def _format_command(parts: Sequence[str]) -> str:
+    return " ".join(shlex.quote(part) for part in parts)
+
+
+def _ensure_config_file() -> Path:
+    config_path = config_module.CONFIG_FILE
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    if not config_path.exists():
+        config_path.write_text("{}\n", encoding="utf-8")
+    return config_path
+
+
+def _edit_config_file() -> None:
+    command = resolve_editor_command()
+    if not command:
+        console.print(_styled(Messages.ERROR_CONFIG_EDITOR_NOT_FOUND, Styles.ERROR))
+        raise typer.Exit(code=1)
+
+    cmd_list = list(command)
+    config_path = _ensure_config_file()
+    console.print(
+        _styled(
+            Messages.INFO_CONFIG_EDITING.format(
+                path=config_path,
+                editor=_format_command(cmd_list),
+            ),
+            Styles.INFO,
+        )
+    )
+    try:
+        subprocess.run(cmd_list + [str(config_path)], check=True)
+    except FileNotFoundError as exc:
+        console.print(
+            _styled(
+                Messages.ERROR_CONFIG_EDITOR_LAUNCH.format(reason=str(exc)),
+                Styles.ERROR,
+            )
+        )
+        raise typer.Exit(code=1)
+    except subprocess.CalledProcessError as exc:
+        code = exc.returncode if exc.returncode is not None else 1
+        console.print(
+            _styled(
+                Messages.ERROR_CONFIG_EDITOR_FAILED.format(code=code),
+                Styles.ERROR,
+            )
+        )
+        raise typer.Exit(code=code)

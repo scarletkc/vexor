@@ -1,11 +1,15 @@
-"""Logic helpers for diagnostics and update checks."""
+"""Logic helpers for diagnostics, editors, and update checks."""
 
 from __future__ import annotations
 
+import os
 import re
+import shlex
 import shutil
-from typing import Optional
+from typing import Optional, Sequence
 from urllib import error, request
+
+EDITOR_FALLBACKS = ("nano", "vi", "notepad", "notepad.exe")
 
 
 def version_tuple(raw: str) -> tuple[int, int, int, int]:
@@ -60,3 +64,18 @@ def find_command_on_path(command: str) -> Optional[str]:
 
     return shutil.which(command)
 
+
+def resolve_editor_command() -> Optional[Sequence[str]]:
+    """Return the preferred editor command as a tokenized sequence."""
+
+    for env_var in ("VISUAL", "EDITOR"):
+        value = os.environ.get(env_var)
+        if value:
+            return tuple(shlex.split(value))
+
+    for candidate in EDITOR_FALLBACKS:
+        path = shutil.which(candidate)
+        if path:
+            return (path,)
+
+    return None

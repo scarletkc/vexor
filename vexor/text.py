@@ -78,6 +78,10 @@ class Messages:
     INFO_API_CLEARED = "API key cleared."
     INFO_MODEL_SET = "Default model set to {value}."
     INFO_BATCH_SET = "Default batch size set to {value}."
+    INFO_CONFIG_EDITING = "Opening config file in editor ({editor}): {path}"
+    ERROR_CONFIG_EDITOR_NOT_FOUND = "Unable to determine a text editor. Set $VISUAL or $EDITOR, or install nano/vi."
+    ERROR_CONFIG_EDITOR_FAILED = "Editor exited with status {code}."
+    ERROR_CONFIG_EDITOR_LAUNCH = "Failed to launch editor: {reason}."
     INFO_CONFIG_SUMMARY = (
         "API key set: {api}\n"
         "Default model: {model}\n"

@@ -433,6 +433,38 @@ def test_config_clear_api_key(tmp_path):
     assert "api_key" not in data
 
 
+def test_config_without_args_opens_editor(tmp_path, monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    monkeypatch.setattr("vexor.cli.resolve_editor_command", lambda: ("editor",))
+
+    def fake_run(cmd, check):
+        captured["cmd"] = cmd
+        class Result:
+            returncode = 0
+        return Result()
+
+    monkeypatch.setattr("vexor.cli.subprocess.run", fake_run)
+
+    result = runner.invoke(app, ["config"])
+
+    assert result.exit_code == 0
+    assert "Opening config file" in result.stdout
+    config_path = tmp_path / "config" / "config.json"
+    assert captured["cmd"][-1] == str(config_path)
+
+
+def test_config_without_editor_reports_error(tmp_path, monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli.resolve_editor_command", lambda: None)
+
+    result = runner.invoke(app, ["config"])
+
+    assert result.exit_code == 1
+    assert Messages.ERROR_CONFIG_EDITOR_NOT_FOUND in result.stdout
+
+
 def test_config_show_index_all(tmp_path, monkeypatch):
     runner = CliRunner()
     root = tmp_path / "proj"
