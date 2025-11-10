@@ -53,6 +53,7 @@ def test_search_outputs_table(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "alpha.txt" in result.stdout
     assert "Similarity" in result.stdout
+    assert "Preview" in result.stdout
     assert captured["recursive"] is True
 
 

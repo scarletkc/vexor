@@ -68,6 +68,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             size_bytes INTEGER NOT NULL,
             mtime REAL NOT NULL,
             position INTEGER NOT NULL,
+            preview TEXT DEFAULT '',
             UNIQUE(index_id, rel_path)
         );
 
@@ -93,6 +94,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         )
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute(
+            "ALTER TABLE indexed_file ADD COLUMN preview TEXT DEFAULT ''"
+        )
+    except sqlite3.OperationalError:
+        pass
 
 
 def store_index(
@@ -103,6 +110,7 @@ def store_index(
     mode: str,
     recursive: bool,
     files: Sequence[Path],
+    previews: Sequence[str],
     embeddings: np.ndarray,
 ) -> Path:
     db_path = cache_file(root, model, include_hidden)
@@ -163,8 +171,9 @@ def store_index(
                         abs_path,
                         size_bytes,
                         mtime,
-                        position
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        position,
+                        preview
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         index_id,
@@ -173,6 +182,7 @@ def store_index(
                         stat.st_size,
                         stat.st_mtime,
                         position,
+                        previews[position] if position < len(previews) else "",
                     ),
                 )
                 vector_blob = embeddings[position].astype(np.float32).tobytes()
@@ -197,6 +207,7 @@ def apply_index_updates(
     changed_files: Sequence[Path],
     removed_rel_paths: Sequence[str],
     embeddings: Mapping[str, np.ndarray],
+    previews: Mapping[str, str],
 ) -> Path:
     """Apply incremental updates to an existing cached index."""
 
@@ -249,14 +260,15 @@ def apply_index_updates(
                 if record is None:
                     cursor = conn.execute(
                         """
-                        INSERT INTO indexed_file (
-                            index_id,
-                            rel_path,
-                            abs_path,
-                            size_bytes,
-                            mtime,
-                            position
-                        ) VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO indexed_file (
+                        index_id,
+                        rel_path,
+                        abs_path,
+                        size_bytes,
+                        mtime,
+                        position,
+                        preview
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             index_id,
@@ -265,6 +277,7 @@ def apply_index_updates(
                             stat.st_size,
                             stat.st_mtime,
                             0,
+                            previews.get(rel_path, ""),
                         ),
                     )
                     file_id = cursor.lastrowid
@@ -277,13 +290,14 @@ def apply_index_updates(
                     conn.execute(
                         """
                         UPDATE indexed_file
-                        SET abs_path = ?, size_bytes = ?, mtime = ?
+                        SET abs_path = ?, size_bytes = ?, mtime = ?, preview = ?
                         WHERE id = ?
                         """,
                         (
                             str(path),
                             stat.st_size,
                             stat.st_mtime,
+                            previews.get(rel_path, ""),
                             file_id,
                         ),
                     )
@@ -339,7 +353,7 @@ def load_index(root: Path, model: str, include_hidden: bool, mode: str, recursiv
 
         files = conn.execute(
             """
-            SELECT f.rel_path, f.abs_path, f.size_bytes, f.mtime, e.vector_blob
+            SELECT f.rel_path, f.abs_path, f.size_bytes, f.mtime, f.preview, e.vector_blob
             FROM indexed_file AS f
             JOIN file_embedding AS e ON e.file_id = f.id
             WHERE f.index_id = ?
@@ -357,6 +371,7 @@ def load_index(root: Path, model: str, include_hidden: bool, mode: str, recursiv
                     "absolute": row["abs_path"],
                     "mtime": row["mtime"],
                     "size": row["size_bytes"],
+                    "preview": row["preview"],
                     "embedding": vector.tolist(),
                 }
             )

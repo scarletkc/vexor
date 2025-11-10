@@ -20,6 +20,7 @@ class SearchResult:
 
     path: Path
     score: float
+    preview: str | None = None
 
 
 class EmbeddingBackend(Protocol):

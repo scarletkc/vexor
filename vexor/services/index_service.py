@@ -77,7 +77,9 @@ def build_index(
                 files_indexed=len(files),
             )
 
-    file_labels = strategy.labels_for_files(files)
+    payloads = strategy.payloads_for_files(files)
+    file_labels = [payload.label for payload in payloads]
+    previews = [payload.preview or "" for payload in payloads]
     embeddings = searcher.embed_texts(file_labels)
 
     cache_path = store_index(
@@ -87,6 +89,7 @@ def build_index(
         mode=mode,
         recursive=recursive,
         files=files,
+        previews=previews,
         embeddings=embeddings,
     )
     return IndexResult(
@@ -209,7 +212,12 @@ def _apply_incremental_update(
     changed_set = set(diff.changed_paths())
     if changed_set:
         targets = [path for path in files if path in changed_set]
-        labels = strategy.labels_for_files(targets)
+        payloads = strategy.payloads_for_files(targets)
+        labels = [payload.label for payload in payloads]
+        previews = {
+            _relative_to_root(path, directory): (payload.preview or "")
+            for path, payload in zip(targets, payloads)
+        }
         embeddings = searcher.embed_texts(labels)
         embedding_map = {
             _relative_to_root(path, directory): embeddings[idx]
@@ -218,6 +226,7 @@ def _apply_incremental_update(
     else:
         targets = []
         embedding_map = {}
+        previews = {}
 
     cache_path = apply_fn(
         root=directory,
@@ -229,6 +238,7 @@ def _apply_incremental_update(
         changed_files=targets,
         removed_rel_paths=diff.removed,
         embeddings=embedding_map,
+        previews=previews,
     )
     return cache_path
 

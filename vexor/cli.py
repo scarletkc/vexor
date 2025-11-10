@@ -363,17 +363,28 @@ def _render_results(results: Sequence["SearchResult"], base: Path, backend: str 
     table.add_column(Messages.TABLE_HEADER_INDEX, justify="right")
     table.add_column(Messages.TABLE_HEADER_SIMILARITY, justify="right")
     table.add_column(Messages.TABLE_HEADER_PATH, overflow="fold")
+    table.add_column(Messages.TABLE_HEADER_PREVIEW, overflow="fold")
     for idx, result in enumerate(results, start=1):
         table.add_row(
             str(idx),
             f"{result.score:.3f}",
             format_path(result.path, base),
+            _format_preview(result.preview),
         )
     console.print(table)
 
 
 def _styled(text: str, style: str) -> str:
     return f"[{style}]{text}[/{style}]"
+
+
+def _format_preview(text: str | None, limit: int = 80) -> str:
+    if not text:
+        return "-"
+    snippet = text.strip()
+    if len(snippet) <= limit:
+        return snippet
+    return snippet[: limit - 1].rstrip() + "…"
 
 
 def run(argv: list[str] | None = None) -> None:

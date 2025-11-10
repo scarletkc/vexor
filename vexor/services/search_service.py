@@ -51,6 +51,10 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         cached_files,
         recursive=request.recursive,
     )
+    preview_lookup = {
+        path: entry.get("preview")
+        for path, entry in zip(paths, cached_files)
+    }
 
     if not len(paths):
         return SearchResponse(
@@ -71,7 +75,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         file_vectors,
     )[0]
     scored = [
-        SearchResult(path=path, score=float(score))
+        SearchResult(path=path, score=float(score), preview=preview_lookup.get(path))
         for path, score in zip(paths, similarities)
     ]
     scored.sort(key=lambda item: item.score, reverse=True)

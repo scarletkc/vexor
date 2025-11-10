@@ -14,7 +14,7 @@
 
 ---
 
-Vexor is a vector-powered CLI that searches file names semantically. It uses Google GenAI's `gemini-embedding-001` model to embed file names and queries, then ranks matches with cosine similarity.
+Vexor is a vector-powered CLI that searches files semantically. It uses Google GenAI's `gemini-embedding-001` model to embed files and queries, then shows matches with cosine similarity.
 
 ## Install
 Download from [releases](https://github.com/scarletkc/vexor/releases) without python, or with:
@@ -48,9 +48,10 @@ Configuration is stored in `~/.vexor/config.json`.
    ```
    Vexor semantic file search results
    ──────────────────────────────────
-   1   0.923   ./src/config_loader.py
-   2   0.871   ./src/utils/config_parse.py
-   3   0.809   ./tests/test_config_loader.py
+   #   Similarity   File path                      Preview
+   1   0.923        ./src/config_loader.py        config loader entrypoint
+   2   0.871        ./src/utils/config_parse.py   parse config helpers
+   3   0.809        ./tests/test_config_loader.py tests for config loader
    ```
 
 Tips:
@@ -58,13 +59,13 @@ Tips:
 - Toggle `--no-recursive` (or `-n`) on both `index` and `search` when you only care about the current directory; recursive and non-recursive caches are stored separately.
 - Hidden files are included only if both `index` and `search` use `--include-hidden`.
 - Re-running `vexor index` only re-embeds files whose names changed (or were added/removed); if more than half the files differ, it automatically falls back to a full rebuild for consistency.
-- Specify the indexing mode with `--mode`; currently `name` (based on file names) is available, and each mode maintains its own cache.
+- Specify the indexing mode with `--mode`; currently `name` (file names only) and `head` (first chunk of supported text files) are available, each with its own cache.
 
 ## Commands
 | Command | Description |
 | ------- | ----------- |
-| `vexor index --path PATH --mode MODE [--include-hidden] [--no-recursive] [--clear]` | Scans `PATH` (recursively by default), embeds content according to `MODE`, and writes a cache under `~/.vexor`. |
-| `vexor search QUERY --path PATH --mode MODE [--top K] [--include-hidden] [--no-recursive]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden settings) and ranks matches for `QUERY`. |
+| `vexor index --path PATH --mode MODE [--include-hidden] [--no-recursive] [--clear]` | Scans `PATH` (recursively by default), embeds content according to `MODE` (`name` or `head`), and writes a cache under `~/.vexor`. |
+| `vexor search QUERY --path PATH --mode MODE [--top K] [--include-hidden] [--no-recursive]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden settings), shows matches for `QUERY`. |
 | `vexor doctor` | Checks whether the `vexor` command is available on the current `PATH`. |
 | `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |
 | `vexor config --set-api-key/--clear-api-key` | Manage the stored Gemini API key. |
