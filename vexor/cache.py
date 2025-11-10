@@ -14,13 +14,13 @@ import numpy as np
 from .utils import collect_files
 
 CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 DB_FILENAME = "index.db"
 
 
-def _cache_key(root: Path, include_hidden: bool) -> str:
+def _cache_key(root: Path, include_hidden: bool, recursive: bool) -> str:
     digest = hashlib.sha1(
-        f"{root.resolve()}|hidden={include_hidden}".encode("utf-8")
+        f"{root.resolve()}|hidden={include_hidden}|recursive={recursive}".encode("utf-8")
     ).hexdigest()
     return digest
 
@@ -52,6 +52,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             root_path TEXT NOT NULL,
             model TEXT NOT NULL,
             include_hidden INTEGER NOT NULL,
+            recursive INTEGER NOT NULL DEFAULT 1,
             dimension INTEGER NOT NULL,
             version INTEGER NOT NULL,
             generated_at TEXT NOT NULL,
@@ -78,6 +79,13 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             ON indexed_file(index_id, position);
         """
     )
+    try:
+        conn.execute(
+            "ALTER TABLE index_metadata ADD COLUMN recursive INTEGER NOT NULL DEFAULT 1"
+        )
+    except sqlite3.OperationalError:
+        # Column already exists; ignore error.
+        pass
 
 
 def store_index(
@@ -85,6 +93,7 @@ def store_index(
     root: Path,
     model: str,
     include_hidden: bool,
+    recursive: bool,
     files: Sequence[Path],
     embeddings: np.ndarray,
 ) -> Path:
@@ -92,10 +101,11 @@ def store_index(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden)
+        key = _cache_key(root, include_hidden, recursive)
         generated_at = datetime.now(timezone.utc).isoformat()
         dimension = int(embeddings.shape[1] if embeddings.size else 0)
         include_flag = 1 if include_hidden else 0
+        recursive_flag = 1 if recursive else 0
 
         with conn:
             conn.execute(
@@ -109,12 +119,22 @@ def store_index(
                     root_path,
                     model,
                     include_hidden,
+                    recursive,
                     dimension,
                     version,
                     generated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (key, str(root), model, include_flag, dimension, CACHE_VERSION, generated_at),
+                (
+                    key,
+                    str(root),
+                    model,
+                    include_flag,
+                    recursive_flag,
+                    dimension,
+                    CACHE_VERSION,
+                    generated_at,
+                ),
             )
             index_id = cursor.lastrowid
 
@@ -155,7 +175,7 @@ def store_index(
         conn.close()
 
 
-def load_index(root: Path, model: str, include_hidden: bool) -> dict:
+def load_index(root: Path, model: str, include_hidden: bool, recursive: bool) -> dict:
     db_path = cache_file(root, model, include_hidden)
     if not db_path.exists():
         raise FileNotFoundError(db_path)
@@ -163,15 +183,16 @@ def load_index(root: Path, model: str, include_hidden: bool) -> dict:
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden)
+        key = _cache_key(root, include_hidden, recursive)
         include_flag = 1 if include_hidden else 0
+        recursive_flag = 1 if recursive else 0
         meta = conn.execute(
             """
-            SELECT id, root_path, model, include_hidden, dimension, version, generated_at
+            SELECT id, root_path, model, include_hidden, recursive, dimension, version, generated_at
             FROM index_metadata
-            WHERE cache_key = ? AND model = ? AND include_hidden = ?
+            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND recursive = ?
             """,
-            (key, model, include_flag),
+            (key, model, include_flag, recursive_flag),
         ).fetchone()
         if meta is None:
             raise FileNotFoundError(db_path)
@@ -206,6 +227,7 @@ def load_index(root: Path, model: str, include_hidden: bool) -> dict:
             "root": meta["root_path"],
             "model": meta["model"],
             "include_hidden": bool(meta["include_hidden"]),
+            "recursive": bool(meta["recursive"]),
             "dimension": meta["dimension"],
             "files": serialized_files,
         }
@@ -213,15 +235,20 @@ def load_index(root: Path, model: str, include_hidden: bool) -> dict:
         conn.close()
 
 
-def load_index_vectors(root: Path, model: str, include_hidden: bool):
-    data = load_index(root, model, include_hidden)
+def load_index_vectors(root: Path, model: str, include_hidden: bool, recursive: bool):
+    data = load_index(root, model, include_hidden, recursive)
     files = data.get("files", [])
     paths = [root / Path(entry["path"]) for entry in files]
     embeddings = np.asarray([entry["embedding"] for entry in files], dtype=np.float32)
     return paths, embeddings, data
 
 
-def clear_index(root: Path, include_hidden: bool, model: str | None = None) -> int:
+def clear_index(
+    root: Path,
+    include_hidden: bool,
+    recursive: bool,
+    model: str | None = None,
+) -> int:
     """Remove cached index entries for *root* (optionally filtered by *model*)."""
     db_path = cache_file(root, model or "_", include_hidden)
     if not db_path.exists():
@@ -230,7 +257,7 @@ def clear_index(root: Path, include_hidden: bool, model: str | None = None) -> i
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden)
+        key = _cache_key(root, include_hidden, recursive)
         if model is None:
             query = "DELETE FROM index_metadata WHERE cache_key = ?"
             params = (key,)
@@ -248,11 +275,17 @@ def compare_snapshot(
     root: Path,
     include_hidden: bool,
     cached_files: Sequence[dict],
+    *,
+    recursive: bool,
     current_files: Sequence[Path] | None = None,
 ) -> bool:
     """Return True if the current filesystem matches the cached snapshot."""
     if current_files is None:
-        current_files = collect_files(root, include_hidden=include_hidden)
+        current_files = collect_files(
+            root,
+            include_hidden=include_hidden,
+            recursive=recursive,
+        )
     if len(current_files) != len(cached_files):
         return False
     cached_map = {

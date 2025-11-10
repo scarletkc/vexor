@@ -14,6 +14,7 @@ class SearchRequest:
     query: str
     directory: Path
     include_hidden: bool
+    recursive: bool
     top_k: int
     model_name: str
     batch_size: int
@@ -39,12 +40,14 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         request.directory,
         request.model_name,
         request.include_hidden,
+        request.recursive,
     )
     cached_files = metadata.get("files", [])
     stale = bool(cached_files) and not is_cache_current(
         request.directory,
         request.include_hidden,
         cached_files,
+        recursive=request.recursive,
     )
 
     if not len(paths):

@@ -55,13 +55,14 @@ Configuration is stored in `~/.vexor/config.json`.
 
 Tips:
 - Keep one index per project root; subdirectories need separate indexes only if you explicitly run `vexor index` on them.
+- Toggle `--no-recursive` (or `-n`) on both `index` and `search` when you only care about the current directory; recursive and non-recursive caches are stored separately, add `--no-recursive` (or `-n`) to limit indexing to the top-level directory.
 - Hidden files are included only if both `index` and `search` use `--include-hidden`.
 
 ## Commands
 | Command | Description |
 | ------- | ----------- |
-| `vexor index --path PATH [--include-hidden] [--clear]` | Recursively scans `PATH`, embeds file names, and writes a cache under `~/.vexor`. |
-| `vexor search QUERY --path PATH [--top K] [--include-hidden]` | Loads the cached embeddings for `PATH` and ranks matches for `QUERY`. |
+| `vexor index --path PATH [--include-hidden] [--no-recursive] [--clear]` | Scans `PATH` (recursively by default), embeds file names, and writes a cache under `~/.vexor`. |
+| `vexor search QUERY --path PATH [--top K] [--include-hidden] [--no-recursive]` | Loads the cached embeddings for `PATH` (matching the chosen recursion and hidden settings) and ranks matches for `QUERY`. |
 | `vexor doctor` | Checks whether the `vexor` command is available on the current `PATH`. |
 | `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |
 | `vexor config --set-api-key/--clear-api-key` | Manage the stored Gemini API key. |

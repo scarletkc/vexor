@@ -78,6 +78,12 @@ def search(
         "--include-hidden",
         help=Messages.HELP_INCLUDE_HIDDEN,
     ),
+    no_recursive: bool = typer.Option(
+        False,
+        "--no-recursive",
+        "-n",
+        help=Messages.HELP_RECURSIVE,
+    ),
 ) -> None:
     """Run the semantic search using a cached index."""
     config = load_config()
@@ -94,11 +100,13 @@ def search(
         raise typer.BadParameter(str(exc), param_name="top") from exc
 
     directory = resolve_directory(path)
+    recursive = not no_recursive
     console.print(_styled(Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO))
     request = SearchRequest(
         query=clean_query,
         directory=directory,
         include_hidden=include_hidden,
+        recursive=recursive,
         top_k=top,
         model_name=model_name,
         batch_size=batch_size,
@@ -141,6 +149,12 @@ def index(
         "--include-hidden",
         help=Messages.HELP_INDEX_INCLUDE,
     ),
+    no_recursive: bool = typer.Option(
+        False,
+        "--no-recursive",
+        "-n",
+        help=Messages.HELP_RECURSIVE,
+    ),
     clear: bool = typer.Option(
         False,
         "--clear",
@@ -153,8 +167,13 @@ def index(
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
 
     directory = resolve_directory(path)
+    recursive = not no_recursive
     if clear:
-        removed = clear_index_entries(directory, include_hidden=include_hidden)
+        removed = clear_index_entries(
+            directory,
+            include_hidden=include_hidden,
+            recursive=recursive,
+        )
         if removed:
             plural = "ies" if removed > 1 else "y"
             console.print(
@@ -180,6 +199,7 @@ def index(
     result = build_index(
         directory,
         include_hidden=include_hidden,
+        recursive=recursive,
         model_name=model_name,
         batch_size=batch_size,
     )

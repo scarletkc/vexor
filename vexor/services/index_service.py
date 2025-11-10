@@ -26,6 +26,7 @@ def build_index(
     directory: Path,
     *,
     include_hidden: bool,
+    recursive: bool,
     model_name: str,
     batch_size: int,
 ) -> IndexResult:
@@ -35,17 +36,18 @@ def build_index(
     from ..utils import collect_files  # local import
     from ..cache import store_index  # local import
 
-    files = collect_files(directory, include_hidden=include_hidden)
+    files = collect_files(directory, include_hidden=include_hidden, recursive=recursive)
     if not files:
         return IndexResult(status=IndexStatus.EMPTY)
 
-    existing_meta = load_index_metadata_safe(directory, model_name, include_hidden)
+    existing_meta = load_index_metadata_safe(directory, model_name, include_hidden, recursive)
     if existing_meta:
         cached_files = existing_meta.get("files", [])
         if cached_files and is_cache_current(
             directory,
             include_hidden,
             cached_files,
+            recursive=recursive,
             current_files=files,
         ):
             return IndexResult(status=IndexStatus.UP_TO_DATE)
@@ -58,6 +60,7 @@ def build_index(
         root=directory,
         model=model_name,
         include_hidden=include_hidden,
+        recursive=recursive,
         files=files,
         embeddings=embeddings,
     )
@@ -72,13 +75,19 @@ def clear_index_entries(
     directory: Path,
     *,
     include_hidden: bool,
+    recursive: bool,
     model: str | None = None,
 ) -> int:
     """Remove cached entries for *directory* and return number removed."""
 
     from ..cache import clear_index as clear_index_cache  # local import
 
-    return clear_index_cache(root=directory, include_hidden=include_hidden, model=model)
+    return clear_index_cache(
+        root=directory,
+        include_hidden=include_hidden,
+        recursive=recursive,
+        model=model,
+    )
 
 
 def _label_for_path(path: Path) -> str:

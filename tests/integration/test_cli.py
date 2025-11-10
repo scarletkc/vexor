@@ -22,8 +22,10 @@ def test_search_outputs_table(tmp_path, monkeypatch):
     runner = CliRunner()
     sample_file = tmp_path / "alpha.txt"
     sample_file.write_text("data")
+    captured = {}
 
     def fake_perform_search(request):
+        captured["recursive"] = request.recursive
         return SearchResponse(
             base_path=tmp_path,
             backend="fake-backend",
@@ -49,6 +51,40 @@ def test_search_outputs_table(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "alpha.txt" in result.stdout
     assert "Similarity" in result.stdout
+    assert captured["recursive"] is True
+
+
+def test_search_respects_no_recursive_flag(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.txt"
+    sample_file.write_text("data")
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["recursive"] = request.recursive
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake",
+            results=[SearchResult(path=sample_file, score=0.5)],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "alpha",
+            "--path",
+            str(tmp_path),
+            "--no-recursive",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["recursive"] is False
 
 
 def test_search_missing_index_prompts_user(tmp_path, monkeypatch):
@@ -85,8 +121,10 @@ def test_index_writes_cache(tmp_path, monkeypatch):
     sample_file.write_text("data")
 
     cache_file = tmp_path / "cache.json"
+    captured = {}
 
     def fake_build_index(*args, **kwargs):
+        captured["recursive"] = kwargs.get("recursive")
         return IndexResult(status=IndexStatus.STORED, cache_path=cache_file, files_indexed=1)
 
     monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
@@ -95,14 +133,17 @@ def test_index_writes_cache(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert "Index saved" in result.stdout
+    assert captured["recursive"] is True
 
 
 def test_index_skips_when_up_to_date(tmp_path, monkeypatch):
     runner = CliRunner()
     sample_file = tmp_path / "alpha.txt"
     sample_file.write_text("data")
+    captured = {}
 
     def fake_build_index(*args, **kwargs):
+        captured["recursive"] = kwargs.get("recursive")
         return IndexResult(status=IndexStatus.UP_TO_DATE)
 
     monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
@@ -111,15 +152,43 @@ def test_index_skips_when_up_to_date(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert "matches the current directory" in result.stdout
+    assert captured["recursive"] is True
+
+
+def test_index_no_recursive_flag(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.txt"
+    sample_file.write_text("data")
+    captured = {}
+
+    def fake_build_index(*args, **kwargs):
+        captured["recursive"] = kwargs.get("recursive")
+        return IndexResult(status=IndexStatus.STORED, cache_path=None, files_indexed=1)
+
+    monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
+
+    result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(tmp_path),
+            "--no-recursive",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["recursive"] is False
 
 
 def test_index_clear_option(tmp_path, monkeypatch):
     runner = CliRunner()
     called = {}
 
-    def fake_clear(root, include_hidden, model=None):
+    def fake_clear(root, include_hidden, recursive, model=None):
         called["root"] = root
         called["include_hidden"] = include_hidden
+        called["recursive"] = recursive
         return 1
 
     monkeypatch.setattr("vexor.cli.clear_index_entries", fake_clear)
@@ -130,6 +199,32 @@ def test_index_clear_option(tmp_path, monkeypatch):
     assert "Removed" in result.stdout
     assert called["root"] == tmp_path
     assert called["include_hidden"] is True
+    assert called["recursive"] is True
+
+
+def test_index_clear_honors_no_recursive(tmp_path, monkeypatch):
+    runner = CliRunner()
+    called = {}
+
+    def fake_clear(root, include_hidden, recursive, model=None):
+        called["recursive"] = recursive
+        return 0
+
+    monkeypatch.setattr("vexor.cli.clear_index_entries", fake_clear)
+
+    result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(tmp_path),
+            "--clear",
+            "--no-recursive",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert called["recursive"] is False
 
 
 def test_search_warns_when_stale(tmp_path, monkeypatch):

@@ -17,17 +17,32 @@ def resolve_directory(path: Path | str) -> Path:
     return dir_path
 
 
-def collect_files(root: Path | str, include_hidden: bool = False) -> List[Path]:
-    """Recursively collect files under *root*, optionally keeping hidden entries."""
+def collect_files(
+    root: Path | str,
+    include_hidden: bool = False,
+    recursive: bool = True,
+) -> List[Path]:
+    """Collect files under *root*; optionally keep hidden entries and recurse."""
+
     directory = resolve_directory(root)
     files: List[Path] = []
-    for dirpath, dirnames, filenames in os.walk(directory):
-        if not include_hidden:
-            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-            filenames = [f for f in filenames if not f.startswith(".")]
-        current_dir = Path(dirpath)
-        for filename in filenames:
-            files.append(current_dir / filename)
+
+    if recursive:
+        for dirpath, dirnames, filenames in os.walk(directory):
+            if not include_hidden:
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                filenames = [f for f in filenames if not f.startswith(".")]
+            current_dir = Path(dirpath)
+            for filename in filenames:
+                files.append(current_dir / filename)
+    else:
+        for entry in directory.iterdir():
+            if entry.is_dir():
+                continue
+            if not include_hidden and entry.name.startswith("."):
+                continue
+            files.append(entry)
+
     files.sort()
     return files
 

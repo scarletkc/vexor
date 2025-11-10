@@ -29,6 +29,19 @@ def test_collect_files_includes_hidden(tmp_path):
     assert set(files) == {visible, hidden_file}
 
 
+def test_collect_files_non_recursive(tmp_path):
+    top = tmp_path / "top.txt"
+    top.write_text("data")
+    nested_dir = tmp_path / "nested"
+    nested_dir.mkdir()
+    nested_file = nested_dir / "child.txt"
+    nested_file.write_text("child")
+
+    files = collect_files(tmp_path, recursive=False)
+
+    assert files == [top]
+
+
 def test_resolve_directory_invalid(tmp_path):
     with pytest.raises(FileNotFoundError):
         resolve_directory(tmp_path / "missing")

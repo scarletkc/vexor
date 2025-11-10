@@ -10,6 +10,7 @@ def is_cache_current(
     include_hidden: bool,
     cached_files: Sequence[dict],
     *,
+    recursive: bool,
     current_files=None,
 ) -> bool:
     """Return True if cached metadata matches the current directory snapshot."""
@@ -22,16 +23,17 @@ def is_cache_current(
         root,
         include_hidden,
         cached_files,
+        recursive=recursive,
         current_files=current_files,
     )
 
 
-def load_index_metadata_safe(root: Path, model: str, include_hidden: bool):
+def load_index_metadata_safe(root: Path, model: str, include_hidden: bool, recursive: bool):
     """Load index metadata when present, returning None if missing."""
 
     from ..cache import load_index  # local import avoids eager heavy deps
 
     try:
-        return load_index(root, model, include_hidden)
+        return load_index(root, model, include_hidden, recursive)
     except FileNotFoundError:
         return None

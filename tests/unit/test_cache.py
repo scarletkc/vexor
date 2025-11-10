@@ -31,6 +31,7 @@ def test_store_and_load_index(tmp_path, monkeypatch):
         root=root,
         model="test-model",
         include_hidden=False,
+        recursive=True,
         files=files,
         embeddings=embeddings,
     )
@@ -41,6 +42,7 @@ def test_store_and_load_index(tmp_path, monkeypatch):
         root=root,
         model="test-model",
         include_hidden=False,
+        recursive=True,
     )
 
     assert [p.name for p in loaded_paths] == ["a.txt", "b.txt", "c.txt"]
@@ -52,7 +54,7 @@ def test_cache_file_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
     root = tmp_path / "missing"
     with pytest.raises(FileNotFoundError):
-        cache.load_index(root, "model", False)
+        cache.load_index(root, "model", False, True)
 
 
 def test_compare_snapshot_matches(tmp_path, monkeypatch):
@@ -69,7 +71,7 @@ def test_compare_snapshot_matches(tmp_path, monkeypatch):
         {"path": "b.txt", "mtime": file_b.stat().st_mtime, "size": file_b.stat().st_size},
     ]
 
-    assert cache.compare_snapshot(root, False, cached) is True
+    assert cache.compare_snapshot(root, False, cached, recursive=True) is True
 
 
 def test_compare_snapshot_detects_changes(tmp_path, monkeypatch):
@@ -81,15 +83,15 @@ def test_compare_snapshot_detects_changes(tmp_path, monkeypatch):
 
     cached = [{"path": "a.txt", "mtime": file_a.stat().st_mtime, "size": file_a.stat().st_size}]
 
-    assert cache.compare_snapshot(root, False, cached) is True
+    assert cache.compare_snapshot(root, False, cached, recursive=True) is True
 
     # modify file
     file_a.write_text("new data")
-    assert cache.compare_snapshot(root, False, cached) is False
+    assert cache.compare_snapshot(root, False, cached, recursive=True) is False
 
     # missing file
     file_a.unlink()
-    assert cache.compare_snapshot(root, False, cached) is False
+    assert cache.compare_snapshot(root, False, cached, recursive=True) is False
 
 
 def test_clear_index_removes_cached_entries(tmp_path, monkeypatch):
@@ -104,16 +106,76 @@ def test_clear_index_removes_cached_entries(tmp_path, monkeypatch):
 
     embeddings = np.eye(2, dtype=np.float32)
 
-    cache.store_index(root=root, model="model-a", include_hidden=False, files=files, embeddings=embeddings)
-    cache.store_index(root=root, model="model-b", include_hidden=False, files=files, embeddings=embeddings)
+    cache.store_index(
+        root=root,
+        model="model-a",
+        include_hidden=False,
+        recursive=True,
+        files=files,
+        embeddings=embeddings,
+    )
+    cache.store_index(
+        root=root,
+        model="model-b",
+        include_hidden=False,
+        recursive=True,
+        files=files,
+        embeddings=embeddings,
+    )
 
-    removed = cache.clear_index(root=root, include_hidden=False)
+    removed = cache.clear_index(root=root, include_hidden=False, recursive=True)
     assert removed == 2
 
     with pytest.raises(FileNotFoundError):
-        cache.load_index(root=root, model="model-a", include_hidden=False)
+        cache.load_index(root=root, model="model-a", include_hidden=False, recursive=True)
 
     # unrelated include_hidden flag should remain untouched
-    cache.store_index(root=root, model="model-c", include_hidden=True, files=files, embeddings=embeddings)
-    removed_hidden = cache.clear_index(root=root, include_hidden=True, model="model-c")
+    cache.store_index(
+        root=root,
+        model="model-c",
+        include_hidden=True,
+        recursive=True,
+        files=files,
+        embeddings=embeddings,
+    )
+    removed_hidden = cache.clear_index(
+        root=root,
+        include_hidden=True,
+        recursive=True,
+        model="model-c",
+    )
     assert removed_hidden == 1
+
+
+def test_recursive_and_non_recursive_caches_are_separate(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
+    root = tmp_path / "project"
+    root.mkdir()
+    file_path = root / "a.txt"
+    file_path.write_text("data")
+
+    embeddings = np.array([[1.0]], dtype=np.float32)
+
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        recursive=True,
+        files=[file_path],
+        embeddings=embeddings,
+    )
+
+    with pytest.raises(FileNotFoundError):
+        cache.load_index(root=root, model="model", include_hidden=False, recursive=False)
+
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        recursive=False,
+        files=[file_path],
+        embeddings=embeddings,
+    )
+
+    data = cache.load_index(root=root, model="model", include_hidden=False, recursive=False)
+    assert data["recursive"] is False
