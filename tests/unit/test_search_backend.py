@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from vexor import search
+from vexor.providers import gemini as gemini_backend
 
 
 @pytest.fixture(autouse=True)
@@ -13,8 +14,8 @@ def patch_config(monkeypatch):
         model = search.DEFAULT_MODEL
         batch_size = 0
 
-    monkeypatch.setattr(search, "load_config", lambda: DummyConfig())
-    monkeypatch.delenv(search.ENV_API_KEY, raising=False)
+    monkeypatch.setattr(gemini_backend, "load_config", lambda: DummyConfig())
+    monkeypatch.delenv(gemini_backend.ENV_API_KEY, raising=False)
 
 
 class FakeModels:
@@ -34,7 +35,7 @@ class FakeModels:
 def _install_fake_client(monkeypatch, batches):
     models = FakeModels(batches)
     monkeypatch.setattr(
-        search.genai,
+        gemini_backend.genai,
         "Client",
         lambda api_key: SimpleNamespace(models=models),
     )
@@ -49,7 +50,7 @@ def test_gemini_backend_chunks_requests(monkeypatch):
             [[0.5, 0.5]],
         ],
     )
-    backend = search.GeminiEmbeddingBackend(model_name="demo", chunk_size=2)
+    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=2)
 
     vectors = backend.embed(["a", "bb", "ccc"])
 
@@ -60,7 +61,7 @@ def test_gemini_backend_chunks_requests(monkeypatch):
 
 def test_gemini_backend_empty(monkeypatch):
     _install_fake_client(monkeypatch, batches=[])
-    backend = search.GeminiEmbeddingBackend(model_name="demo", chunk_size=2)
+    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=2)
 
     result = backend.embed([])
 
@@ -69,7 +70,7 @@ def test_gemini_backend_empty(monkeypatch):
 
 def test_gemini_backend_no_embeddings(monkeypatch):
     models = _install_fake_client(monkeypatch, batches=[[]])
-    backend = search.GeminiEmbeddingBackend(model_name="demo", chunk_size=None)
+    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=None)
 
     with pytest.raises(RuntimeError) as exc:
         backend.embed(["file.txt"])
@@ -82,17 +83,17 @@ def test_format_genai_error_messages():
         def __init__(self, message):
             self.message = message
 
-    msg = search._format_genai_error(FakeError("API key invalid"))
+    msg = gemini_backend._format_genai_error(FakeError("API key invalid"))
     assert "invalid" in msg
 
-    general = search._format_genai_error(FakeError("quota exceeded"))
+    general = gemini_backend._format_genai_error(FakeError("quota exceeded"))
     assert "quota" in general
 
 
 def test_chunk_helper():
     items = ["a", "b", "c", "d"]
-    assert list(search._chunk(items, None)) == [items]
-    assert list(search._chunk(items, 2)) == [["a", "b"], ["c", "d"]]
+    assert list(gemini_backend._chunk(items, None)) == [items]
+    assert list(gemini_backend._chunk(items, 2)) == [["a", "b"], ["c", "d"]]
 
 
 def test_vexor_searcher_embed_texts(monkeypatch):
