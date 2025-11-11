@@ -12,8 +12,14 @@ from .services.content_extract_service import (
     extract_full_chunks,
     extract_head,
 )
+from .services.keyword_service import (
+    BRIEF_CHAR_LIMIT,
+    BRIEF_KEYWORD_LIMIT,
+    summarize_keywords,
+)
 
 PREVIEW_CHAR_LIMIT = 160
+BRIEF_PREVIEW_LIMIT = 10
 
 
 @dataclass(slots=True)
@@ -111,9 +117,37 @@ class FullStrategy(IndexModeStrategy):
         return payloads
 
 
+@dataclass(frozen=True, slots=True)
+class BriefStrategy(IndexModeStrategy):
+    name: str = "brief"
+    fallback: NameStrategy = NameStrategy()
+
+    def payloads_for_files(self, files: Sequence[Path]) -> list[ModePayload]:
+        return [self.payload_for_file(file) for file in files]
+
+    def payload_for_file(self, file: Path) -> ModePayload:
+        keywords = summarize_keywords(
+            file,
+            char_limit=BRIEF_CHAR_LIMIT,
+            limit=BRIEF_KEYWORD_LIMIT,
+        )
+        if keywords:
+            preview_tokens = keywords[:BRIEF_PREVIEW_LIMIT]
+            preview = ", ".join(preview_tokens)
+            label = f"{file.name} :: {' '.join(preview_tokens)}"
+            return ModePayload(
+                file=file,
+                label=label,
+                preview=preview,
+                chunk_index=0,
+            )
+        return self.fallback.payload_for_file(file)
+
+
 _STRATEGIES: Dict[str, IndexModeStrategy] = {
     "name": NameStrategy(),
     "head": HeadStrategy(),
+    "brief": BriefStrategy(),
     "full": FullStrategy(),
 }
 

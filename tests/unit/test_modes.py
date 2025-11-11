@@ -2,7 +2,7 @@ from pathlib import Path
 
 from docx import Document
 
-from vexor.modes import FullStrategy, HeadStrategy, ModePayload, NameStrategy
+from vexor.modes import BriefStrategy, FullStrategy, HeadStrategy, ModePayload, NameStrategy
 
 
 def test_name_strategy_payload():
@@ -68,3 +68,22 @@ def test_full_strategy_supports_docx(tmp_path):
     assert payloads[0].label.startswith("sample.docx")
     assert "[Chunk" not in payloads[0].preview
     assert "\n" not in payloads[0].preview
+
+
+def test_brief_strategy_extracts_keywords(tmp_path):
+    file_path = tmp_path / "req.md"
+    file_path.write_text(
+        """# Login requirement\nUsers must login with MFA. The login flow should support backup codes."""
+    )
+    strategy = BriefStrategy()
+    payload = strategy.payload_for_file(file_path)
+    assert "login" in (payload.preview or "").lower()
+
+
+def test_brief_strategy_handles_chinese(tmp_path):
+    file_path = tmp_path / "需求.md"
+    file_path.write_text("用户需要支持离线模式，离线同步，确保数据安全。")
+    strategy = BriefStrategy()
+    payload = strategy.payload_for_file(file_path)
+    assert payload.preview is not None
+    assert "离线" in payload.preview

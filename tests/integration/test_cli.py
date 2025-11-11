@@ -727,3 +727,52 @@ def test_full_mode_chunked_previews(tmp_path, monkeypatch):
     assert search_result.exit_code == 0
     assert "paragraph" in search_result.stdout
     assert "[Chunk" not in search_result.stdout
+
+
+def test_brief_mode_keywords(tmp_path, monkeypatch):
+    class DummySearcher:
+        def __init__(self, *args, **kwargs):
+            self.device = "dummy"
+
+        def embed_texts(self, texts):
+            if not texts:
+                return np.zeros((0, 3), dtype=np.float32)
+            return np.ones((len(texts), 3), dtype=np.float32)
+
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr("vexor.cache.CACHE_DIR", cache_dir)
+    runner = CliRunner()
+    project = tmp_path / "proj-brief"
+    project.mkdir()
+    file_path = project / "prd.md"
+    file_path.write_text(
+        """# Messaging
+The chat module must support offline messaging. Offline send, offline sync, and offline drafts are required."""
+    )
+
+    index_result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(project),
+            "--mode",
+            "brief",
+        ],
+    )
+    assert index_result.exit_code == 0
+
+    search_result = runner.invoke(
+        app,
+        [
+            "search",
+            "offline",
+            "--path",
+            str(project),
+            "--mode",
+            "brief",
+        ],
+    )
+    assert search_result.exit_code == 0
+    assert "offline" in search_result.stdout

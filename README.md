@@ -83,6 +83,7 @@ Tips:
 - Specify the indexing mode with `--mode`:
   - `name`: embed only the file name (fastest, zero content reads).
   - `head`: grab the first snippet of supported text/code/PDF/DOCX/PPTX files for lightweight semantic context.
+  - `brief`: summarize PRDs/high-frequency keywords (English/Chinese) in requirements documents enable quick location of key requirements.
   - `full`: chunk the entire contents of supported text/code/PDF/DOCX/PPTX files into 1,000-character windows (100-character overlap) so long documents stay searchable end-to-end.
 - Switch embedding providers (Gemini by default, OpenAI supported) via `vexor config --set-provider PROVIDER` and pick a matching embedding model.
 
