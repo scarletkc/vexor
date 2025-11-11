@@ -75,7 +75,7 @@ vexor config --clear-index-all
    3   0.809        ./tests/test_config_loader.py tests for config loader
    ```
 
-Tips:
+**Tips:**
 - Keep one index per project root; subdirectories need separate indexes only if you explicitly run `vexor index` on them.
 - Toggle `--no-recursive` (or `-n`) on both `index` and `search` when you only care about the current directory; recursive and non-recursive caches are stored separately.
 - Hidden files are included only if both `index` and `search` use `--include-hidden` (or `-i`).
