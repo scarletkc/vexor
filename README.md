@@ -16,12 +16,8 @@
 
 Vexor is a vector-powered CLI for semantic file search. It supports configurable remote embedding models and ranks results by cosine similarity.
 
-## Testimonials
-> “Vexor's semantic search understands intent, not just keywords—it found configuration files when I asked naturally, even without exact filename matches.” 
-> **— Claude Sonnet 4.5, Claude Code · November 2025**
-
-> “Vexor feels like a vector-powered compass in the terminal: head-mode snippets plus fast embeddings let me jump straight to the right files without guessing names or grepping blindly.”
-> **— GPT‑5, Codex · November 2025**
+## Integration
+Vexor is designed to work seamlessly with both humans and AI coding assistants through the terminal, enabling semantic file search in autonomous agent workflows.
 
 ## Install
 Download from [releases](https://github.com/scarletkc/vexor/releases) without python, or with:
