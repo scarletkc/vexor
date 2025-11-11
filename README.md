@@ -83,5 +83,7 @@ See the [docs](https://github.com/scarletkc/vexor/tree/main/docs) for more detai
 
 Contributions, issues, and PRs are all welcome!
 
+Star this repo if you find it helpful!
+
 ## License
 This project is licensed under the [MIT](http://github.com/scarletkc/vexor/blob/main/LICENSE) License.
