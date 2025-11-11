@@ -78,9 +78,9 @@ vexor config --clear-index-all
 Tips:
 - Keep one index per project root; subdirectories need separate indexes only if you explicitly run `vexor index` on them.
 - Toggle `--no-recursive` (or `-n`) on both `index` and `search` when you only care about the current directory; recursive and non-recursive caches are stored separately.
-- Hidden files are included only if both `index` and `search` use `--include-hidden`.
+- Hidden files are included only if both `index` and `search` use `--include-hidden` (or `-i`).
 - Use `--ext`/`-e` (repeatable) on both `index` and `search` to limit indexing and search results to specific extensions, e.g. `--ext .py --ext .md`.
-- Re-running `vexor index` only re-embeds files whose names changed (or were added/removed); if more than half the files differ, it automatically falls back to a full rebuild for consistency.
+- Re-running `vexor index` only re-embeds files whose names/contents changed (or were added/removed); if more than half the files differ, it automatically falls back to a full rebuild for consistency.
 - Specify the indexing mode with `--mode`:
   - `name`: embed only the file name (fastest, zero content reads).
   - `head`: grab the first snippet of supported text/code/PDF/DOCX/PPTX files for lightweight semantic context.
