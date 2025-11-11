@@ -39,6 +39,7 @@ def build_index(
     provider: str,
     base_url: str | None,
     api_key: str | None,
+    extensions: Sequence[str] | None = None,
 ) -> IndexResult:
     """Create or refresh the cached index for *directory*."""
 
@@ -46,11 +47,23 @@ def build_index(
     from ..utils import collect_files  # local import
     from ..cache import apply_index_updates, store_index  # local import
 
-    files = collect_files(directory, include_hidden=include_hidden, recursive=recursive)
+    files = collect_files(
+        directory,
+        include_hidden=include_hidden,
+        recursive=recursive,
+        extensions=extensions,
+    )
     if not files:
         return IndexResult(status=IndexStatus.EMPTY)
 
-    existing_meta = load_index_metadata_safe(directory, model_name, include_hidden, mode, recursive)
+    existing_meta = load_index_metadata_safe(
+        directory,
+        model_name,
+        include_hidden,
+        mode,
+        recursive,
+        extensions=extensions,
+    )
     cached_files = existing_meta.get("files", []) if existing_meta else []
 
     strategy = get_strategy(mode)
@@ -81,6 +94,7 @@ def build_index(
                 diff=diff,
                 searcher=searcher,
                 apply_fn=apply_index_updates,
+                extensions=extensions,
             )
             return IndexResult(
                 status=IndexStatus.STORED,
@@ -99,6 +113,7 @@ def build_index(
         mode=mode,
         recursive=recursive,
         entries=entries,
+        extensions=extensions,
     )
     return IndexResult(
         status=IndexStatus.STORED,
@@ -114,6 +129,7 @@ def clear_index_entries(
     mode: str,
     recursive: bool,
     model: str | None = None,
+    extensions: Sequence[str] | None = None,
 ) -> int:
     """Remove cached entries for *directory* and return number removed."""
 
@@ -125,6 +141,7 @@ def clear_index_entries(
         mode=mode,
         recursive=recursive,
         model=model,
+        extensions=extensions,
     )
 
 
@@ -215,6 +232,7 @@ def _apply_incremental_update(
     diff: FileDiff,
     searcher,
     apply_fn,
+    extensions: Sequence[str] | None,
 ) -> Path:
     ordered_entries = [
         (_relative_to_root(payload.file, directory), payload.chunk_index)
@@ -241,6 +259,7 @@ def _apply_incremental_update(
         ordered_entries=ordered_entries,
         changed_entries=changed_entries,
         removed_rel_paths=diff.removed,
+        extensions=extensions,
     )
     return cache_path
 

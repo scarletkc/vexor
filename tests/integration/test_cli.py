@@ -315,7 +315,7 @@ def test_index_clear_option(tmp_path, monkeypatch):
     runner = CliRunner()
     called = {}
 
-    def fake_clear(root, include_hidden, mode, recursive, model=None):
+    def fake_clear(root, include_hidden, mode, recursive, model=None, extensions=None):
         called["root"] = root
         called["include_hidden"] = include_hidden
         called["mode"] = mode
@@ -349,7 +349,7 @@ def test_index_clear_honors_no_recursive(tmp_path, monkeypatch):
     runner = CliRunner()
     called = {}
 
-    def fake_clear(root, include_hidden, mode, recursive, model=None):
+    def fake_clear(root, include_hidden, mode, recursive, model=None, extensions=None):
         called["recursive"] = recursive
         called["mode"] = mode
         return 0

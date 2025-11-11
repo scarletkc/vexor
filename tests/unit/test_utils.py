@@ -1,7 +1,7 @@
 from pathlib import Path
 import pytest
 
-from vexor.utils import collect_files, format_path, resolve_directory
+from vexor.utils import collect_files, format_path, resolve_directory, normalize_extensions
 
 
 def test_collect_files_ignores_hidden(tmp_path):
@@ -42,6 +42,19 @@ def test_collect_files_non_recursive(tmp_path):
     assert files == [top]
 
 
+def test_collect_files_filters_extensions(tmp_path):
+    py_file = tmp_path / "demo.PY"
+    py_file.write_text("py")
+    md_file = tmp_path / "readme.md"
+    md_file.write_text("md")
+    other = tmp_path / "plain.txt"
+    other.write_text("txt")
+
+    filtered = collect_files(tmp_path, extensions=normalize_extensions([".py", ".MD"]))
+
+    assert [path.name for path in filtered] == ["demo.PY", "readme.md"]
+
+
 def test_resolve_directory_invalid(tmp_path):
     with pytest.raises(FileNotFoundError):
         resolve_directory(tmp_path / "missing")
@@ -57,3 +70,9 @@ def test_format_path_relative(tmp_path):
 
     assert human.startswith(".")
     assert "file.txt" in human
+
+
+def test_normalize_extensions_deduplicates_and_sorts():
+    result = normalize_extensions(["py", ".MD", ".py", "", ".md"])  # mixed case + blanks
+
+    assert result == (".md", ".py")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Sequence, Tuple
 import os
 
 
@@ -17,15 +17,43 @@ def resolve_directory(path: Path | str) -> Path:
     return dir_path
 
 
+def normalize_extensions(values: Iterable[str] | None) -> tuple[str, ...]:
+    """Return a sorted, deduplicated tuple of normalized file extensions."""
+
+    if not values:
+        return ()
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        if raw is None:
+            continue
+        token = raw.strip().lower()
+        if not token:
+            continue
+        if not token.startswith("."):
+            token = f".{token}"
+        if token == ".":
+            continue
+        if token not in seen:
+            seen.add(token)
+            normalized.append(token)
+    if not normalized:
+        return ()
+    return tuple(sorted(normalized))
+
+
 def collect_files(
     root: Path | str,
     include_hidden: bool = False,
     recursive: bool = True,
+    extensions: Sequence[str] | None = None,
 ) -> List[Path]:
     """Collect files under *root*; optionally keep hidden entries and recurse."""
 
     directory = resolve_directory(root)
     files: List[Path] = []
+    normalized_exts: Tuple[str, ...] = tuple(extensions or ())
 
     if recursive:
         for dirpath, dirnames, filenames in os.walk(directory):
@@ -34,17 +62,29 @@ def collect_files(
                 filenames = [f for f in filenames if not f.startswith(".")]
             current_dir = Path(dirpath)
             for filename in filenames:
-                files.append(current_dir / filename)
+                candidate = current_dir / filename
+                if normalized_exts and not _matches_extension(candidate, normalized_exts):
+                    continue
+                files.append(candidate)
     else:
         for entry in directory.iterdir():
             if entry.is_dir():
                 continue
             if not include_hidden and entry.name.startswith("."):
                 continue
+            if normalized_exts and not _matches_extension(entry, normalized_exts):
+                continue
             files.append(entry)
 
     files.sort()
     return files
+
+
+def _matches_extension(path: Path, extensions: Sequence[str]) -> bool:
+    """Return True if *path* ends with any of the provided *extensions*."""
+
+    filename = path.name.lower()
+    return any(filename.endswith(ext) for ext in extensions)
 
 
 def format_path(path: Path, base: Path | None = None) -> str:

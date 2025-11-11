@@ -76,6 +76,7 @@ def test_store_and_load_index(tmp_path, monkeypatch):
     assert np.allclose(loaded_vectors, embeddings)
     assert meta["model"] == "test-model"
     assert meta["chunks"][0]["preview"] == "preview-a.txt"
+    assert meta["extensions"] == ()
 
 
 def test_cache_file_missing(tmp_path, monkeypatch):
@@ -356,6 +357,57 @@ def test_list_cache_entries_reports_metadata(tmp_path, monkeypatch):
     assert entry["root_path"] == str(root)
     assert entry["file_count"] == 1
     assert entry["include_hidden"] is False
+    assert entry["extensions"] == ()
+
+
+def test_extension_specific_caches_have_distinct_metadata(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    root = tmp_path / "project"
+    root.mkdir()
+    py_file = root / "demo.py"
+    md_file = root / "readme.md"
+    py_file.write_text("py")
+    md_file.write_text("md")
+
+    embeddings = np.array([[1.0], [0.5]], dtype=np.float32)
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        entries=_entries_for_files(root, [py_file], embeddings[:1], previews=[py_file.name]),
+        extensions=(".py",),
+    )
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        entries=_entries_for_files(root, [md_file], embeddings[1:], previews=[md_file.name]),
+        extensions=(".md",),
+    )
+
+    py_meta = cache.load_index(root, "model", False, MODE, True, extensions=(".py",))
+    assert py_meta["extensions"] == (".py",)
+    md_meta = cache.load_index(root, "model", False, MODE, True, extensions=(".md",))
+    assert md_meta["extensions"] == (".md",)
+
+    with pytest.raises(FileNotFoundError):
+        cache.load_index(root, "model", False, MODE, True, extensions=(".txt",))
+
+    removed = cache.clear_index(
+        root=root,
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        extensions=(".py",),
+    )
+    assert removed == 1
+    with pytest.raises(FileNotFoundError):
+        cache.load_index(root, "model", False, MODE, True, extensions=(".py",))
+    assert cache.load_index(root, "model", False, MODE, True, extensions=(".md",))["extensions"] == (".md",)
 
 
 def test_clear_all_cache_removes_database(tmp_path, monkeypatch):

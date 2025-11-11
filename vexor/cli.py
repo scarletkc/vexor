@@ -32,7 +32,7 @@ from .services.system_service import (
     version_tuple,
 )
 from .text import Messages, Styles
-from .utils import resolve_directory, format_path, ensure_positive
+from .utils import resolve_directory, format_path, ensure_positive, normalize_extensions
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .search import SearchResult
@@ -67,6 +67,12 @@ def _validate_mode(mode: str) -> str:
     return mode
 
 
+def _format_extensions_display(values: Sequence[str] | None) -> str:
+    if not values:
+        return "all"
+    return ", ".join(values)
+
+
 @app.callback()
 def main(
     version: bool = typer.Option(
@@ -95,6 +101,7 @@ def search(
     include_hidden: bool = typer.Option(
         False,
         "--include-hidden",
+        "-i",
         help=Messages.HELP_INCLUDE_HIDDEN,
     ),
     mode: str = typer.Option(
@@ -108,6 +115,12 @@ def search(
         "--no-recursive",
         "-n",
         help=Messages.HELP_RECURSIVE,
+    ),
+    extensions: list[str] | None = typer.Option(
+        None,
+        "--ext",
+        "-e",
+        help=Messages.HELP_EXTENSIONS,
     ),
 ) -> None:
     """Run the semantic search using a cached index."""
@@ -130,6 +143,9 @@ def search(
     directory = resolve_directory(path)
     mode_value = _validate_mode(mode)
     recursive = not no_recursive
+    normalized_exts = normalize_extensions(extensions)
+    if extensions and not normalized_exts:
+        raise typer.BadParameter(Messages.ERROR_EXTENSIONS_EMPTY, param_name="ext")
     console.print(_styled(Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO))
     request = SearchRequest(
         query=clean_query,
@@ -143,6 +159,7 @@ def search(
         provider=provider,
         base_url=base_url,
         api_key=api_key,
+        extensions=normalized_exts,
     )
     try:
         response = perform_search(request)
@@ -180,6 +197,7 @@ def index(
     include_hidden: bool = typer.Option(
         False,
         "--include-hidden",
+        "-i",
         help=Messages.HELP_INDEX_INCLUDE,
     ),
     mode: str = typer.Option(
@@ -204,6 +222,12 @@ def index(
         "--show",
         help=Messages.HELP_INDEX_SHOW,
     ),
+    extensions: list[str] | None = typer.Option(
+        None,
+        "--ext",
+        "-e",
+        help=Messages.HELP_EXTENSIONS,
+    ),
 ) -> None:
     """Create or refresh the cached index for the given directory."""
     config = load_config()
@@ -216,6 +240,9 @@ def index(
     directory = resolve_directory(path)
     mode_value = _validate_mode(mode)
     recursive = not no_recursive
+    normalized_exts = normalize_extensions(extensions)
+    if extensions and not normalized_exts:
+        raise typer.BadParameter(Messages.ERROR_EXTENSIONS_EMPTY, param_name="ext")
     if clear and show_cache:
         raise typer.BadParameter(Messages.ERROR_INDEX_SHOW_CONFLICT)
 
@@ -226,6 +253,7 @@ def index(
             include_hidden,
             mode_value,
             recursive,
+            extensions=normalized_exts,
         )
         if not metadata:
             console.print(
@@ -245,6 +273,7 @@ def index(
             model=metadata.get("model"),
             hidden="yes" if metadata.get("include_hidden") else "no",
             recursive="yes" if metadata.get("recursive") else "no",
+            extensions=_format_extensions_display(metadata.get("extensions")),
             files=len(files),
             dimension=metadata.get("dimension"),
             version=metadata.get("version"),
@@ -259,6 +288,7 @@ def index(
             include_hidden=include_hidden,
             mode=mode_value,
             recursive=recursive,
+            extensions=normalized_exts,
         )
         if removed:
             plural = "ies" if removed > 1 else "y"
@@ -293,6 +323,7 @@ def index(
             provider=provider,
             base_url=base_url,
             api_key=api_key,
+            extensions=normalized_exts,
         )
     except RuntimeError as exc:
         console.print(_styled(str(exc), Styles.ERROR))
@@ -463,6 +494,7 @@ def config(
             table.add_column(Messages.TABLE_INDEX_HEADER_MODEL)
             table.add_column(Messages.TABLE_INDEX_HEADER_HIDDEN, justify="center")
             table.add_column(Messages.TABLE_INDEX_HEADER_RECURSIVE, justify="center")
+            table.add_column(Messages.TABLE_INDEX_HEADER_EXTENSIONS)
             table.add_column(Messages.TABLE_INDEX_HEADER_FILES, justify="right")
             table.add_column(Messages.TABLE_INDEX_HEADER_GENERATED)
             for entry in entries:
@@ -472,6 +504,7 @@ def config(
                     str(entry["model"]),
                     "yes" if entry["include_hidden"] else "no",
                     "yes" if entry["recursive"] else "no",
+                    _format_extensions_display(entry.get("extensions")),
                     str(entry["file_count"]),
                     str(entry["generated_at"]),
                 )

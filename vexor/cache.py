@@ -28,11 +28,32 @@ class IndexedChunk:
     embedding: Sequence[float]
 
 
-def _cache_key(root: Path, include_hidden: bool, recursive: bool, mode: str) -> str:
-    digest = hashlib.sha1(
-        f"{root.resolve()}|hidden={include_hidden}|recursive={recursive}|mode={mode}".encode("utf-8")
-    ).hexdigest()
+def _cache_key(
+    root: Path,
+    include_hidden: bool,
+    recursive: bool,
+    mode: str,
+    extensions: Sequence[str] | None = None,
+) -> str:
+    base = f"{root.resolve()}|hidden={include_hidden}|recursive={recursive}|mode={mode}"
+    ext_key = _serialize_extensions(extensions)
+    if ext_key:
+        base = f"{base}|ext={ext_key}"
+    digest = hashlib.sha1(base.encode("utf-8")).hexdigest()
     return digest
+
+
+def _serialize_extensions(extensions: Sequence[str] | None) -> str:
+    if not extensions:
+        return ""
+    return ",".join(extensions)
+
+
+def _deserialize_extensions(value: str | None) -> tuple[str, ...]:
+    if not value:
+        return ()
+    parts = [part for part in value.split(",") if part]
+    return tuple(parts)
 
 
 def ensure_cache_dir() -> Path:
@@ -73,6 +94,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             dimension INTEGER NOT NULL,
             version INTEGER NOT NULL,
             generated_at TEXT NOT NULL,
+            extensions TEXT DEFAULT '',
             UNIQUE(cache_key, model)
         );
 
@@ -119,6 +141,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         pass
     if not _table_has_column(conn, "indexed_file", "chunk_index"):
         _upgrade_indexed_file_with_chunk(conn)
+    try:
+        conn.execute(
+            "ALTER TABLE index_metadata ADD COLUMN extensions TEXT DEFAULT ''"
+        )
+    except sqlite3.OperationalError:
+        pass
     _cleanup_orphan_embeddings(conn)
 
 
@@ -194,16 +222,18 @@ def store_index(
     mode: str,
     recursive: bool,
     entries: Sequence[IndexedChunk],
+    extensions: Sequence[str] | None = None,
 ) -> Path:
     db_path = cache_file(root, model, include_hidden)
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive, mode)
+        key = _cache_key(root, include_hidden, recursive, mode, extensions)
         generated_at = datetime.now(timezone.utc).isoformat()
         dimension = int(len(entries[0].embedding) if entries else 0)
         include_flag = 1 if include_hidden else 0
         recursive_flag = 1 if recursive else 0
+        extensions_value = _serialize_extensions(extensions)
 
         with conn:
             conn.execute("BEGIN IMMEDIATE;")
@@ -222,8 +252,9 @@ def store_index(
                     mode,
                     dimension,
                     version,
-                    generated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    generated_at,
+                    extensions
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     key,
@@ -235,6 +266,7 @@ def store_index(
                     dimension,
                     CACHE_VERSION,
                     generated_at,
+                    extensions_value,
                 ),
             )
             index_id = cursor.lastrowid
@@ -286,6 +318,7 @@ def apply_index_updates(
     ordered_entries: Sequence[tuple[str, int]],
     changed_entries: Sequence[IndexedChunk],
     removed_rel_paths: Sequence[str],
+    extensions: Sequence[str] | None = None,
 ) -> Path:
     """Apply incremental updates to an existing cached index."""
 
@@ -296,7 +329,7 @@ def apply_index_updates(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive, mode)
+        key = _cache_key(root, include_hidden, recursive, mode, extensions)
         include_flag = 1 if include_hidden else 0
         recursive_flag = 1 if recursive else 0
 
@@ -396,7 +429,14 @@ def apply_index_updates(
         conn.close()
 
 
-def load_index(root: Path, model: str, include_hidden: bool, mode: str, recursive: bool) -> dict:
+def load_index(
+    root: Path,
+    model: str,
+    include_hidden: bool,
+    mode: str,
+    recursive: bool,
+    extensions: Sequence[str] | None = None,
+) -> dict:
     db_path = cache_file(root, model, include_hidden)
     if not db_path.exists():
         raise FileNotFoundError(db_path)
@@ -404,12 +444,12 @@ def load_index(root: Path, model: str, include_hidden: bool, mode: str, recursiv
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive, mode)
+        key = _cache_key(root, include_hidden, recursive, mode, extensions)
         include_flag = 1 if include_hidden else 0
         recursive_flag = 1 if recursive else 0
         meta = conn.execute(
             """
-            SELECT id, root_path, model, include_hidden, recursive, mode, dimension, version, generated_at
+            SELECT id, root_path, model, include_hidden, recursive, mode, dimension, version, generated_at, extensions
             FROM index_metadata
             WHERE cache_key = ? AND model = ? AND include_hidden = ? AND recursive = ? AND mode = ?
             """,
@@ -463,6 +503,7 @@ def load_index(root: Path, model: str, include_hidden: bool, mode: str, recursiv
             "recursive": bool(meta["recursive"]),
             "mode": meta["mode"],
             "dimension": meta["dimension"],
+            "extensions": _deserialize_extensions(meta["extensions"]),
             "files": list(file_snapshot.values()),
             "chunks": chunk_entries,
         }
@@ -470,8 +511,15 @@ def load_index(root: Path, model: str, include_hidden: bool, mode: str, recursiv
         conn.close()
 
 
-def load_index_vectors(root: Path, model: str, include_hidden: bool, mode: str, recursive: bool):
-    data = load_index(root, model, include_hidden, mode, recursive)
+def load_index_vectors(
+    root: Path,
+    model: str,
+    include_hidden: bool,
+    mode: str,
+    recursive: bool,
+    extensions: Sequence[str] | None = None,
+):
+    data = load_index(root, model, include_hidden, mode, recursive, extensions)
     chunks = data.get("chunks", [])
     paths = [root / Path(entry["path"]) for entry in chunks]
     embeddings = np.asarray([entry["embedding"] for entry in chunks], dtype=np.float32)
@@ -484,6 +532,7 @@ def clear_index(
     mode: str,
     recursive: bool,
     model: str | None = None,
+    extensions: Sequence[str] | None = None,
 ) -> int:
     """Remove cached index entries for *root* (optionally filtered by *model*)."""
     db_path = cache_file(root, model or "_", include_hidden)
@@ -493,7 +542,7 @@ def clear_index(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive, mode)
+        key = _cache_key(root, include_hidden, recursive, mode, extensions)
         # when model is None we still need a mode; reuse provided mode
         if model is None:
             query = "DELETE FROM index_metadata WHERE cache_key = ? AND mode = ?"
@@ -529,6 +578,7 @@ def list_cache_entries() -> list[dict[str, object]]:
                 dimension,
                 version,
                 generated_at,
+                extensions,
                 (
                     SELECT COUNT(DISTINCT rel_path)
                     FROM indexed_file
@@ -551,6 +601,7 @@ def list_cache_entries() -> list[dict[str, object]]:
                     "dimension": row["dimension"],
                     "version": row["version"],
                     "generated_at": row["generated_at"],
+                    "extensions": _deserialize_extensions(row["extensions"]),
                     "file_count": int(row["file_count"] or 0),
                 }
             )
@@ -590,6 +641,7 @@ def compare_snapshot(
     cached_files: Sequence[dict],
     *,
     recursive: bool,
+    extensions: Sequence[str] | None = None,
     current_files: Sequence[Path] | None = None,
 ) -> bool:
     """Return True if the current filesystem matches the cached snapshot."""
@@ -598,6 +650,7 @@ def compare_snapshot(
             root,
             include_hidden=include_hidden,
             recursive=recursive,
+            extensions=extensions,
         )
     if len(current_files) != len(cached_files):
         return False

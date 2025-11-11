@@ -22,6 +22,7 @@ class SearchRequest:
     provider: str
     base_url: str | None
     api_key: str | None
+    extensions: tuple[str, ...]
 
 
 @dataclass(slots=True)
@@ -46,6 +47,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         request.include_hidden,
         request.mode,
         request.recursive,
+        request.extensions,
     )
     file_snapshot = metadata.get("files", [])
     chunk_entries = metadata.get("chunks", [])
@@ -54,6 +56,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         request.include_hidden,
         file_snapshot,
         recursive=request.recursive,
+        extensions=request.extensions,
     )
 
     if not len(paths):
