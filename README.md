@@ -14,7 +14,7 @@
 
 ---
 
-Vexor is a vector-powered CLI that searches files semantically. It uses Google GenAI's `gemini-embedding-001` model to embed files and queries, then shows matches with cosine similarity.
+Vexor is a vector-powered CLI for semantic file search. It supports configurable remote embedding models and ranks results by cosine similarity.
 
 ## Install
 Download from [releases](https://github.com/scarletkc/vexor/releases) without python, or with:

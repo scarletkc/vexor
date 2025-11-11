@@ -29,7 +29,7 @@ class Messages:
     HELP_CLEAR_API_KEY = "Remove the stored API key."
     HELP_SET_MODEL = "Set the default embedding model."
     HELP_SET_BATCH = "Set the default batch size (0 = single request)."
-    HELP_SET_PROVIDER = "Set the default embedding provider (e.g., gemini)."
+    HELP_SET_PROVIDER = "Set the default embedding provider (e.g., gemini or openai)."
     HELP_SET_BASE_URL = "Override the provider's base URL (leave unset for official endpoints)."
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
     HELP_SHOW_CONFIG = "Show current configuration."
