@@ -5,9 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import Sequence
 
 from .cache_service import load_index_metadata_safe
-from ..modes import get_strategy
+from ..cache import IndexedChunk
+from ..modes import get_strategy, ModePayload
 
 INCREMENTAL_CHANGE_THRESHOLD = 0.5
 MTIME_TOLERANCE = 5e-1
@@ -52,6 +54,7 @@ def build_index(
     cached_files = existing_meta.get("files", []) if existing_meta else []
 
     strategy = get_strategy(mode)
+    payloads = strategy.payloads_for_files(files)
     searcher = VexorSearcher(
         model_name=model_name,
         batch_size=batch_size,
@@ -74,10 +77,9 @@ def build_index(
                 recursive=recursive,
                 mode=mode,
                 model_name=model_name,
-                files=files,
+                payloads=payloads,
                 diff=diff,
                 searcher=searcher,
-                strategy=strategy,
                 apply_fn=apply_index_updates,
             )
             return IndexResult(
@@ -86,10 +88,9 @@ def build_index(
                 files_indexed=len(files),
             )
 
-    payloads = strategy.payloads_for_files(files)
     file_labels = [payload.label for payload in payloads]
-    previews = [payload.preview or "" for payload in payloads]
     embeddings = searcher.embed_texts(file_labels)
+    entries = _build_index_entries(payloads, embeddings, directory)
 
     cache_path = store_index(
         root=directory,
@@ -97,9 +98,7 @@ def build_index(
         include_hidden=include_hidden,
         mode=mode,
         recursive=recursive,
-        files=files,
-        previews=previews,
-        embeddings=embeddings,
+        entries=entries,
     )
     return IndexResult(
         status=IndexStatus.STORED,
@@ -212,30 +211,26 @@ def _apply_incremental_update(
     mode: str,
     recursive: bool,
     model_name: str,
-    files: list[Path],
+    payloads: list[ModePayload],
     diff: FileDiff,
     searcher,
-    strategy,
     apply_fn,
 ) -> Path:
+    ordered_entries = [
+        (_relative_to_root(payload.file, directory), payload.chunk_index)
+        for payload in payloads
+    ]
     changed_set = set(diff.changed_paths())
     if changed_set:
-        targets = [path for path in files if path in changed_set]
-        payloads = strategy.payloads_for_files(targets)
-        labels = [payload.label for payload in payloads]
-        previews = {
-            _relative_to_root(path, directory): (payload.preview or "")
-            for path, payload in zip(targets, payloads)
-        }
-        embeddings = searcher.embed_texts(labels)
-        embedding_map = {
-            _relative_to_root(path, directory): embeddings[idx]
-            for idx, path in enumerate(targets)
-        }
+        targets = [payload for payload in payloads if payload.file in changed_set]
+        if targets:
+            labels = [payload.label for payload in targets]
+            embeddings = searcher.embed_texts(labels)
+            changed_entries = _build_index_entries(targets, embeddings, directory)
+        else:
+            changed_entries = []
     else:
-        targets = []
-        embedding_map = {}
-        previews = {}
+        changed_entries = []
 
     cache_path = apply_fn(
         root=directory,
@@ -243,11 +238,9 @@ def _apply_incremental_update(
         include_hidden=include_hidden,
         mode=mode,
         recursive=recursive,
-        current_files=files,
-        changed_files=targets,
+        ordered_entries=ordered_entries,
+        changed_entries=changed_entries,
         removed_rel_paths=diff.removed,
-        embeddings=embedding_map,
-        previews=previews,
     )
     return cache_path
 
@@ -258,3 +251,22 @@ def _relative_to_root(path: Path, root: Path) -> str:
     except ValueError:
         rel = path
     return str(rel)
+
+
+def _build_index_entries(
+    payloads: Sequence[ModePayload],
+    embeddings: Sequence[Sequence[float]],
+    root: Path,
+) -> list[IndexedChunk]:
+    entries: list[IndexedChunk] = []
+    for idx, payload in enumerate(payloads):
+        entries.append(
+            IndexedChunk(
+                path=payload.file,
+                rel_path=_relative_to_root(payload.file, root),
+                chunk_index=payload.chunk_index,
+                preview=payload.preview or "",
+                embedding=embeddings[idx],
+            )
+        )
+    return entries

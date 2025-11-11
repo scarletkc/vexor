@@ -22,7 +22,7 @@ class Messages:
     HELP_INDEX_CLEAR = "Remove the cached index for the specified path (respecting include-hidden, mode and recursion)."
     HELP_INDEX_SHOW = "Display metadata for the cached index matching the provided options."
     HELP_RECURSIVE = "Recurse into subdirectories (default). Disable to work only on the specified directory."
-    HELP_MODE = "Indexing mode (name=filename, head=head snippet) to control how embeddings are built."
+    HELP_MODE = "Indexing mode (name=filename, head=head snippet, full=chunked content) to control how embeddings are built."
     HELP_DOCTOR = "Check whether the `vexor` command is available on the current PATH."
     HELP_UPDATE = "Check if a newer Vexor release is available online."
     HELP_SET_API_KEY = "Persist an API key in ~/.vexor/config.json."

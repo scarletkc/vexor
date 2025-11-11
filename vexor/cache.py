@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -14,8 +15,17 @@ import numpy as np
 from .utils import collect_files
 
 CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 DB_FILENAME = "index.db"
+
+
+@dataclass(slots=True)
+class IndexedChunk:
+    path: Path
+    rel_path: str
+    chunk_index: int
+    preview: str
+    embedding: Sequence[float]
 
 
 def _cache_key(root: Path, include_hidden: bool, recursive: bool, mode: str) -> str:
@@ -75,7 +85,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             mtime REAL NOT NULL,
             position INTEGER NOT NULL,
             preview TEXT DEFAULT '',
-            UNIQUE(index_id, rel_path)
+            chunk_index INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(index_id, rel_path, chunk_index)
         );
 
         CREATE TABLE IF NOT EXISTS file_embedding (
@@ -106,6 +117,73 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         )
     except sqlite3.OperationalError:
         pass
+    if not _table_has_column(conn, "indexed_file", "chunk_index"):
+        _upgrade_indexed_file_with_chunk(conn)
+    _cleanup_orphan_embeddings(conn)
+
+
+def _table_has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row[1] == column for row in rows)
+
+
+def _upgrade_indexed_file_with_chunk(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA foreign_keys = OFF;")
+    conn.execute("ALTER TABLE indexed_file RENAME TO indexed_file_legacy;")
+    conn.executescript(
+        """
+        CREATE TABLE indexed_file (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            index_id INTEGER NOT NULL REFERENCES index_metadata(id) ON DELETE CASCADE,
+            rel_path TEXT NOT NULL,
+            abs_path TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            mtime REAL NOT NULL,
+            position INTEGER NOT NULL,
+            preview TEXT DEFAULT '',
+            chunk_index INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(index_id, rel_path, chunk_index)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_indexed_file_order
+            ON indexed_file(index_id, position);
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO indexed_file (
+            id,
+            index_id,
+            rel_path,
+            abs_path,
+            size_bytes,
+            mtime,
+            position,
+            preview,
+            chunk_index
+        )
+        SELECT
+            id,
+            index_id,
+            rel_path,
+            abs_path,
+            size_bytes,
+            mtime,
+            position,
+            preview,
+            0
+        FROM indexed_file_legacy;
+        """
+    )
+    conn.execute("DROP TABLE indexed_file_legacy;")
+    conn.execute("PRAGMA foreign_keys = ON;")
+
+
+def _cleanup_orphan_embeddings(conn: sqlite3.Connection) -> None:
+    with conn:
+        conn.execute(
+            "DELETE FROM file_embedding WHERE file_id NOT IN (SELECT id FROM indexed_file)"
+        )
 
 
 def store_index(
@@ -115,9 +193,7 @@ def store_index(
     include_hidden: bool,
     mode: str,
     recursive: bool,
-    files: Sequence[Path],
-    previews: Sequence[str],
-    embeddings: np.ndarray,
+    entries: Sequence[IndexedChunk],
 ) -> Path:
     db_path = cache_file(root, model, include_hidden)
     conn = _connect(db_path)
@@ -125,7 +201,7 @@ def store_index(
         _ensure_schema(conn)
         key = _cache_key(root, include_hidden, recursive, mode)
         generated_at = datetime.now(timezone.utc).isoformat()
-        dimension = int(embeddings.shape[1] if embeddings.size else 0)
+        dimension = int(len(entries[0].embedding) if entries else 0)
         include_flag = 1 if include_hidden else 0
         recursive_flag = 1 if recursive else 0
 
@@ -163,12 +239,8 @@ def store_index(
             )
             index_id = cursor.lastrowid
 
-            for position, file in enumerate(files):
-                stat = file.stat()
-                try:
-                    rel_path = file.relative_to(root)
-                except ValueError:
-                    rel_path = file
+            for position, entry in enumerate(entries):
+                stat = entry.path.stat()
                 file_cursor = conn.execute(
                     """
                     INSERT INTO indexed_file (
@@ -178,22 +250,24 @@ def store_index(
                         size_bytes,
                         mtime,
                         position,
-                        preview
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        preview,
+                        chunk_index
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         index_id,
-                        str(rel_path),
-                        str(file),
+                        entry.rel_path,
+                        str(entry.path),
                         stat.st_size,
                         stat.st_mtime,
                         position,
-                        previews[position] if position < len(previews) else "",
+                        entry.preview,
+                        entry.chunk_index,
                     ),
                 )
-                vector_blob = embeddings[position].astype(np.float32).tobytes()
+                vector_blob = np.asarray(entry.embedding, dtype=np.float32).tobytes()
                 conn.execute(
-                    "INSERT INTO file_embedding (file_id, vector_blob) VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO file_embedding (file_id, vector_blob) VALUES (?, ?)",
                     (file_cursor.lastrowid, vector_blob),
                 )
 
@@ -209,11 +283,9 @@ def apply_index_updates(
     include_hidden: bool,
     mode: str,
     recursive: bool,
-    current_files: Sequence[Path],
-    changed_files: Sequence[Path],
+    ordered_entries: Sequence[tuple[str, int]],
+    changed_entries: Sequence[IndexedChunk],
     removed_rel_paths: Sequence[str],
-    embeddings: Mapping[str, np.ndarray],
-    previews: Mapping[str, str],
 ) -> Path:
     """Apply incremental updates to an existing cached index."""
 
@@ -250,73 +322,62 @@ def apply_index_updates(
                 )
 
             vector_dimension = None
-            for path in changed_files:
-                rel_path = _relative_path(path, root)
-                vector = embeddings.get(rel_path)
-                if vector is None:
-                    raise ValueError(f"Missing embedding for updated file: {rel_path}")
-                vector = np.asarray(vector, dtype=np.float32)
-                if vector_dimension is None:
-                    vector_dimension = vector.shape[0]
-                stat = path.stat()
-                record = conn.execute(
-                    "SELECT id FROM indexed_file WHERE index_id = ? AND rel_path = ?",
-                    (index_id, rel_path),
-                ).fetchone()
-                if record is None:
-                    cursor = conn.execute(
-                        """
-                    INSERT INTO indexed_file (
-                        index_id,
-                        rel_path,
-                        abs_path,
-                        size_bytes,
-                        mtime,
-                        position,
-                        preview
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            index_id,
-                            rel_path,
-                            str(path),
-                            stat.st_size,
-                            stat.st_mtime,
-                            0,
-                            previews.get(rel_path, ""),
-                        ),
-                    )
-                    file_id = cursor.lastrowid
-                    conn.execute(
-                        "INSERT INTO file_embedding (file_id, vector_blob) VALUES (?, ?)",
-                        (file_id, vector.tobytes()),
-                    )
-                else:
-                    file_id = record["id"]
-                    conn.execute(
-                        """
-                        UPDATE indexed_file
-                        SET abs_path = ?, size_bytes = ?, mtime = ?, preview = ?
-                        WHERE id = ?
-                        """,
-                        (
-                            str(path),
-                            stat.st_size,
-                            stat.st_mtime,
-                            previews.get(rel_path, ""),
-                            file_id,
-                        ),
-                    )
-                    conn.execute(
-                        "UPDATE file_embedding SET vector_blob = ? WHERE file_id = ?",
-                        (vector.tobytes(), file_id),
-                    )
+            if changed_entries:
+                chunk_map: dict[str, list[IndexedChunk]] = {}
+                for entry in changed_entries:
+                    if entry.rel_path not in chunk_map:
+                        chunk_map[entry.rel_path] = []
+                    chunk_map[entry.rel_path].append(entry)
 
-            for position, file in enumerate(current_files):
-                rel_path = _relative_path(file, root)
+                for rel_path, chunk_list in chunk_map.items():
+                    conn.execute(
+                        "DELETE FROM indexed_file WHERE index_id = ? AND rel_path = ?",
+                        (index_id, rel_path),
+                    )
+                    chunk_list.sort(key=lambda item: item.chunk_index)
+                    for chunk in chunk_list:
+                        vector = np.asarray(chunk.embedding, dtype=np.float32)
+                        if vector_dimension is None:
+                            vector_dimension = vector.shape[0]
+                        stat = chunk.path.stat()
+                        cursor = conn.execute(
+                            """
+                            INSERT INTO indexed_file (
+                                index_id,
+                                rel_path,
+                                abs_path,
+                                size_bytes,
+                                mtime,
+                                position,
+                                preview,
+                                chunk_index
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                index_id,
+                                rel_path,
+                                str(chunk.path),
+                                stat.st_size,
+                                stat.st_mtime,
+                                0,
+                                chunk.preview,
+                                chunk.chunk_index,
+                            ),
+                        )
+                        file_id = cursor.lastrowid
+                        conn.execute(
+                            "INSERT INTO file_embedding (file_id, vector_blob) VALUES (?, ?)",
+                            (file_id, vector.tobytes()),
+                        )
+
+            for position, (rel_path, chunk_index) in enumerate(ordered_entries):
                 conn.execute(
-                    "UPDATE indexed_file SET position = ? WHERE index_id = ? AND rel_path = ?",
-                    (position, index_id, rel_path),
+                    """
+                    UPDATE indexed_file
+                    SET position = ?
+                    WHERE index_id = ? AND rel_path = ? AND chunk_index = ?
+                    """,
+                    (position, index_id, rel_path, chunk_index),
                 )
 
             generated_at = datetime.now(timezone.utc).isoformat()
@@ -357,9 +418,9 @@ def load_index(root: Path, model: str, include_hidden: bool, mode: str, recursiv
         if meta is None:
             raise FileNotFoundError(db_path)
 
-        files = conn.execute(
+        rows = conn.execute(
             """
-            SELECT f.rel_path, f.abs_path, f.size_bytes, f.mtime, f.preview, e.vector_blob
+            SELECT f.rel_path, f.abs_path, f.size_bytes, f.mtime, f.preview, f.chunk_index, e.vector_blob
             FROM indexed_file AS f
             JOIN file_embedding AS e ON e.file_id = f.id
             WHERE f.index_id = ?
@@ -368,19 +429,30 @@ def load_index(root: Path, model: str, include_hidden: bool, mode: str, recursiv
             (meta["id"],),
         ).fetchall()
 
-        serialized_files = []
-        for row in files:
+        file_snapshot: dict[str, dict] = {}
+        chunk_entries: list[dict] = []
+        for row in rows:
             vector = np.frombuffer(row["vector_blob"], dtype=np.float32)
-            serialized_files.append(
+            rel_path = row["rel_path"]
+            chunk_index = int(row["chunk_index"])
+            chunk_entries.append(
                 {
-                    "path": row["rel_path"],
+                    "path": rel_path,
                     "absolute": row["abs_path"],
                     "mtime": row["mtime"],
                     "size": row["size_bytes"],
                     "preview": row["preview"],
+                    "chunk_index": chunk_index,
                     "embedding": vector.tolist(),
                 }
             )
+            if rel_path not in file_snapshot:
+                file_snapshot[rel_path] = {
+                    "path": rel_path,
+                    "absolute": row["abs_path"],
+                    "mtime": row["mtime"],
+                    "size": row["size_bytes"],
+                }
 
         return {
             "version": meta["version"],
@@ -391,7 +463,8 @@ def load_index(root: Path, model: str, include_hidden: bool, mode: str, recursiv
             "recursive": bool(meta["recursive"]),
             "mode": meta["mode"],
             "dimension": meta["dimension"],
-            "files": serialized_files,
+            "files": list(file_snapshot.values()),
+            "chunks": chunk_entries,
         }
     finally:
         conn.close()
@@ -399,9 +472,9 @@ def load_index(root: Path, model: str, include_hidden: bool, mode: str, recursiv
 
 def load_index_vectors(root: Path, model: str, include_hidden: bool, mode: str, recursive: bool):
     data = load_index(root, model, include_hidden, mode, recursive)
-    files = data.get("files", [])
-    paths = [root / Path(entry["path"]) for entry in files]
-    embeddings = np.asarray([entry["embedding"] for entry in files], dtype=np.float32)
+    chunks = data.get("chunks", [])
+    paths = [root / Path(entry["path"]) for entry in chunks]
+    embeddings = np.asarray([entry["embedding"] for entry in chunks], dtype=np.float32)
     return paths, embeddings, data
 
 
@@ -457,7 +530,7 @@ def list_cache_entries() -> list[dict[str, object]]:
                 version,
                 generated_at,
                 (
-                    SELECT COUNT(*)
+                    SELECT COUNT(DISTINCT rel_path)
                     FROM indexed_file
                     WHERE index_id = index_metadata.id
                 ) AS file_count

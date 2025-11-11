@@ -47,17 +47,14 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         request.mode,
         request.recursive,
     )
-    cached_files = metadata.get("files", [])
-    stale = bool(cached_files) and not is_cache_current(
+    file_snapshot = metadata.get("files", [])
+    chunk_entries = metadata.get("chunks", [])
+    stale = bool(file_snapshot) and not is_cache_current(
         request.directory,
         request.include_hidden,
-        cached_files,
+        file_snapshot,
         recursive=request.recursive,
     )
-    preview_lookup = {
-        path: entry.get("preview")
-        for path, entry in zip(paths, cached_files)
-    }
 
     if not len(paths):
         return SearchResponse(
@@ -80,10 +77,17 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         query_vector.reshape(1, -1),
         file_vectors,
     )[0]
-    scored = [
-        SearchResult(path=path, score=float(score), preview=preview_lookup.get(path))
-        for path, score in zip(paths, similarities)
-    ]
+    scored = []
+    for idx, (path, score) in enumerate(zip(paths, similarities)):
+        chunk_meta = chunk_entries[idx] if idx < len(chunk_entries) else {}
+        scored.append(
+            SearchResult(
+                path=path,
+                score=float(score),
+                preview=chunk_meta.get("preview"),
+                chunk_index=int(chunk_meta.get("chunk_index", 0)),
+            )
+        )
     scored.sort(key=lambda item: item.score, reverse=True)
     results = scored[: request.top_k]
     return SearchResponse(

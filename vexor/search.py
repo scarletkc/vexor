@@ -22,6 +22,7 @@ class SearchResult:
     path: Path
     score: float
     preview: str | None = None
+    chunk_index: int = 0
 
 
 class EmbeddingBackend(Protocol):

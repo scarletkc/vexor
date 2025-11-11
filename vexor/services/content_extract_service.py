@@ -11,6 +11,9 @@ from docx import Document
 from pypdf import PdfReader
 
 HEAD_CHAR_LIMIT = 1000
+FULL_CHAR_LIMIT = 200_000
+DEFAULT_CHUNK_SIZE = 1000
+DEFAULT_CHUNK_OVERLAP = 100
 
 
 class HeadExtractor(Protocol):
@@ -28,6 +31,50 @@ class ExtractorEntry:
 
 _registry: Dict[str, HeadExtractor] = {}
 
+TEXT_EXTENSIONS = (
+    ".txt",
+    ".md",
+    ".py",
+    ".js",
+    ".ts",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".html",
+    ".htm",
+    ".toml",
+    ".csv",
+    ".log",
+    ".ini",
+    ".cfg",
+    ".rst",
+    ".tex",
+    ".xml",
+    ".sh",
+    ".bat",
+    ".go",
+    ".java",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".rb",
+    ".php",
+    ".swift",
+    ".rs",
+    ".kt",
+    ".dart",
+    ".scala",
+    ".pl",
+    ".r",
+    ".jl",
+    ".hs",
+    ".lua",
+    ".vb",
+    ".ps1",
+    ".bash",
+)
+
 
 def register_extractor(entry: ExtractorEntry) -> None:
     for ext in entry.extensions:
@@ -41,6 +88,38 @@ def extract_head(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None:
     if extractor is None:
         return None
     return extractor(path, char_limit)
+
+
+def extract_full_chunks(
+    path: Path,
+    *,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    overlap: int = DEFAULT_CHUNK_OVERLAP,
+    char_limit: int = FULL_CHAR_LIMIT,
+) -> list[str]:
+    """Return sliding-window chunks for text-like files."""
+
+    if path.suffix.lower() not in TEXT_EXTENSIONS:
+        return []
+    text = _read_text_full(path, char_limit)
+    if text is None:
+        return []
+    normalized = text.replace("\r\n", "\n").strip()
+    if not normalized:
+        return []
+    size = max(int(chunk_size), 1)
+    stride = max(size - max(int(overlap), 0), 1)
+    chunks: list[str] = []
+    start = 0
+    length = len(normalized)
+    while start < length:
+        window = normalized[start : start + size].strip()
+        if window:
+            chunks.append(window)
+        if start + size >= length:
+            break
+        start += stride
+    return chunks
 
 
 # Placeholder extractors ----------------------------------------------------
@@ -62,6 +141,26 @@ def _read_text_head(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None
         return None
     snippet = text[:char_limit]
     return _cleanup_snippet(snippet)
+
+
+def _read_text_full(path: Path, char_limit: int = FULL_CHAR_LIMIT) -> str | None:
+    """Return up to *char_limit* characters from a text-like file."""
+
+    try:
+        result = from_path(path)
+    except Exception:
+        return None
+    if result is None or not len(result):
+        return None
+    best = result.best()
+    if best is None:
+        return None
+    text = str(best)
+    if not text:
+        return None
+    if char_limit > 0:
+        return text[:char_limit]
+    return text
 
 
 def _pdf_extractor(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None:
@@ -128,49 +227,7 @@ def _unimplemented_extractor(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> s
 
 register_extractor(
     ExtractorEntry(
-        extensions=(
-            ".txt",
-            ".md",
-            ".py",
-            ".js",
-            ".ts",
-            ".json",
-            ".yaml",
-            ".yml",
-            ".html",
-            ".htm",
-            ".toml",
-            ".csv",
-            ".log",
-            ".ini",
-            ".cfg",
-            ".rst",
-            ".tex",
-            ".xml",
-            ".sh",
-            ".bat",
-            ".go",
-            ".java",
-            ".c",
-            ".cpp",
-            ".h",
-            ".hpp",
-            ".rb",
-            ".php",
-            ".swift",
-            ".rs",
-            ".kt",
-            ".dart",
-            ".scala",
-            ".pl",
-            ".r",
-            ".jl",
-            ".hs",
-            ".lua",
-            ".vb",
-            ".ps1",
-            ".bash",
-        ),
+        extensions=TEXT_EXTENSIONS,
         extractor=_read_text_head,
     )
 )

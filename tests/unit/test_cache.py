@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 import pytest
@@ -6,6 +7,28 @@ import pytest
 import vexor.cache as cache
 
 MODE = "name"
+
+
+def _entries_for_files(
+    root: Path,
+    files: list[Path],
+    embeddings: np.ndarray,
+    *,
+    prefix: str = "preview",
+    previews: Sequence[str] | None = None,
+):
+    result: list[cache.IndexedChunk] = []
+    for idx, file in enumerate(files):
+        result.append(
+            cache.IndexedChunk(
+                path=file,
+                rel_path=str(file.relative_to(root)),
+                chunk_index=0,
+                preview=(previews[idx] if previews is not None else f"{prefix}-{file.name}"),
+                embedding=embeddings[idx],
+            )
+        )
+    return result
 
 
 def test_store_and_load_index(tmp_path, monkeypatch):
@@ -29,15 +52,14 @@ def test_store_and_load_index(tmp_path, monkeypatch):
         dtype=np.float32,
     )
 
+    entries = _entries_for_files(root, files, embeddings)
     cache_path = cache.store_index(
         root=root,
         model="test-model",
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        files=files,
-        previews=[f"preview-{file.name}" for file in files],
-        embeddings=embeddings,
+        entries=entries,
     )
 
     assert cache_path.exists()
@@ -53,7 +75,7 @@ def test_store_and_load_index(tmp_path, monkeypatch):
     assert [p.name for p in loaded_paths] == ["a.txt", "b.txt", "c.txt"]
     assert np.allclose(loaded_vectors, embeddings)
     assert meta["model"] == "test-model"
-    assert meta["files"][0]["preview"] == "preview-a.txt"
+    assert meta["chunks"][0]["preview"] == "preview-a.txt"
 
 
 def test_cache_file_missing(tmp_path, monkeypatch):
@@ -112,15 +134,14 @@ def test_clear_index_removes_cached_entries(tmp_path, monkeypatch):
 
     embeddings = np.eye(2, dtype=np.float32)
 
+    entries = _entries_for_files(root, files, embeddings, previews=[file.name for file in files])
     cache.store_index(
         root=root,
         model="model-a",
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        files=files,
-        previews=[file.name for file in files],
-        embeddings=embeddings,
+        entries=entries,
     )
     cache.store_index(
         root=root,
@@ -128,9 +149,7 @@ def test_clear_index_removes_cached_entries(tmp_path, monkeypatch):
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        files=files,
-        previews=[file.name for file in files],
-        embeddings=embeddings,
+        entries=entries,
     )
 
     removed = cache.clear_index(root=root, include_hidden=False, mode=MODE, recursive=True)
@@ -146,9 +165,7 @@ def test_clear_index_removes_cached_entries(tmp_path, monkeypatch):
         include_hidden=True,
         mode=MODE,
         recursive=True,
-        files=files,
-        previews=[file.name for file in files],
-        embeddings=embeddings,
+        entries=_entries_for_files(root, files, embeddings, previews=[file.name for file in files]),
     )
     removed_hidden = cache.clear_index(
         root=root,
@@ -169,15 +186,14 @@ def test_recursive_and_non_recursive_caches_are_separate(tmp_path, monkeypatch):
 
     embeddings = np.array([[1.0]], dtype=np.float32)
 
+    entries = _entries_for_files(root, [file_path], embeddings, previews=[file_path.name])
     cache.store_index(
         root=root,
         model="model",
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        files=[file_path],
-        previews=[file_path.name],
-        embeddings=embeddings,
+        entries=entries,
     )
 
     with pytest.raises(FileNotFoundError):
@@ -189,9 +205,7 @@ def test_recursive_and_non_recursive_caches_are_separate(tmp_path, monkeypatch):
         include_hidden=False,
         mode=MODE,
         recursive=False,
-        files=[file_path],
-        previews=[file_path.name],
-        embeddings=embeddings,
+        entries=_entries_for_files(root, [file_path], embeddings, previews=[file_path.name]),
     )
 
     data = cache.load_index(root=root, model="model", include_hidden=False, mode=MODE, recursive=False)
@@ -214,9 +228,7 @@ def test_apply_index_updates_handles_add_modify_delete(tmp_path, monkeypatch):
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        files=[file_a, file_b],
-        previews=[file_a.name, file_b.name],
-        embeddings=embeddings,
+        entries=_entries_for_files(root, [file_a, file_b], embeddings, previews=[file_a.name, file_b.name]),
     )
 
     file_a.write_text("updated")
@@ -224,15 +236,26 @@ def test_apply_index_updates_handles_add_modify_delete(tmp_path, monkeypatch):
     file_c = root / "c.txt"
     file_c.write_text("c")
 
-    current = [file_a, file_c]
-    embeddings_map = {
-        str(file_a.relative_to(root)): np.array([0.2, 0.8], dtype=np.float32),
-        str(file_c.relative_to(root)): np.array([0.3, 0.7], dtype=np.float32),
-    }
-    preview_map = {
-        str(file_a.relative_to(root)): "updated",
-        str(file_c.relative_to(root)): "c",
-    }
+    ordered_entries = [
+        (str(file_a.relative_to(root)), 0),
+        (str(file_c.relative_to(root)), 0),
+    ]
+    changed_entries = [
+        cache.IndexedChunk(
+            path=file_a,
+            rel_path=str(file_a.relative_to(root)),
+            chunk_index=0,
+            preview="updated",
+            embedding=np.array([0.2, 0.8], dtype=np.float32),
+        ),
+        cache.IndexedChunk(
+            path=file_c,
+            rel_path=str(file_c.relative_to(root)),
+            chunk_index=0,
+            preview="c",
+            embedding=np.array([0.3, 0.7], dtype=np.float32),
+        ),
+    ]
 
     cache.apply_index_updates(
         root=root,
@@ -240,11 +263,9 @@ def test_apply_index_updates_handles_add_modify_delete(tmp_path, monkeypatch):
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        current_files=current,
-        changed_files=current,
+        ordered_entries=ordered_entries,
+        changed_entries=changed_entries,
         removed_rel_paths=["b.txt"],
-        embeddings=embeddings_map,
-        previews=preview_map,
     )
 
     paths, vectors, meta = cache.load_index_vectors(
@@ -256,7 +277,7 @@ def test_apply_index_updates_handles_add_modify_delete(tmp_path, monkeypatch):
     )
 
     assert [p.name for p in paths] == ["a.txt", "c.txt"]
-    expected = np.stack([embeddings_map["a.txt"], embeddings_map["c.txt"]], dtype=np.float32)
+    expected = np.stack([changed_entries[0].embedding, changed_entries[1].embedding], dtype=np.float32)
     assert np.allclose(vectors, expected)
     assert meta["dimension"] == 2
 
@@ -277,9 +298,7 @@ def test_apply_index_updates_allows_deletions_without_embeddings(tmp_path, monke
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        files=[file_a, file_b],
-        previews=[file_a.name, file_b.name],
-        embeddings=embeddings,
+        entries=_entries_for_files(root, [file_a, file_b], embeddings, previews=[file_a.name, file_b.name]),
     )
 
     file_b.unlink()
@@ -290,11 +309,9 @@ def test_apply_index_updates_allows_deletions_without_embeddings(tmp_path, monke
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        current_files=[file_a],
-        changed_files=[],
+        ordered_entries=[(str(file_a.relative_to(root)), 0)],
+        changed_entries=[],
         removed_rel_paths=["b.txt"],
-        embeddings={},
-        previews={},
     )
 
     paths, vectors, meta = cache.load_index_vectors(
@@ -330,9 +347,7 @@ def test_list_cache_entries_reports_metadata(tmp_path, monkeypatch):
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        files=[file_path],
-        previews=[file_path.name],
-        embeddings=embeddings,
+        entries=_entries_for_files(root, [file_path], embeddings, previews=[file_path.name]),
     )
 
     entries = cache.list_cache_entries()
@@ -352,15 +367,14 @@ def test_clear_all_cache_removes_database(tmp_path, monkeypatch):
     file_path.write_text("data")
 
     embeddings = np.array([[1.0]], dtype=np.float32)
+    entries = _entries_for_files(root, [file_path], embeddings, previews=[file_path.name])
     cache.store_index(
         root=root,
         model="model-a",
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        files=[file_path],
-        previews=[file_path.name],
-        embeddings=embeddings,
+        entries=entries,
     )
     cache.store_index(
         root=root,
@@ -368,9 +382,7 @@ def test_clear_all_cache_removes_database(tmp_path, monkeypatch):
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        files=[file_path],
-        previews=[file_path.name],
-        embeddings=embeddings,
+        entries=entries,
     )
 
     removed = cache.clear_all_cache()

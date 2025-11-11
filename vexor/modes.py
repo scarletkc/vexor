@@ -6,15 +6,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Protocol, Sequence
 
-from .services.content_extract_service import extract_head
+from .services.content_extract_service import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    extract_full_chunks,
+    extract_head,
+)
 
 PREVIEW_CHAR_LIMIT = 160
 
 
 @dataclass(slots=True)
 class ModePayload:
+    file: Path
     label: str
     preview: str | None
+    chunk_index: int = 0
 
 
 class IndexModeStrategy(Protocol):
@@ -37,7 +44,7 @@ class NameStrategy(IndexModeStrategy):
     def payload_for_file(self, file: Path) -> ModePayload:
         label = file.name.replace("_", " ")
         preview = file.name
-        return ModePayload(label=label, preview=preview)
+        return ModePayload(file=file, label=label, preview=preview)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,13 +60,56 @@ class HeadStrategy(IndexModeStrategy):
         if snippet:
             label = f"{file.name} :: {snippet}"
             preview = _trim_preview(snippet)
-            return ModePayload(label=label, preview=preview)
+            return ModePayload(file=file, label=label, preview=preview)
         return self.fallback.payload_for_file(file)
+
+
+@dataclass(frozen=True, slots=True)
+class FullStrategy(IndexModeStrategy):
+    name: str = "full"
+    chunk_size: int = DEFAULT_CHUNK_SIZE
+    overlap: int = DEFAULT_CHUNK_OVERLAP
+    fallback: NameStrategy = NameStrategy()
+
+    def payloads_for_files(self, files: Sequence[Path]) -> list[ModePayload]:
+        payloads: list[ModePayload] = []
+        for file in files:
+            payloads.extend(self._payloads_for_file(file))
+        return payloads
+
+    def payload_for_file(self, file: Path) -> ModePayload:
+        chunks = self._payloads_for_file(file)
+        if chunks:
+            return chunks[0]
+        return self.fallback.payload_for_file(file)
+
+    def _payloads_for_file(self, file: Path) -> list[ModePayload]:
+        chunks = extract_full_chunks(
+            file,
+            chunk_size=self.chunk_size,
+            overlap=self.overlap,
+        )
+        if not chunks:
+            return [self.fallback.payload_for_file(file)]
+        payloads: list[ModePayload] = []
+        for index, chunk in enumerate(chunks):
+            preview = _trim_preview(chunk)
+            label = f"{file.name} [#{index + 1}] :: {chunk}"
+            payloads.append(
+                ModePayload(
+                    file=file,
+                    label=label,
+                    preview=f"[Chunk {index + 1}] {preview}",
+                    chunk_index=index,
+                )
+            )
+        return payloads
 
 
 _STRATEGIES: Dict[str, IndexModeStrategy] = {
     "name": NameStrategy(),
     "head": HeadStrategy(),
+    "full": FullStrategy(),
 }
 
 

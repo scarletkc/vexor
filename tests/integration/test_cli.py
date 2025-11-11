@@ -653,7 +653,7 @@ def test_head_mode_end_to_end(tmp_path, monkeypatch):
         mode="head",
         recursive=True,
     )
-    previews = [entry.get("preview") for entry in data.get("files", [])]
+    previews = [entry.get("preview") for entry in data.get("chunks", [])]
     assert previews and previews[0].startswith("Intro line")
 
     search_result = runner.invoke(
@@ -670,3 +670,59 @@ def test_head_mode_end_to_end(tmp_path, monkeypatch):
     assert search_result.exit_code == 0
     assert "Preview" in search_result.stdout
     assert "Intro line" in search_result.stdout
+
+
+def test_full_mode_chunked_previews(tmp_path, monkeypatch):
+    class DummySearcher:
+        def __init__(self, *args, **kwargs):
+            self.device = "dummy"
+
+        def embed_texts(self, texts):
+            if not texts:
+                return np.zeros((0, 3), dtype=np.float32)
+            return np.ones((len(texts), 3), dtype=np.float32)
+
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr("vexor.cache.CACHE_DIR", cache_dir)
+    runner = CliRunner()
+    project = tmp_path / "proj-full"
+    project.mkdir()
+    file_path = project / "long.txt"
+    file_path.write_text("paragraph " * 200)
+
+    index_result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(project),
+            "--mode",
+            "full",
+        ],
+    )
+    assert index_result.exit_code == 0
+    data = cache.load_index(
+        project,
+        DEFAULT_MODEL,
+        include_hidden=False,
+        mode="full",
+        recursive=True,
+    )
+    chunks = data.get("chunks", [])
+    assert len(chunks) >= 2
+    assert max(entry.get("chunk_index", 0) for entry in chunks) >= 1
+
+    search_result = runner.invoke(
+        app,
+        [
+            "search",
+            "paragraph",
+            "--path",
+            str(project),
+            "--mode",
+            "full",
+        ],
+    )
+    assert search_result.exit_code == 0
+    assert "Chunk" in search_result.stdout
