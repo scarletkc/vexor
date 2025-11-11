@@ -8,6 +8,7 @@ from typing import Dict, Protocol
 
 from charset_normalizer import from_path
 from docx import Document
+from pptx import Presentation
 from pypdf import PdfReader
 
 HEAD_CHAR_LIMIT = 1000
@@ -107,6 +108,8 @@ def extract_full_chunks(
         text = _pdf_extractor(path, char_limit)
     elif suffix == ".docx":
         text = _docx_extractor(path, char_limit)
+    elif suffix == ".pptx":
+        text = _pptx_extractor(path, char_limit)
     else:
         return []
     if text is None:
@@ -222,6 +225,53 @@ def _docx_extractor(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None
     return cleaned[:char_limit]
 
 
+def _pptx_extractor(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None:
+    try:
+        presentation = Presentation(str(path))
+    except Exception:
+        return None
+    buffer: list[str] = []
+    total_chars = 0
+    for slide in presentation.slides:
+        for shape in slide.shapes:
+            text = _extract_shape_text(shape)
+            if not text:
+                continue
+            buffer.append(text)
+            total_chars += len(text)
+            if total_chars >= char_limit:
+                break
+        if total_chars >= char_limit:
+            break
+    combined = "\n".join(buffer)
+    if not combined:
+        return None
+    cleaned = _cleanup_snippet(combined)
+    if not cleaned:
+        return None
+    return cleaned[:char_limit]
+
+
+def _extract_shape_text(shape) -> str | None:
+    text_frame = getattr(shape, "text_frame", None)
+    if text_frame is None:
+        text = getattr(shape, "text", "")
+        text = text.strip()
+        return text or None
+    paragraphs: list[str] = []
+    for paragraph in text_frame.paragraphs:
+        if getattr(paragraph, "runs", None):
+            text = "".join(run.text for run in paragraph.runs)
+        else:
+            text = paragraph.text
+        text = (text or "").strip()
+        if text:
+            paragraphs.append(text)
+    if not paragraphs:
+        return None
+    return " ".join(paragraphs)
+
+
 def _cleanup_snippet(snippet: str) -> str | None:
     lines = [line.strip() for line in snippet.splitlines() if line.strip()]
     joined = " ".join(lines)
@@ -248,5 +298,5 @@ register_extractor(
 )
 
 register_extractor(
-    ExtractorEntry((".pptx",), _unimplemented_extractor)
+    ExtractorEntry((".pptx",), _pptx_extractor)
 )

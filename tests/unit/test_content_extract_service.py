@@ -1,11 +1,12 @@
 from pathlib import Path
 
 from docx import Document
+from pptx import Presentation
 
 import vexor.services.content_extract_service as ces
 from vexor.services.content_extract_service import (
-    extract_head,
     extract_full_chunks,
+    extract_head,
     HEAD_CHAR_LIMIT,
 )
 
@@ -60,6 +61,20 @@ def test_extract_head_from_pdf(monkeypatch, tmp_path):
     assert snippet.startswith("PDF snippet one Second page text")
 
 
+def test_extract_head_from_pptx(tmp_path):
+    ppt_path = tmp_path / "sample.pptx"
+    presentation = Presentation()
+    slide_layout = presentation.slide_layouts[1]
+    slide = presentation.slides.add_slide(slide_layout)
+    slide.shapes.title.text = "Slide Title"
+    slide.placeholders[1].text = "Body paragraph"
+    presentation.save(ppt_path)
+
+    snippet = extract_head(ppt_path)
+
+    assert snippet.startswith("Slide Title Body paragraph")
+
+
 def test_extract_full_chunks_from_docx(tmp_path):
     doc_path = tmp_path / "long.docx"
     document = Document()
@@ -93,3 +108,18 @@ def test_extract_full_chunks_from_pdf(monkeypatch, tmp_path):
     chunks = extract_full_chunks(pdf_path, chunk_size=40, overlap=0)
 
     assert len(chunks) >= 2
+
+
+def test_extract_full_chunks_from_pptx(tmp_path):
+    ppt_path = tmp_path / "chunks.pptx"
+    presentation = Presentation()
+    slide_layout = presentation.slide_layouts[1]
+    slide = presentation.slides.add_slide(slide_layout)
+    slide.shapes.title.text = "Chunk Title"
+    slide.placeholders[1].text = "Paragraph one text"
+    presentation.save(ppt_path)
+
+    chunks = extract_full_chunks(ppt_path, chunk_size=20, overlap=0)
+
+    assert chunks
+    assert chunks[0].startswith("Chunk Title")

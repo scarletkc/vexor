@@ -11,7 +11,6 @@ from .services.content_extract_service import (
     DEFAULT_CHUNK_SIZE,
     extract_full_chunks,
     extract_head,
-    _cleanup_snippet,
 )
 
 PREVIEW_CHAR_LIMIT = 160
@@ -94,7 +93,7 @@ class FullStrategy(IndexModeStrategy):
             return [self.fallback.payload_for_file(file)]
         payloads: list[ModePayload] = []
         for index, chunk in enumerate(chunks):
-            normalized = _cleanup_snippet(chunk) or chunk.strip()
+            normalized = _normalize_preview_chunk(chunk)
             if not normalized:
                 continue
             preview = _trim_preview(normalized)
@@ -135,3 +134,11 @@ def _trim_preview(text: str, limit: int = PREVIEW_CHAR_LIMIT) -> str:
     if len(stripped) <= limit:
         return stripped
     return stripped[: limit - 1].rstrip() + "…"
+
+
+def _normalize_preview_chunk(text: str) -> str | None:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if lines:
+        return " ".join(lines)
+    stripped = text.strip()
+    return stripped or None

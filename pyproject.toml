@@ -35,6 +35,7 @@ dependencies = [
     "charset-normalizer>=3.3.0",
     "pypdf>=4.0.0",
     "python-docx>=0.8.11",
+    "python-pptx>=0.6.21",
 ]
 dynamic = ["version"]
 
