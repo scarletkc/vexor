@@ -37,14 +37,13 @@ class Messages:
     HELP_CLEAR_INDEX_ALL = "Delete all cached indexes stored under ~/.vexor."
 
     ERROR_API_KEY_MISSING = (
-        "Gemini API key is missing or still set to the placeholder. "
+        "API key is missing or still set to the placeholder. "
         "Configure it via `vexor config --set-api-key <token>` or an environment variable."
     )
-    ERROR_API_KEY_INVALID = (
-        "Gemini API key is invalid. Verify the stored token and try again."
-    )
+    ERROR_API_KEY_INVALID = "API key appears invalid. Verify the stored token and try again."
     ERROR_GENAI_PREFIX = "Gemini API request failed: "
-    ERROR_NO_EMBEDDINGS = "Gemini API returned no embeddings."
+    ERROR_OPENAI_PREFIX = "OpenAI API request failed: "
+    ERROR_NO_EMBEDDINGS = "Embedding API returned no embeddings."
     ERROR_EMPTY_QUERY = "Query text must not be empty."
     ERROR_BATCH_NEGATIVE = "Batch size must be >= 0"
     ERROR_MODE_INVALID = "Unsupported mode '{value}'. Allowed values: {allowed}."

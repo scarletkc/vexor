@@ -5,17 +5,7 @@ import pytest
 
 from vexor import search
 from vexor.providers import gemini as gemini_backend
-
-
-@pytest.fixture(autouse=True)
-def patch_config(monkeypatch):
-    class DummyConfig:
-        api_key = "cfg-key"
-        model = search.DEFAULT_MODEL
-        batch_size = 0
-
-    monkeypatch.setattr(gemini_backend, "load_config", lambda: DummyConfig())
-    monkeypatch.delenv(gemini_backend.ENV_API_KEY, raising=False)
+from vexor.providers import openai as openai_backend
 
 
 class FakeModels:
@@ -37,7 +27,7 @@ def _install_fake_client(monkeypatch, batches):
     monkeypatch.setattr(
         gemini_backend.genai,
         "Client",
-        lambda api_key: SimpleNamespace(models=models),
+        lambda **kwargs: SimpleNamespace(models=models),
     )
     return models
 
@@ -50,7 +40,7 @@ def test_gemini_backend_chunks_requests(monkeypatch):
             [[0.5, 0.5]],
         ],
     )
-    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=2)
+    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=2, api_key="cfg-key")
 
     vectors = backend.embed(["a", "bb", "ccc"])
 
@@ -61,7 +51,7 @@ def test_gemini_backend_chunks_requests(monkeypatch):
 
 def test_gemini_backend_empty(monkeypatch):
     _install_fake_client(monkeypatch, batches=[])
-    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=2)
+    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=2, api_key="cfg-key")
 
     result = backend.embed([])
 
@@ -70,7 +60,7 @@ def test_gemini_backend_empty(monkeypatch):
 
 def test_gemini_backend_no_embeddings(monkeypatch):
     models = _install_fake_client(monkeypatch, batches=[[]])
-    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=None)
+    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=None, api_key="cfg-key")
 
     with pytest.raises(RuntimeError) as exc:
         backend.embed(["file.txt"])
@@ -94,6 +84,65 @@ def test_chunk_helper():
     items = ["a", "b", "c", "d"]
     assert list(gemini_backend._chunk(items, None)) == [items]
     assert list(gemini_backend._chunk(items, 2)) == [["a", "b"], ["c", "d"]]
+
+
+class FakeOpenAIEmbeddings:
+    def __init__(self, batches):
+        self.batches = batches
+        self.calls = []
+        self.index = 0
+
+    def create(self, model, input):
+        self.calls.append(list(input))
+        vectors = self.batches[self.index]
+        self.index += 1
+        data = [SimpleNamespace(embedding=vec) for vec in vectors]
+        return SimpleNamespace(data=data)
+
+
+def _install_fake_openai_client(monkeypatch, batches):
+    embeddings = FakeOpenAIEmbeddings(batches)
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.embeddings = embeddings
+
+    monkeypatch.setattr(openai_backend, "OpenAI", FakeClient)
+    return embeddings
+
+
+def test_openai_backend_chunks_requests(monkeypatch):
+    embeddings = _install_fake_openai_client(
+        monkeypatch,
+        batches=[
+            [[1.0, 0.0], [0.0, 1.0]],
+            [[0.5, 0.5]],
+        ],
+    )
+    backend = openai_backend.OpenAIEmbeddingBackend(
+        model_name="text-embedding-3-small",
+        api_key="sk-test",
+        chunk_size=2,
+    )
+
+    vectors = backend.embed(["a", "bb", "ccc"])
+
+    assert vectors.shape == (3, 2)
+    assert embeddings.calls[0] == ["a", "bb"]
+    assert len(embeddings.calls) == 2
+
+
+def test_openai_backend_no_embeddings(monkeypatch):
+    _install_fake_openai_client(monkeypatch, batches=[[]])
+    backend = openai_backend.OpenAIEmbeddingBackend(
+        model_name="text-embedding-3-small",
+        api_key="sk-test",
+    )
+
+    with pytest.raises(RuntimeError) as exc:
+        backend.embed(["input"])
+
+    assert "no embeddings" in str(exc.value).lower()
 
 
 def test_vexor_searcher_embed_texts(monkeypatch):

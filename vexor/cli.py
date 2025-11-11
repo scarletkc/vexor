@@ -116,6 +116,7 @@ def search(
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
     provider = config.provider or DEFAULT_PROVIDER
     base_url = config.base_url
+    api_key = config.api_key
 
     clean_query = query.strip()
     if not clean_query:
@@ -141,6 +142,7 @@ def search(
         batch_size=batch_size,
         provider=provider,
         base_url=base_url,
+        api_key=api_key,
     )
     try:
         response = perform_search(request)
@@ -209,6 +211,7 @@ def index(
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
     provider = config.provider or DEFAULT_PROVIDER
     base_url = config.base_url
+    api_key = config.api_key
 
     directory = resolve_directory(path)
     mode_value = _validate_mode(mode)
@@ -289,6 +292,7 @@ def index(
             batch_size=batch_size,
             provider=provider,
             base_url=base_url,
+            api_key=api_key,
         )
     except RuntimeError as exc:
         console.print(_styled(str(exc), Styles.ERROR))

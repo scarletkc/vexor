@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Iterator, Sequence
 
 import numpy as np
@@ -11,7 +10,7 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
-from ..config import DEFAULT_MODEL, ENV_API_KEY, load_config
+from ..config import DEFAULT_MODEL
 from ..text import Messages
 
 
@@ -27,12 +26,9 @@ class GeminiEmbeddingBackend:
         base_url: str | None = None,
     ) -> None:
         load_dotenv()
-        config = load_config()
         self.model_name = model_name
         self.chunk_size = chunk_size if chunk_size and chunk_size > 0 else None
-        env_key = os.getenv(ENV_API_KEY)
-        configured_key = getattr(config, "api_key", None)
-        self.api_key = api_key or configured_key or env_key
+        self.api_key = api_key
         if not self.api_key or self.api_key.strip().lower() == "your_api_key_here":
             raise RuntimeError(Messages.ERROR_API_KEY_MISSING)
         client_kwargs: dict[str, object] = {"api_key": self.api_key}

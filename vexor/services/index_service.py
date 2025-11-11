@@ -36,6 +36,7 @@ def build_index(
     batch_size: int,
     provider: str,
     base_url: str | None,
+    api_key: str | None,
 ) -> IndexResult:
     """Create or refresh the cached index for *directory*."""
 
@@ -56,6 +57,7 @@ def build_index(
         batch_size=batch_size,
         provider=provider,
         base_url=base_url,
+        api_key=api_key,
     )
 
     if cached_files:

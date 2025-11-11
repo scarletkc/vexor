@@ -35,7 +35,14 @@ vexor config --set-batch-size 0   # 0 = single request
 vexor config --set-provider gemini
 vexor config --set-base-url https://proxy.example.com  # optional proxy; use --clear-base-url to reset
 ```
-Provider defaults to `gemini`, so you only need to override it when future backends land. Base URLs are optional and let you route requests through a custom proxy; run `vexor config --clear-base-url` to return to the official endpoint.
+Provider defaults to `gemini`, so you only need to override it when switching to upcoming backends (e.g., `openai`). Base URLs are optional and let you route requests through a custom proxy; run `vexor config --clear-base-url` to return to the official endpoint.
+
+Environment/API keys can be supplied via `vexor config --set-api-key`, `VEXOR_API_KEY`, or provider-specific variables (`GOOGLE_GENAI_API_KEY`, `OPENAI_API_KEY`). Example OpenAI setup:
+```bash
+vexor config --set-provider openai
+vexor config --set-model text-embedding-3-small
+export OPENAI_API_KEY="sk-..."   # or use vexor config --set-api-key
+```
 Configuration is stored in `~/.vexor/config.json`.
 
 Inspect or reset every cached index:
@@ -69,6 +76,7 @@ Tips:
 - Hidden files are included only if both `index` and `search` use `--include-hidden`.
 - Re-running `vexor index` only re-embeds files whose names changed (or were added/removed); if more than half the files differ, it automatically falls back to a full rebuild for consistency.
 - Specify the indexing mode with `--mode`; currently `name` (file names only) and `head` (first chunk of supported text/code/PDF/DOCX/etc. files) are available, each with its own cache.
+- Switch embedding providers (Gemini by default, OpenAI supported) via `vexor config --set-provider PROVIDER` and pick a matching embedding model.
 
 ## Commands
 | Command | Description |

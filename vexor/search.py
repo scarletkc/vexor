@@ -9,8 +9,9 @@ from typing import List, Protocol, Sequence
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-from .config import DEFAULT_MODEL, DEFAULT_PROVIDER, SUPPORTED_PROVIDERS
+from .config import DEFAULT_MODEL, DEFAULT_PROVIDER, SUPPORTED_PROVIDERS, resolve_api_key
 from .providers.gemini import GeminiEmbeddingBackend
+from .providers.openai import OpenAIEmbeddingBackend
 from .text import Messages
 
 
@@ -42,11 +43,13 @@ class VexorSearcher:
         batch_size: int = 0,
         provider: str = DEFAULT_PROVIDER,
         base_url: str | None = None,
+        api_key: str | None = None,
     ) -> None:
         self.model_name = model_name
         self.batch_size = max(batch_size, 0)
         self.provider = (provider or DEFAULT_PROVIDER).lower()
         self.base_url = base_url
+        self.api_key = resolve_api_key(api_key, self.provider)
         if backend is not None:
             self._backend = backend
             self._device = getattr(backend, "device", "Custom embedding backend")
@@ -102,6 +105,15 @@ class VexorSearcher:
                 model_name=self.model_name,
                 chunk_size=self.batch_size,
                 base_url=self.base_url,
+                api_key=self.api_key,
+            )
+        if self.provider == "openai":
+            self._device = f"{self.model_name} via OpenAI API"
+            return OpenAIEmbeddingBackend(
+                model_name=self.model_name,
+                chunk_size=self.batch_size,
+                base_url=self.base_url,
+                api_key=self.api_key,
             )
         allowed = ", ".join(SUPPORTED_PROVIDERS)
         raise RuntimeError(

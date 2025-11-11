@@ -33,3 +33,18 @@ def test_set_provider_and_base_url(tmp_path, monkeypatch):
     config_module.set_base_url(None)
     cfg = config_module.load_config()
     assert cfg.base_url is None
+
+
+def test_resolve_api_key_prefers_config(monkeypatch):
+    assert config_module.resolve_api_key("cfg-key", "gemini") == "cfg-key"
+
+
+def test_resolve_api_key_env_fallback(monkeypatch):
+    monkeypatch.delenv(config_module.ENV_API_KEY, raising=False)
+    monkeypatch.setenv(config_module.OPENAI_ENV, "env-openai")
+    assert config_module.resolve_api_key(None, "openai") == "env-openai"
+
+
+def test_resolve_api_key_general_env(monkeypatch):
+    monkeypatch.setenv(config_module.ENV_API_KEY, "shared-key")
+    assert config_module.resolve_api_key(None, "gemini") == "shared-key"

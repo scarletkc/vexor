@@ -21,6 +21,7 @@ class SearchRequest:
     batch_size: int
     provider: str
     base_url: str | None
+    api_key: str | None
 
 
 @dataclass(slots=True)
@@ -72,6 +73,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         batch_size=request.batch_size,
         provider=request.provider,
         base_url=request.base_url,
+        api_key=request.api_key,
     )
     query_vector = searcher.embed_texts([request.query])[0]
     similarities = cosine_similarity(

@@ -36,7 +36,7 @@ def test_build_index_runs_incremental_update(tmp_path, monkeypatch):
     file_a.write_text("a")
     file_b.write_text("b")
 
-    kwargs = dict(provider="gemini", base_url=None)
+    kwargs = dict(provider="gemini", base_url=None, api_key=None)
     first = build_index(
         root,
         include_hidden=False,
@@ -100,12 +100,12 @@ def test_build_index_falls_back_to_full_rebuild(tmp_path, monkeypatch):
         path.write_text(name)
         files.append(path)
 
-    build_index(root, include_hidden=False, mode="name", recursive=True, model_name="model", batch_size=0, provider="gemini", base_url=None)
+    build_index(root, include_hidden=False, mode="name", recursive=True, model_name="model", batch_size=0, provider="gemini", base_url=None, api_key=None)
     DummySearcher.calls = []
 
     for file in files[:3]:
         file.write_text(file.read_text() + "!")
 
-    build_index(root, include_hidden=False, mode="name", recursive=True, model_name="model", batch_size=0, provider="gemini", base_url=None)
+    build_index(root, include_hidden=False, mode="name", recursive=True, model_name="model", batch_size=0, provider="gemini", base_url=None, api_key=None)
     assert len(DummySearcher.calls) == 1
     assert len(DummySearcher.calls[0]) == 4  # full rebuild embeds every file
