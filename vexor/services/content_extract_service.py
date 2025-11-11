@@ -99,9 +99,16 @@ def extract_full_chunks(
 ) -> list[str]:
     """Return sliding-window chunks for text-like files."""
 
-    if path.suffix.lower() not in TEXT_EXTENSIONS:
+    suffix = path.suffix.lower()
+    text: str | None = None
+    if suffix in TEXT_EXTENSIONS:
+        text = _read_text_full(path, char_limit)
+    elif suffix == ".pdf":
+        text = _pdf_extractor(path, char_limit)
+    elif suffix == ".docx":
+        text = _docx_extractor(path, char_limit)
+    else:
         return []
-    text = _read_text_full(path, char_limit)
     if text is None:
         return []
     normalized = text.replace("\r\n", "\n").strip()

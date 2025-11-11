@@ -11,6 +11,7 @@ from .services.content_extract_service import (
     DEFAULT_CHUNK_SIZE,
     extract_full_chunks,
     extract_head,
+    _cleanup_snippet,
 )
 
 PREVIEW_CHAR_LIMIT = 160
@@ -93,16 +94,21 @@ class FullStrategy(IndexModeStrategy):
             return [self.fallback.payload_for_file(file)]
         payloads: list[ModePayload] = []
         for index, chunk in enumerate(chunks):
-            preview = _trim_preview(chunk)
-            label = f"{file.name} [#{index + 1}] :: {chunk}"
+            normalized = _cleanup_snippet(chunk) or chunk.strip()
+            if not normalized:
+                continue
+            preview = _trim_preview(normalized)
+            label = f"{file.name} [#{index + 1}] :: {normalized}"
             payloads.append(
                 ModePayload(
                     file=file,
                     label=label,
-                    preview=f"[Chunk {index + 1}] {preview}",
+                    preview=preview,
                     chunk_index=index,
                 )
             )
+        if not payloads:
+            return [self.fallback.payload_for_file(file)]
         return payloads
 
 

@@ -725,4 +725,5 @@ def test_full_mode_chunked_previews(tmp_path, monkeypatch):
         ],
     )
     assert search_result.exit_code == 0
-    assert "Chunk" in search_result.stdout
+    assert "paragraph" in search_result.stdout
+    assert "[Chunk" not in search_result.stdout

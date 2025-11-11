@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from docx import Document
+
 from vexor.modes import FullStrategy, HeadStrategy, ModePayload, NameStrategy
 
 
@@ -39,7 +41,8 @@ def test_full_strategy_chunks_text(tmp_path):
     assert payloads[0].chunk_index == 0
     if len(payloads) > 1:
         assert payloads[1].chunk_index == 1
-    assert payloads[0].preview.startswith("[Chunk 1]")
+    assert "[Chunk" not in payloads[0].preview
+    assert "\n" not in payloads[0].preview
 
 
 def test_full_strategy_fallback(tmp_path):
@@ -49,3 +52,19 @@ def test_full_strategy_fallback(tmp_path):
     payloads = strategy.payloads_for_files([file_path])
     assert len(payloads) == 1
     assert payloads[0].label == file_path.name
+
+
+def test_full_strategy_supports_docx(tmp_path):
+    doc_path = tmp_path / "sample.docx"
+    document = Document()
+    for idx in range(5):
+        document.add_paragraph(f"Doc paragraph {idx} " + "text " * 10)
+    document.save(doc_path)
+
+    strategy = FullStrategy(chunk_size=50, overlap=0)
+    payloads = strategy.payloads_for_files([doc_path])
+
+    assert payloads
+    assert payloads[0].label.startswith("sample.docx")
+    assert "[Chunk" not in payloads[0].preview
+    assert "\n" not in payloads[0].preview

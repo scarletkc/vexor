@@ -3,7 +3,11 @@ from pathlib import Path
 from docx import Document
 
 import vexor.services.content_extract_service as ces
-from vexor.services.content_extract_service import extract_head, HEAD_CHAR_LIMIT
+from vexor.services.content_extract_service import (
+    extract_head,
+    extract_full_chunks,
+    HEAD_CHAR_LIMIT,
+)
 
 
 def test_extract_head_from_text(tmp_path):
@@ -54,3 +58,38 @@ def test_extract_head_from_pdf(monkeypatch, tmp_path):
     snippet = extract_head(pdf_path)
 
     assert snippet.startswith("PDF snippet one Second page text")
+
+
+def test_extract_full_chunks_from_docx(tmp_path):
+    doc_path = tmp_path / "long.docx"
+    document = Document()
+    for idx in range(10):
+        document.add_paragraph(f"Paragraph {idx} " + "text " * 5)
+    document.save(doc_path)
+
+    chunks = extract_full_chunks(doc_path, chunk_size=50, overlap=0)
+
+    assert chunks
+    assert any("Paragraph" in chunk for chunk in chunks)
+
+
+def test_extract_full_chunks_from_pdf(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    class DummyPage:
+        def __init__(self, text: str):
+            self._text = text
+
+        def extract_text(self):
+            return self._text
+
+    class DummyReader:
+        def __init__(self, *_):
+            self.pages = [DummyPage("One two three four five six seven eight nine ten" * 5)]
+
+    monkeypatch.setattr(ces, "PdfReader", lambda path: DummyReader(path))
+
+    chunks = extract_full_chunks(pdf_path, chunk_size=40, overlap=0)
+
+    assert len(chunks) >= 2
