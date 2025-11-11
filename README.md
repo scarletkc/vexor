@@ -78,7 +78,7 @@ Tips:
 | `vexor config --set-model/--set-batch-size/--show` | Manage default model and batch size. |
 | `vexor config --show-index-all/--clear-index-all` | Inspect or delete every cached index regardless of path/mode. |
 
-## More Documentation
+## Documentation
 See the [docs](https://github.com/scarletkc/vexor/tree/main/docs) for more details.
 
 Contributions, issues, and PRs are all welcome!
