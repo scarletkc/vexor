@@ -9,6 +9,7 @@ import numpy as np
 from dotenv import load_dotenv
 from google import genai
 from google.genai import errors as genai_errors
+from google.genai import types as genai_types
 
 from ..config import DEFAULT_MODEL, ENV_API_KEY, load_config
 from ..text import Messages
@@ -23,6 +24,7 @@ class GeminiEmbeddingBackend:
         model_name: str = DEFAULT_MODEL,
         api_key: str | None = None,
         chunk_size: int | None = None,
+        base_url: str | None = None,
     ) -> None:
         load_dotenv()
         config = load_config()
@@ -33,7 +35,10 @@ class GeminiEmbeddingBackend:
         self.api_key = api_key or configured_key or env_key
         if not self.api_key or self.api_key.strip().lower() == "your_api_key_here":
             raise RuntimeError(Messages.ERROR_API_KEY_MISSING)
-        self._client = genai.Client(api_key=self.api_key)
+        client_kwargs: dict[str, object] = {"api_key": self.api_key}
+        if base_url:
+            client_kwargs["http_options"] = genai_types.HttpOptions(base_url=base_url)
+        self._client = genai.Client(**client_kwargs)
 
     def embed(self, texts: Sequence[str]) -> np.ndarray:
         if not texts:
@@ -71,4 +76,3 @@ def _format_genai_error(exc: genai_errors.ClientError) -> str:
     if "API key" in message:
         return Messages.ERROR_API_KEY_INVALID
     return f"{Messages.ERROR_GENAI_PREFIX}{message}"
-

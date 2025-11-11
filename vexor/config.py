@@ -12,6 +12,8 @@ CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_MODEL = "gemini-embedding-001"
 DEFAULT_BATCH_SIZE = 0
+DEFAULT_PROVIDER = "gemini"
+SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER,)
 ENV_API_KEY = "GOOGLE_GENAI_API_KEY"
 
 
@@ -20,6 +22,8 @@ class Config:
     api_key: str | None = None
     model: str = DEFAULT_MODEL
     batch_size: int = DEFAULT_BATCH_SIZE
+    provider: str = DEFAULT_PROVIDER
+    base_url: str | None = None
 
 
 def load_config() -> Config:
@@ -30,6 +34,8 @@ def load_config() -> Config:
         api_key=raw.get("api_key") or None,
         model=raw.get("model") or DEFAULT_MODEL,
         batch_size=int(raw.get("batch_size", DEFAULT_BATCH_SIZE)),
+        provider=raw.get("provider") or DEFAULT_PROVIDER,
+        base_url=raw.get("base_url") or None,
     )
 
 
@@ -41,6 +47,10 @@ def save_config(config: Config) -> None:
     if config.model:
         data["model"] = config.model
     data["batch_size"] = config.batch_size
+    if config.provider:
+        data["provider"] = config.provider
+    if config.base_url:
+        data["base_url"] = config.base_url
     CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -59,4 +69,16 @@ def set_model(value: str) -> None:
 def set_batch_size(value: int) -> None:
     config = load_config()
     config.batch_size = value
+    save_config(config)
+
+
+def set_provider(value: str) -> None:
+    config = load_config()
+    config.provider = value
+    save_config(config)
+
+
+def set_base_url(value: str | None) -> None:
+    config = load_config()
+    config.base_url = value
     save_config(config)

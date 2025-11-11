@@ -16,6 +16,8 @@ from .cache import clear_all_cache, list_cache_entries
 from .config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_MODEL,
+    DEFAULT_PROVIDER,
+    SUPPORTED_PROVIDERS,
     load_config,
 )
 from .modes import available_modes, get_strategy
@@ -112,6 +114,8 @@ def search(
     config = load_config()
     model_name = config.model or DEFAULT_MODEL
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
+    provider = config.provider or DEFAULT_PROVIDER
+    base_url = config.base_url
 
     clean_query = query.strip()
     if not clean_query:
@@ -135,6 +139,8 @@ def search(
         top_k=top,
         model_name=model_name,
         batch_size=batch_size,
+        provider=provider,
+        base_url=base_url,
     )
     try:
         response = perform_search(request)
@@ -201,6 +207,8 @@ def index(
     config = load_config()
     model_name = config.model or DEFAULT_MODEL
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
+    provider = config.provider or DEFAULT_PROVIDER
+    base_url = config.base_url
 
     directory = resolve_directory(path)
     mode_value = _validate_mode(mode)
@@ -271,14 +279,20 @@ def index(
         return
 
     console.print(_styled(Messages.INFO_INDEX_RUNNING.format(path=directory), Styles.INFO))
-    result = build_index(
-        directory,
-        include_hidden=include_hidden,
-        mode=mode_value,
-        recursive=recursive,
-        model_name=model_name,
-        batch_size=batch_size,
-    )
+    try:
+        result = build_index(
+            directory,
+            include_hidden=include_hidden,
+            mode=mode_value,
+            recursive=recursive,
+            model_name=model_name,
+            batch_size=batch_size,
+            provider=provider,
+            base_url=base_url,
+        )
+    except RuntimeError as exc:
+        console.print(_styled(str(exc), Styles.ERROR))
+        raise typer.Exit(code=1)
     if result.status == IndexStatus.EMPTY:
         console.print(_styled(Messages.INFO_NO_FILES, Styles.WARNING))
         raise typer.Exit(code=0)
@@ -313,6 +327,21 @@ def config(
         "--set-batch-size",
         help=Messages.HELP_SET_BATCH,
     ),
+    set_provider_option: str | None = typer.Option(
+        None,
+        "--set-provider",
+        help=Messages.HELP_SET_PROVIDER,
+    ),
+    set_base_url_option: str | None = typer.Option(
+        None,
+        "--set-base-url",
+        help=Messages.HELP_SET_BASE_URL,
+    ),
+    clear_base_url: bool = typer.Option(
+        False,
+        "--clear-base-url",
+        help=Messages.HELP_CLEAR_BASE_URL,
+    ),
     show: bool = typer.Option(
         False,
         "--show",
@@ -332,12 +361,27 @@ def config(
     """Manage Vexor configuration stored in ~/.vexor/config.json."""
     if set_batch_option is not None and set_batch_option < 0:
         raise typer.BadParameter(Messages.ERROR_BATCH_NEGATIVE)
+    if set_base_url_option and clear_base_url:
+        raise typer.BadParameter(Messages.ERROR_BASE_URL_CONFLICT)
+    if set_provider_option is not None:
+        normalized_provider = set_provider_option.strip().lower()
+        if normalized_provider not in SUPPORTED_PROVIDERS:
+            allowed = ", ".join(SUPPORTED_PROVIDERS)
+            raise typer.BadParameter(
+                Messages.ERROR_PROVIDER_INVALID.format(
+                    value=set_provider_option, allowed=allowed
+                )
+            )
+        set_provider_option = normalized_provider
 
     updates = apply_config_updates(
         api_key=set_api_key_option,
         clear_api_key=clear_api_key,
         model=set_model_option,
         batch_size=set_batch_option,
+        provider=set_provider_option,
+        base_url=set_base_url_option,
+        clear_base_url=clear_base_url,
     )
 
     if updates.api_key_set:
@@ -352,6 +396,16 @@ def config(
         console.print(
             _styled(Messages.INFO_BATCH_SET.format(value=set_batch_option), Styles.SUCCESS)
         )
+    if updates.provider_set and set_provider_option is not None:
+        console.print(
+            _styled(Messages.INFO_PROVIDER_SET.format(value=set_provider_option), Styles.SUCCESS)
+        )
+    if updates.base_url_set and set_base_url_option is not None:
+        console.print(
+            _styled(Messages.INFO_BASE_URL_SET.format(value=set_base_url_option), Styles.SUCCESS)
+        )
+    if updates.base_url_cleared and clear_base_url:
+        console.print(_styled(Messages.INFO_BASE_URL_CLEARED, Styles.SUCCESS))
 
     if clear_index_all:
         removed = clear_all_cache()
@@ -384,8 +438,10 @@ def config(
             _styled(
                 Messages.INFO_CONFIG_SUMMARY.format(
                     api="yes" if cfg.api_key else "no",
+                    provider=cfg.provider or DEFAULT_PROVIDER,
                     model=cfg.model or DEFAULT_MODEL,
                     batch=cfg.batch_size if cfg.batch_size is not None else DEFAULT_BATCH_SIZE,
+                    base_url=cfg.base_url or "none",
                 ),
                 Styles.INFO,
             )

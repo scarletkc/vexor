@@ -32,7 +32,10 @@ Optional defaults:
 ```bash
 vexor config --set-model gemini-embedding-001
 vexor config --set-batch-size 0   # 0 = single request
+vexor config --set-provider gemini
+vexor config --set-base-url https://proxy.example.com  # optional proxy; use --clear-base-url to reset
 ```
+Provider defaults to `gemini`, so you only need to override it when future backends land. Base URLs are optional and let you route requests through a custom proxy; run `vexor config --clear-base-url` to return to the official endpoint.
 Configuration is stored in `~/.vexor/config.json`.
 
 Inspect or reset every cached index:
@@ -74,8 +77,9 @@ Tips:
 | `vexor search QUERY --path PATH --mode MODE [--top K] [--include-hidden] [--no-recursive]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden settings), shows matches for `QUERY`. |
 | `vexor doctor` | Checks whether the `vexor` command is available on the current `PATH`. |
 | `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |
-| `vexor config --set-api-key/--clear-api-key` | Manage the stored Gemini API key. |
-| `vexor config --set-model/--set-batch-size/--show` | Manage default model and batch size. |
+| `vexor config --set-api-key/--clear-api-key` | Manage the stored API key (Gemini by default). |
+| `vexor config --set-model/--set-batch-size/--show` | Manage default model, batch size, and inspect current settings. |
+| `vexor config --set-provider/--set-base-url/--clear-base-url` | Switch embedding providers and optionally override the remote base URL. |
 | `vexor config --show-index-all/--clear-index-all` | Inspect or delete every cached index regardless of path/mode. |
 
 ## Documentation

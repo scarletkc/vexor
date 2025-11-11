@@ -419,6 +419,10 @@ def test_config_set_and_show(tmp_path):
             "custom-model",
             "--set-batch-size",
             "42",
+            "--set-provider",
+            "gemini",
+            "--set-base-url",
+            "https://proxy.example.com",
         ],
     )
 
@@ -428,6 +432,8 @@ def test_config_set_and_show(tmp_path):
     assert data["api_key"] == "abc123"
     assert data["model"] == "custom-model"
     assert data["batch_size"] == 42
+    assert data["provider"] == "gemini"
+    assert data["base_url"] == "https://proxy.example.com"
 
     result_show = runner.invoke(app, ["config", "--show"])
     assert "custom-model" in result_show.stdout
@@ -444,6 +450,30 @@ def test_config_clear_api_key(tmp_path):
     assert result.exit_code == 0
     data = json.loads(config_path.read_text())
     assert "api_key" not in data
+
+
+def test_config_clear_base_url(tmp_path):
+    runner = CliRunner()
+    config_path = tmp_path / "config" / "config.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps({"base_url": "https://proxy.example.com"}), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["config", "--clear-base-url", "--show"])
+
+    assert result.exit_code == 0
+    data = json.loads(config_path.read_text())
+    assert "base_url" not in data
+
+
+def test_config_rejects_unknown_provider(tmp_path):
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["config", "--set-provider", "unknown"])
+
+    assert result.exit_code != 0
+    assert "Unsupported provider" in result.stderr
 
 
 def test_config_without_args_opens_editor(tmp_path, monkeypatch):

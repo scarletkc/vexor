@@ -19,6 +19,8 @@ class SearchRequest:
     top_k: int
     model_name: str
     batch_size: int
+    provider: str
+    base_url: str | None
 
 
 @dataclass(slots=True)
@@ -68,6 +70,8 @@ def perform_search(request: SearchRequest) -> SearchResponse:
     searcher = VexorSearcher(
         model_name=request.model_name,
         batch_size=request.batch_size,
+        provider=request.provider,
+        base_url=request.base_url,
     )
     query_vector = searcher.embed_texts([request.query])[0]
     similarities = cosine_similarity(

@@ -34,6 +34,8 @@ def build_index(
     recursive: bool,
     model_name: str,
     batch_size: int,
+    provider: str,
+    base_url: str | None,
 ) -> IndexResult:
     """Create or refresh the cached index for *directory*."""
 
@@ -49,7 +51,12 @@ def build_index(
     cached_files = existing_meta.get("files", []) if existing_meta else []
 
     strategy = get_strategy(mode)
-    searcher = VexorSearcher(model_name=model_name, batch_size=batch_size)
+    searcher = VexorSearcher(
+        model_name=model_name,
+        batch_size=batch_size,
+        provider=provider,
+        base_url=base_url,
+    )
 
     if cached_files:
         snapshot = _snapshot_current_files(files, directory)
