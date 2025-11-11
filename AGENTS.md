@@ -1,23 +1,23 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Vexor’s runtime code lives under `vexor/`, with Typer entrypoints in `cli.py`/`__main__.py`, caching primitives in `cache.py`, provider adapters in `providers/`, search/index services in `services/`, and shared helpers in `utils.py` plus `text.py`. Tests mirror this layout—`tests/unit/` covers pure functions and services, while `tests/integration/` drives CLI, config, and end-to-end flows. Visual assets stay in `assets/`, narrative docs in `docs/`, and `dist/` only appears when you build release artifacts.
+Runtime code sits inside `vexor/`: Typer entrypoints (`cli.py`, `__main__.py`) delegate to service layers (`services/index_service.py`, `services/search_service.py`, `services/config_service.py`) and shared helpers (`cache.py`, `config.py`, `text.py`, `utils.py`). Provider adapters for Gemini/OpenAI live under `providers/`. Documentation (`docs/development.md`, `docs/roadmap.md`, `docs/workflow-diagram.md`) and assets (`assets/`) explain workflows and future work, while build outputs only appear in `dist/`. Tests mirror the structure—`tests/unit/` covers helpers/services and `tests/integration/` drives CLI runs such as `test_cli.py` and `test_end_to_end.py`.
 
 ## Build, Test, and Development Commands
-- `pip install -e .[dev]` installs the package plus pytest, coverage, and packaging utilities.
-- `python -m vexor --help` exercises the local CLI, while `vexor search ...` or `vexor index ...` run once the entry point is on PATH.
-- `pytest` runs the entire suite using fake embedding backends (no network); use `pytest tests/unit -k cache` for targeted checks and `pytest --cov=vexor --cov-report=term-missing` before shipping.
-- `python -m build` produces sdist and wheel files in `dist/`, matching the publish workflow.
+- `pip install -e .[dev]` installs Vexor plus pytest, coverage, and packaging helpers.
+- `python -m vexor --help` smoke-tests the CLI; use `vexor index --path . --mode head` and `vexor search "config loader" --path . --mode name` for realistic runs.
+- `pytest` stays offline via fake providers; scope down with `pytest tests/unit -k cache` and add `--maxfail=1 -ra` for quick failures.
+- `pytest --cov=vexor --cov-report=term-missing` should pass before merging to hold the Codecov badge steady.
+- `python -m build` (wheel+sdist) produces release artifacts mirrored by CI.
 
 ## Coding Style & Naming Conventions
-Follow PEP 8 spacing (4-space indents, ~100-character lines) and keep modules/functions in `snake_case`, classes in `PascalCase`, and Typer commands in imperative form (`search`, `index`). Type-hint new code, raise `typer.BadParameter` for CLI validation, and keep user-facing strings in `text.py` for consistent Rich styling. Tests adopt `test_<subject>.py` names and should rely on fixtures or stubs instead of real API calls.
+Follow PEP 8 (4-space indent, ~100-char lines). Use `snake_case` for modules/functions, `PascalCase` for classes, and lowercase imperative Typer command names. Type-annotate new code, surface CLI validation errors via `typer.BadParameter`, and route user-facing copy through `text.py` so Rich styling remains consistent. Tests live in `test_<subject>.py`, prefer fixtures/stubs to real APIs, and assert structured output instead of console strings.
 
 ## Testing Guidelines
-Pytest is the only framework: unit suites guard services/utilities, and integration suites exercise Typer flows under `tests/integration/test_cli.py` and `test_end_to_end.py`. Keep the fake providers current so runs stay offline. When adding features, include regression plus happy-path coverage and ensure the Codecov badge trend does not fall—open PRs should never reduce overall coverage.
+Unit suites validate deterministic logic (cache pruning, mode validation, extension handling), while integration suites spawn the CLI to verify Rich tables, config flows, and search/index orchestration. Keep fake provider fixtures current so runs remain offline. Pair every change with happy-path and failure coverage (invalid mode, missing config, empty query) and add regressions whenever cache or provider layers change.
 
 ## Commit & Pull Request Guidelines
-Commits in history use concise, imperative subjects (“Add vexor logo image”), so follow that style and keep summaries under ~60 characters. Each PR should describe motivation, list key commands or screenshots for CLI output, link issues, and confirm `pytest --cov` was run. Flag configuration or cache-path changes so reviewers can double-check backward compatibility.
-Keep the README, documentation, and this file up to date.
+History favors concise, imperative commit subjects (“Add vexor logo image”). PRs should explain motivation, list exercised commands or screenshots, link issues, and confirm `pytest --cov` output. Call out config-path, cache-schema, or provider changes so reviewers can check backward compatibility, and update README/docs when behavior shifts.
 
-## Security & Configuration Tips
-Never hard-code API keys or base URLs; rely on `vexor config --set-api-key`, provider-specific env vars, or `.env` files ignored by Git. Cache/config data live in `~/.vexor`; clean with `vexor config --clear-index-all` when debugging. Treat embedding providers as untrusted inputs—sanitize filesystem paths before writing and prefer defensive checks around remote responses.
+## Security, Configuration & Maintenance
+Never commit API keys or provider endpoints; rely on `vexor config --set-api-key`, provider env vars, or ignored `.env` files. Cache/config data lives in `~/.vexor`—reset with `vexor config --clear-index-all` when troubleshooting stale indexes. Sanitize filesystem paths, treat embedding outputs as untrusted input before writing to disk, and update README/docs/this guide whenever workflows change.
