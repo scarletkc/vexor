@@ -29,7 +29,7 @@ pip install vexor # or use pipx, uv
 The CLI entry point is `vexor`.
 
 ## Configure
-Set the Gemini API key once and reuse it everywhere:
+Set the API key once and reuse it everywhere:
 ```bash
 vexor config --set-api-key "YOUR_KEY"
 ```
