@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Sequence
+from typing import MutableMapping, Sequence
 
 from .cache_service import load_index_metadata_safe
 from ..cache import IndexedChunk
@@ -55,6 +56,7 @@ def build_index(
     )
     if not files:
         return IndexResult(status=IndexStatus.EMPTY)
+    stat_cache: dict[Path, os.stat_result] = {}
 
     existing_meta = load_index_metadata_safe(
         directory,
@@ -77,7 +79,7 @@ def build_index(
     )
 
     if cached_files:
-        snapshot = _snapshot_current_files(files, directory)
+        snapshot = _snapshot_current_files(files, directory, stat_cache=stat_cache)
         diff = _diff_cached_files(snapshot, cached_files)
         if diff.is_noop:
             return IndexResult(status=IndexStatus.UP_TO_DATE, files_indexed=len(files))
@@ -95,6 +97,7 @@ def build_index(
                 searcher=searcher,
                 apply_fn=apply_index_updates,
                 extensions=extensions,
+                stat_cache=stat_cache,
             )
             return IndexResult(
                 status=IndexStatus.STORED,
@@ -104,7 +107,7 @@ def build_index(
 
     file_labels = [payload.label for payload in payloads]
     embeddings = searcher.embed_texts(file_labels)
-    entries = _build_index_entries(payloads, embeddings, directory)
+    entries = _build_index_entries(payloads, embeddings, directory, stat_cache=stat_cache)
 
     cache_path = store_index(
         root=directory,
@@ -172,11 +175,16 @@ class FileDiff:
         return self.added + self.modified
 
 
-def _snapshot_current_files(files: list[Path], root: Path) -> dict[str, SnapshotEntry]:
+def _snapshot_current_files(
+    files: list[Path],
+    root: Path,
+    *,
+    stat_cache: MutableMapping[Path, os.stat_result] | None = None,
+) -> dict[str, SnapshotEntry]:
     snapshot: dict[str, SnapshotEntry] = {}
     for path in files:
         rel = _relative_to_root(path, root)
-        stat = path.stat()
+        stat = _stat_for_path(path, stat_cache)
         snapshot[rel] = SnapshotEntry(
             path=path,
             rel_path=rel,
@@ -233,6 +241,7 @@ def _apply_incremental_update(
     searcher,
     apply_fn,
     extensions: Sequence[str] | None,
+    stat_cache: MutableMapping[Path, os.stat_result] | None = None,
 ) -> Path:
     ordered_entries = [
         (_relative_to_root(payload.file, directory), payload.chunk_index)
@@ -244,7 +253,12 @@ def _apply_incremental_update(
         if targets:
             labels = [payload.label for payload in targets]
             embeddings = searcher.embed_texts(labels)
-            changed_entries = _build_index_entries(targets, embeddings, directory)
+            changed_entries = _build_index_entries(
+                targets,
+                embeddings,
+                directory,
+                stat_cache=stat_cache,
+            )
         else:
             changed_entries = []
     else:
@@ -276,9 +290,12 @@ def _build_index_entries(
     payloads: Sequence[ModePayload],
     embeddings: Sequence[Sequence[float]],
     root: Path,
+    *,
+    stat_cache: MutableMapping[Path, os.stat_result] | None = None,
 ) -> list[IndexedChunk]:
     entries: list[IndexedChunk] = []
     for idx, payload in enumerate(payloads):
+        stat = _stat_for_path(payload.file, stat_cache)
         entries.append(
             IndexedChunk(
                 path=payload.file,
@@ -286,6 +303,21 @@ def _build_index_entries(
                 chunk_index=payload.chunk_index,
                 preview=payload.preview or "",
                 embedding=embeddings[idx],
+                size_bytes=stat.st_size,
+                mtime=stat.st_mtime,
             )
         )
     return entries
+
+
+def _stat_for_path(
+    path: Path,
+    cache: MutableMapping[Path, os.stat_result] | None = None,
+) -> os.stat_result:
+    if cache is None:
+        return path.stat()
+    stat = cache.get(path)
+    if stat is None:
+        stat = path.stat()
+        cache[path] = stat
+    return stat

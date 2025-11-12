@@ -26,6 +26,8 @@ class IndexedChunk:
     chunk_index: int
     preview: str
     embedding: Sequence[float]
+    size_bytes: int | None = None
+    mtime: float | None = None
 
 
 def _cache_key(
@@ -271,37 +273,58 @@ def store_index(
             )
             index_id = cursor.lastrowid
 
+            file_rows: list[tuple] = []
+            vector_blobs: list[bytes] = []
             for position, entry in enumerate(entries):
-                stat = entry.path.stat()
-                file_cursor = conn.execute(
-                    """
-                    INSERT INTO indexed_file (
-                        index_id,
-                        rel_path,
-                        abs_path,
-                        size_bytes,
-                        mtime,
-                        position,
-                        preview,
-                        chunk_index
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
+                size_bytes = entry.size_bytes
+                mtime = entry.mtime
+                if size_bytes is None or mtime is None:
+                    stat = entry.path.stat()
+                    size_bytes = stat.st_size
+                    mtime = stat.st_mtime
+                file_rows.append(
                     (
                         index_id,
                         entry.rel_path,
                         str(entry.path),
-                        stat.st_size,
-                        stat.st_mtime,
+                        size_bytes,
+                        mtime,
                         position,
                         entry.preview,
                         entry.chunk_index,
-                    ),
+                    )
                 )
-                vector_blob = np.asarray(entry.embedding, dtype=np.float32).tobytes()
-                conn.execute(
-                    "INSERT OR REPLACE INTO file_embedding (file_id, vector_blob) VALUES (?, ?)",
-                    (file_cursor.lastrowid, vector_blob),
+                vector_blobs.append(
+                    np.asarray(entry.embedding, dtype=np.float32).tobytes()
                 )
+
+            conn.executemany(
+                """
+                INSERT INTO indexed_file (
+                    index_id,
+                    rel_path,
+                    abs_path,
+                    size_bytes,
+                    mtime,
+                    position,
+                    preview,
+                    chunk_index
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                file_rows,
+            )
+
+            inserted_ids = conn.execute(
+                "SELECT id FROM indexed_file WHERE index_id = ? ORDER BY position ASC",
+                (index_id,),
+            ).fetchall()
+            conn.executemany(
+                "INSERT OR REPLACE INTO file_embedding (file_id, vector_blob) VALUES (?, ?)",
+                (
+                    (row["id"], vector_blobs[idx])
+                    for idx, row in enumerate(inserted_ids)
+                ),
+            )
 
         return db_path
     finally:
@@ -368,40 +391,63 @@ def apply_index_updates(
                         (index_id, rel_path),
                     )
                     chunk_list.sort(key=lambda item: item.chunk_index)
+                    file_rows: list[tuple] = []
+                    vector_blobs: list[bytes] = []
                     for chunk in chunk_list:
                         vector = np.asarray(chunk.embedding, dtype=np.float32)
                         if vector_dimension is None:
                             vector_dimension = vector.shape[0]
-                        stat = chunk.path.stat()
-                        cursor = conn.execute(
-                            """
-                            INSERT INTO indexed_file (
-                                index_id,
-                                rel_path,
-                                abs_path,
-                                size_bytes,
-                                mtime,
-                                position,
-                                preview,
-                                chunk_index
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
+                        size_bytes = chunk.size_bytes
+                        mtime = chunk.mtime
+                        if size_bytes is None or mtime is None:
+                            stat = chunk.path.stat()
+                            size_bytes = stat.st_size
+                            mtime = stat.st_mtime
+                        file_rows.append(
                             (
                                 index_id,
                                 rel_path,
                                 str(chunk.path),
-                                stat.st_size,
-                                stat.st_mtime,
+                                size_bytes,
+                                mtime,
                                 0,
                                 chunk.preview,
                                 chunk.chunk_index,
-                            ),
+                            )
                         )
-                        file_id = cursor.lastrowid
-                        conn.execute(
-                            "INSERT INTO file_embedding (file_id, vector_blob) VALUES (?, ?)",
-                            (file_id, vector.tobytes()),
-                        )
+                        vector_blobs.append(vector.tobytes())
+
+                    conn.executemany(
+                        """
+                        INSERT INTO indexed_file (
+                            index_id,
+                            rel_path,
+                            abs_path,
+                            size_bytes,
+                            mtime,
+                            position,
+                            preview,
+                            chunk_index
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        file_rows,
+                    )
+
+                    inserted_ids = conn.execute(
+                        """
+                        SELECT id FROM indexed_file
+                        WHERE index_id = ? AND rel_path = ?
+                        ORDER BY chunk_index ASC
+                        """,
+                        (index_id, rel_path),
+                    ).fetchall()
+                    conn.executemany(
+                        "INSERT INTO file_embedding (file_id, vector_blob) VALUES (?, ?)",
+                        (
+                            (row["id"], vector_blobs[idx])
+                            for idx, row in enumerate(inserted_ids)
+                        ),
+                    )
 
             for position, (rel_path, chunk_index) in enumerate(ordered_entries):
                 conn.execute(
@@ -460,11 +506,10 @@ def load_index(
 
         rows = conn.execute(
             """
-            SELECT f.rel_path, f.abs_path, f.size_bytes, f.mtime, f.preview, f.chunk_index, e.vector_blob
-            FROM indexed_file AS f
-            JOIN file_embedding AS e ON e.file_id = f.id
-            WHERE f.index_id = ?
-            ORDER BY f.position ASC
+            SELECT rel_path, abs_path, size_bytes, mtime, preview, chunk_index
+            FROM indexed_file
+            WHERE index_id = ?
+            ORDER BY position ASC
             """,
             (meta["id"],),
         ).fetchall()
@@ -472,7 +517,6 @@ def load_index(
         file_snapshot: dict[str, dict] = {}
         chunk_entries: list[dict] = []
         for row in rows:
-            vector = np.frombuffer(row["vector_blob"], dtype=np.float32)
             rel_path = row["rel_path"]
             chunk_index = int(row["chunk_index"])
             chunk_entries.append(
@@ -483,7 +527,6 @@ def load_index(
                     "size": row["size_bytes"],
                     "preview": row["preview"],
                     "chunk_index": chunk_index,
-                    "embedding": vector.tolist(),
                 }
             )
             if rel_path not in file_snapshot:
@@ -519,11 +562,112 @@ def load_index_vectors(
     recursive: bool,
     extensions: Sequence[str] | None = None,
 ):
-    data = load_index(root, model, include_hidden, mode, recursive, extensions)
-    chunks = data.get("chunks", [])
-    paths = [root / Path(entry["path"]) for entry in chunks]
-    embeddings = np.asarray([entry["embedding"] for entry in chunks], dtype=np.float32)
-    return paths, embeddings, data
+    db_path = cache_file(root, model, include_hidden)
+    if not db_path.exists():
+        raise FileNotFoundError(db_path)
+
+    conn = _connect(db_path)
+    try:
+        _ensure_schema(conn)
+        key = _cache_key(root, include_hidden, recursive, mode, extensions)
+        include_flag = 1 if include_hidden else 0
+        recursive_flag = 1 if recursive else 0
+        meta = conn.execute(
+            """
+            SELECT id, root_path, model, include_hidden, recursive, mode, dimension, version, generated_at, extensions
+            FROM index_metadata
+            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND recursive = ? AND mode = ?
+            """,
+            (key, model, include_flag, recursive_flag, mode),
+        ).fetchone()
+        if meta is None:
+            raise FileNotFoundError(db_path)
+
+        index_id = meta["id"]
+        dimension = int(meta["dimension"])
+        chunk_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM indexed_file WHERE index_id = ?",
+            (index_id,),
+        ).fetchone()["count"]
+        chunk_total = int(chunk_count or 0)
+
+        if chunk_total == 0 or dimension == 0:
+            empty = np.empty((0, dimension), dtype=np.float32)
+            metadata = {
+                "version": meta["version"],
+                "generated_at": meta["generated_at"],
+                "root": meta["root_path"],
+                "model": meta["model"],
+                "include_hidden": bool(meta["include_hidden"]),
+                "recursive": bool(meta["recursive"]),
+                "mode": meta["mode"],
+                "dimension": meta["dimension"],
+                "extensions": _deserialize_extensions(meta["extensions"]),
+                "files": [],
+                "chunks": [],
+            }
+            return [], empty, metadata
+
+        embeddings = np.empty((chunk_total, dimension), dtype=np.float32)
+        paths: list[Path] = []
+        chunk_entries: list[dict] = []
+        file_snapshot: dict[str, dict] = {}
+
+        cursor = conn.execute(
+            """
+            SELECT f.rel_path, f.abs_path, f.size_bytes, f.mtime, f.preview, f.chunk_index, e.vector_blob
+            FROM indexed_file AS f
+            JOIN file_embedding AS e ON e.file_id = f.id
+            WHERE f.index_id = ?
+            ORDER BY f.position ASC
+            """,
+            (index_id,),
+        )
+
+        for idx, row in enumerate(cursor):
+            rel_path = row["rel_path"]
+            vector = np.frombuffer(row["vector_blob"], dtype=np.float32)
+            if vector.size != dimension:
+                raise RuntimeError(
+                    f"Cached embedding dimension {vector.size} does not match index metadata {dimension}"
+                )
+            embeddings[idx] = vector
+            paths.append(root / Path(rel_path))
+            chunk_index = int(row["chunk_index"])
+            chunk_entries.append(
+                {
+                    "path": rel_path,
+                    "absolute": row["abs_path"],
+                    "mtime": row["mtime"],
+                    "size": row["size_bytes"],
+                    "preview": row["preview"],
+                    "chunk_index": chunk_index,
+                }
+            )
+            if rel_path not in file_snapshot:
+                file_snapshot[rel_path] = {
+                    "path": rel_path,
+                    "absolute": row["abs_path"],
+                    "mtime": row["mtime"],
+                    "size": row["size_bytes"],
+                }
+
+        metadata = {
+            "version": meta["version"],
+            "generated_at": meta["generated_at"],
+            "root": meta["root_path"],
+            "model": meta["model"],
+            "include_hidden": bool(meta["include_hidden"]),
+            "recursive": bool(meta["recursive"]),
+            "mode": meta["mode"],
+            "dimension": meta["dimension"],
+            "extensions": _deserialize_extensions(meta["extensions"]),
+            "files": list(file_snapshot.values()),
+            "chunks": chunk_entries,
+        }
+        return paths, embeddings, metadata
+    finally:
+        conn.close()
 
 
 def clear_index(
