@@ -21,6 +21,9 @@ Vexor is designed to work seamlessly with both humans and AI coding assistants t
 
 When you remember what a file does but forget its name or location, Vexor's semantic search finds it instantly—no grep patterns or directory traversal needed.
 
+## Skill
+This repo includes a skill that guides an agent to use Vexor effectively: [`skill/vexor-cli`](https://github.com/scarletkc/vexor/raw/refs/heads/main/skill/vexor-cli/SKILL.md).
+
 ## Install
 Download from [releases](https://github.com/scarletkc/vexor/releases) without python, or with:
 ```bash
