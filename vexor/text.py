@@ -16,6 +16,9 @@ class Messages:
     HELP_QUERY = "Text used to semantically match file names."
     HELP_SEARCH_PATH = "Root directory whose cached index will be used."
     HELP_SEARCH_TOP = "Number of results to display."
+    HELP_SEARCH_FORMAT = (
+        "Output format (rich=table, porcelain=tab-separated for scripts, porcelain-z=NUL-delimited)."
+    )
     HELP_INCLUDE_HIDDEN = "Use the index built with hidden files included."
     HELP_INDEX_PATH = "Root directory to scan for indexing."
     HELP_INDEX_INCLUDE = "Include hidden files and directories when building the index."

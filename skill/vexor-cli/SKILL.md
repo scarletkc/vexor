@@ -16,9 +16,10 @@ Use Vexor to build a cached semantic index for a directory, then search it quick
 2. Build or refresh an index (required before searching):
    - Run `vexor index --path <ROOT> --mode <MODE> [--include-hidden] [--no-recursive] [--ext EXT ...]`.
 3. Search the same index key:
-   - Run `vexor search "<QUERY>" --path <ROOT> --mode <MODE> [--top K] [--include-hidden] [--no-recursive] [--ext EXT ...]`.
+   - Run `vexor search "<QUERY>" --path <ROOT> --mode <MODE> [--top K] [--include-hidden] [--no-recursive] [--ext EXT ...] [--format porcelain|porcelain-z]`.
 
 Always pass `--mode` for both `index` and `search` (it is required; there is no default).
+Omit `--format` to use the default `rich` table output.
 
 ## Pick an indexing mode
 

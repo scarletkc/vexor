@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import sys
+from enum import Enum
 from pathlib import Path
 from typing import Sequence, TYPE_CHECKING
 
@@ -47,6 +49,12 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
+
+
+class SearchOutputFormat(str, Enum):
+    rich = "rich"
+    porcelain = "porcelain"
+    porcelain_z = "porcelain-z"
 
 
 
@@ -122,6 +130,11 @@ def search(
         "-e",
         help=Messages.HELP_EXTENSIONS,
     ),
+    output_format: SearchOutputFormat = typer.Option(
+        SearchOutputFormat.rich,
+        "--format",
+        help=Messages.HELP_SEARCH_FORMAT,
+    ),
 ) -> None:
     """Run the semantic search using a cached index."""
     config = load_config()
@@ -146,7 +159,10 @@ def search(
     normalized_exts = normalize_extensions(extensions)
     if extensions and not normalized_exts:
         raise typer.BadParameter(Messages.ERROR_EXTENSIONS_EMPTY, param_name="ext")
-    console.print(_styled(Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO))
+    if output_format == SearchOutputFormat.rich:
+        console.print(
+            _styled(Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO)
+        )
     request = SearchRequest(
         query=clean_query,
         directory=directory,
@@ -164,25 +180,44 @@ def search(
     try:
         response = perform_search(request)
     except FileNotFoundError:
-        console.print(
-            _styled(Messages.ERROR_INDEX_MISSING.format(path=directory), Styles.ERROR)
-        )
+        message = Messages.ERROR_INDEX_MISSING.format(path=directory)
+        if output_format == SearchOutputFormat.rich:
+            console.print(_styled(message, Styles.ERROR))
+        else:
+            typer.echo(message, err=True)
         raise typer.Exit(code=1)
     except RuntimeError as exc:
-        console.print(_styled(str(exc), Styles.ERROR))
+        if output_format == SearchOutputFormat.rich:
+            console.print(_styled(str(exc), Styles.ERROR))
+        else:
+            typer.echo(str(exc), err=True)
         raise typer.Exit(code=1)
 
     if response.index_empty:
-        console.print(_styled(Messages.INFO_INDEX_EMPTY, Styles.WARNING))
+        if output_format == SearchOutputFormat.rich:
+            console.print(_styled(Messages.INFO_INDEX_EMPTY, Styles.WARNING))
+        else:
+            typer.echo(Messages.INFO_INDEX_EMPTY, err=True)
         raise typer.Exit(code=0)
     if response.is_stale:
-        console.print(
-            _styled(Messages.WARNING_INDEX_STALE.format(path=directory), Styles.WARNING)
-        )
+        warning = Messages.WARNING_INDEX_STALE.format(path=directory)
+        if output_format == SearchOutputFormat.rich:
+            console.print(_styled(warning, Styles.WARNING))
+        else:
+            typer.echo(warning, err=True)
     if not response.results:
-        console.print(_styled(Messages.INFO_NO_RESULTS, Styles.WARNING))
+        if output_format == SearchOutputFormat.rich:
+            console.print(_styled(Messages.INFO_NO_RESULTS, Styles.WARNING))
+        else:
+            typer.echo(Messages.INFO_NO_RESULTS, err=True)
         raise typer.Exit(code=0)
 
+    if output_format == SearchOutputFormat.porcelain:
+        _render_results_porcelain(response.results, response.base_path)
+        return
+    if output_format == SearchOutputFormat.porcelain_z:
+        _render_results_porcelain_z(response.results, response.base_path)
+        return
     _render_results(response.results, response.base_path, response.backend)
 
 
@@ -573,6 +608,44 @@ def _render_results(results: Sequence["SearchResult"], base: Path, backend: str 
             _format_preview(result.preview),
         )
     console.print(table)
+
+
+def _escape_porcelain_field(value: str) -> str:
+    return (
+        value.replace("\\", "\\\\")
+        .replace("\t", "\\t")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
+
+
+def _render_results_porcelain(
+    results: Sequence["SearchResult"],
+    base: Path,
+) -> None:
+    for idx, result in enumerate(results, start=1):
+        preview = result.preview if result.preview is not None else "-"
+        fields = (
+            str(idx),
+            f"{result.score:.3f}",
+            format_path(result.path, base),
+            str(result.chunk_index),
+            _escape_porcelain_field(preview),
+        )
+        typer.echo("\t".join(fields))
+
+
+def _render_results_porcelain_z(results: Sequence["SearchResult"], base: Path) -> None:
+    for idx, result in enumerate(results, start=1):
+        preview = result.preview if result.preview is not None else "-"
+        fields = (
+            str(idx),
+            f"{result.score:.3f}",
+            format_path(result.path, base),
+            str(result.chunk_index),
+            preview.replace("\0", ""),
+        )
+        sys.stdout.write("\0".join(fields) + "\0")
 
 
 def _styled(text: str, style: str) -> str:

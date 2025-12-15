@@ -70,6 +70,86 @@ def test_search_outputs_table(tmp_path, monkeypatch):
     assert captured["recursive"] is True
 
 
+def test_search_outputs_porcelain(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.txt"
+    sample_file.write_text("data")
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["recursive"] = request.recursive
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[SearchResult(path=sample_file, score=0.99, preview="alpha\tbeta\ncharlie")],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "alpha",
+            "--path",
+            str(tmp_path),
+            "--top",
+            "1",
+            "--mode",
+            "name",
+            "--format",
+            "porcelain",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "1\t0.990\t./alpha.txt\t0\talpha\\tbeta\\ncharlie\n" in result.stdout
+    assert "Similarity" not in result.stdout
+    assert captured["recursive"] is True
+
+
+def test_search_outputs_porcelain_z(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.txt"
+    sample_file.write_text("data")
+
+    def fake_perform_search(request):
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[SearchResult(path=sample_file, score=0.99, preview="alpha\tbeta")],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "alpha",
+            "--path",
+            str(tmp_path),
+            "--top",
+            "1",
+            "--mode",
+            "name",
+            "--format",
+            "porcelain-z",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "1\0" in result.stdout
+    fields = result.stdout.split("\0")
+    # Trailing delimiter yields an empty field at end.
+    fields = [field for field in fields if field]
+    assert fields[-5:] == ["1", "0.990", "./alpha.txt", "0", "alpha\tbeta"]
+
+
 def test_search_respects_no_recursive_flag(tmp_path, monkeypatch):
     runner = CliRunner()
     sample_file = tmp_path / "alpha.txt"
