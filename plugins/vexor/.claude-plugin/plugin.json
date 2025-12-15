@@ -1,0 +1,19 @@
+{
+  "name": "vexor",
+  "version": "0.6.3",
+  "description": "A vector-powered CLI for semantic search over files (Vexor skill bundle).",
+  "author": {
+    "name": "scarletkc"
+  },
+  "repository": "https://github.com/scarletkc/vexor",
+  "readme": "README.md",
+  "keywords": [
+    "semantic-search",
+    "cli",
+    "typer",
+    "ai",
+    "vector",
+    "file"
+  ],
+  "license": "MIT"
+}
