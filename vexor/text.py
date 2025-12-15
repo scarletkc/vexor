@@ -39,6 +39,11 @@ class Messages:
     HELP_SHOW_CONFIG = "Show current configuration."
     HELP_SHOW_INDEX_ALL = "Show metadata for every cached index regardless of path."
     HELP_CLEAR_INDEX_ALL = "Delete all cached indexes stored under ~/.vexor."
+    HELP_INSTALL_SKILLS = (
+        "Install the bundled `vexor-cli` Agent Skill into an AI assistant skills directory "
+        "(targets: claude, codex)."
+    )
+    HELP_INSTALL_FORCE = "Overwrite the destination skill folder if it already exists."
 
     ERROR_API_KEY_MISSING = (
         "API key is missing or still set to the placeholder. "
@@ -115,6 +120,10 @@ class Messages:
     )
     INFO_UPDATE_UP_TO_DATE = "You already have the latest version (v{latest})."
     ERROR_UPDATE_FETCH = "Unable to fetch latest version information ({reason})."
+    ERROR_INSTALL_SKILL_SOURCE = "Unable to locate the bundled skill files ({reason})."
+    ERROR_INSTALL_SKILL_EXISTS = (
+        "Skill destination already exists: {path}. Use --force to overwrite."
+    )
 
     TABLE_TITLE = "Vexor semantic file search results"
     TABLE_HEADER_INDEX = "#"
@@ -130,3 +139,6 @@ class Messages:
     TABLE_INDEX_HEADER_EXTENSIONS = "Extensions"
     TABLE_INDEX_HEADER_FILES = "Files"
     TABLE_INDEX_HEADER_GENERATED = "Generated"
+
+    INFO_INSTALL_SKILL_UP_TO_DATE = "Skill already up to date at {path}."
+    INFO_INSTALL_SKILL_DONE = "Installed skill to {path}."

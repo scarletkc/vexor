@@ -33,6 +33,12 @@ from .services.system_service import (
     resolve_editor_command,
     version_tuple,
 )
+from .services.skill_service import (
+    DEFAULT_SKILL_NAME,
+    SkillInstallStatus,
+    install_bundled_skill,
+    resolve_skill_roots,
+)
 from .text import Messages, Styles
 from .utils import resolve_directory, format_path, ensure_positive, normalize_extensions
 
@@ -544,6 +550,70 @@ def config(
                     str(entry["generated_at"]),
                 )
             console.print(table)
+
+
+@app.command()
+def install(
+    skills: str = typer.Option(
+        ...,
+        "--skills",
+        help=Messages.HELP_INSTALL_SKILLS,
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help=Messages.HELP_INSTALL_FORCE,
+    ),
+) -> None:
+    """Install Vexor Agent Skills for AI assistants."""
+
+    try:
+        roots = resolve_skill_roots(skills)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    failures = 0
+    for root in roots:
+        destination_root = root.expanduser()
+        try:
+            result = install_bundled_skill(
+                skill_name=DEFAULT_SKILL_NAME,
+                skills_dir=destination_root,
+                force=force,
+            )
+        except FileExistsError as exc:
+            console.print(
+                _styled(
+                    Messages.ERROR_INSTALL_SKILL_EXISTS.format(path=str(exc.args[0])),
+                    Styles.ERROR,
+                )
+            )
+            failures += 1
+            continue
+        except FileNotFoundError as exc:
+            console.print(
+                _styled(Messages.ERROR_INSTALL_SKILL_SOURCE.format(reason=str(exc)), Styles.ERROR)
+            )
+            raise typer.Exit(code=1)
+
+        if result.status == SkillInstallStatus.up_to_date:
+            console.print(
+                _styled(
+                    Messages.INFO_INSTALL_SKILL_UP_TO_DATE.format(path=result.destination),
+                    Styles.INFO,
+                )
+            )
+        else:
+            console.print(
+                _styled(
+                    Messages.INFO_INSTALL_SKILL_DONE.format(path=result.destination),
+                    Styles.SUCCESS,
+                )
+            )
+
+    if failures:
+        raise typer.Exit(code=1)
 
 
 @app.command()

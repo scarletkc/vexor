@@ -5,8 +5,8 @@
   "author": {
     "name": "scarletkc"
   },
+  "homepage": "https://pypi.org/project/vexor/",
   "repository": "https://github.com/scarletkc/vexor",
-  "readme": "README.md",
   "keywords": [
     "semantic-search",
     "cli",

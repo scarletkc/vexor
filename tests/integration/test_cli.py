@@ -185,6 +185,42 @@ def test_search_respects_no_recursive_flag(tmp_path, monkeypatch):
     assert captured["recursive"] is False
 
 
+def test_install_skills_to_custom_path(tmp_path):
+    runner = CliRunner()
+    destination = tmp_path / "skills-root"
+
+    result = runner.invoke(app, ["install", "--skills", str(destination)])
+
+    assert result.exit_code == 0
+    assert (destination / "vexor-cli" / "SKILL.md").exists()
+
+
+def test_install_skills_presets_claude_and_codex(tmp_path, monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    result = runner.invoke(app, ["install", "--skills", "claude/codex"])
+
+    assert result.exit_code == 0
+    assert (tmp_path / ".claude" / "skills" / "vexor-cli" / "SKILL.md").exists()
+    assert (tmp_path / ".codex" / "skills" / "vexor-cli" / "SKILL.md").exists()
+
+
+def test_install_skills_requires_force_when_destination_differs(tmp_path):
+    runner = CliRunner()
+    destination = tmp_path / "skills-root"
+    skill_dir = destination / "vexor-cli"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("not the real skill")
+
+    result = runner.invoke(app, ["install", "--skills", str(destination)])
+    assert result.exit_code == 1
+
+    forced = runner.invoke(app, ["install", "--skills", str(destination), "--force"])
+    assert forced.exit_code == 0
+    assert "Vexor CLI" in (skill_dir / "SKILL.md").read_text()
+
+
 def test_search_missing_index_prompts_user(tmp_path, monkeypatch):
     runner = CliRunner()
 
