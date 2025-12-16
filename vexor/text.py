@@ -27,6 +27,10 @@ class Messages:
     HELP_RECURSIVE = "Recurse into subdirectories (default). Disable to work only on the specified directory."
     HELP_MODE = "Indexing mode (name=filename, head=head snippet, brief=keyword summary, full=chunked content) to control how embeddings are built."
     HELP_EXTENSIONS = "Limit indexing/searching to files whose names end with the provided extensions (repeat --ext for multiple)."
+    HELP_RESPECT_GITIGNORE = (
+        "Respect .gitignore-style exclude rules when scanning (default). "
+        "Use --no-respect-gitignore to include ignored files."
+    )
     HELP_DOCTOR = "Check whether the `vexor` command is available on the current PATH."
     HELP_UPDATE = "Check if a newer Vexor release is available online."
     HELP_SET_API_KEY = "Persist an API key in ~/.vexor/config.json."
@@ -79,6 +83,7 @@ class Messages:
         "Model: {model}\n"
         "Include hidden: {hidden}\n"
         "Recursive: {recursive}\n"
+        "Respect gitignore: {gitignore}\n"
         "Extensions: {extensions}\n"
         "Files: {files}\n"
         "Embedding dimension: {dimension}\n"
@@ -136,6 +141,7 @@ class Messages:
     TABLE_INDEX_HEADER_MODEL = "Model"
     TABLE_INDEX_HEADER_HIDDEN = "Hidden"
     TABLE_INDEX_HEADER_RECURSIVE = "Recursive"
+    TABLE_INDEX_HEADER_GITIGNORE = "Gitignore"
     TABLE_INDEX_HEADER_EXTENSIONS = "Extensions"
     TABLE_INDEX_HEADER_FILES = "Files"
     TABLE_INDEX_HEADER_GENERATED = "Generated"

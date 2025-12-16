@@ -33,6 +33,7 @@ def build_index(
     directory: Path,
     *,
     include_hidden: bool,
+    respect_gitignore: bool = True,
     mode: str,
     recursive: bool,
     model_name: str,
@@ -53,6 +54,7 @@ def build_index(
         include_hidden=include_hidden,
         recursive=recursive,
         extensions=extensions,
+        respect_gitignore=respect_gitignore,
     )
     if not files:
         return IndexResult(status=IndexStatus.EMPTY)
@@ -62,6 +64,7 @@ def build_index(
         directory,
         model_name,
         include_hidden,
+        respect_gitignore,
         mode,
         recursive,
         extensions=extensions,
@@ -89,6 +92,7 @@ def build_index(
             cache_path = _apply_incremental_update(
                 directory=directory,
                 include_hidden=include_hidden,
+                respect_gitignore=respect_gitignore,
                 recursive=recursive,
                 mode=mode,
                 model_name=model_name,
@@ -113,6 +117,7 @@ def build_index(
         root=directory,
         model=model_name,
         include_hidden=include_hidden,
+        respect_gitignore=respect_gitignore,
         mode=mode,
         recursive=recursive,
         entries=entries,
@@ -129,6 +134,7 @@ def clear_index_entries(
     directory: Path,
     *,
     include_hidden: bool,
+    respect_gitignore: bool = True,
     mode: str,
     recursive: bool,
     model: str | None = None,
@@ -141,6 +147,7 @@ def clear_index_entries(
     return clear_index_cache(
         root=directory,
         include_hidden=include_hidden,
+        respect_gitignore=respect_gitignore,
         mode=mode,
         recursive=recursive,
         model=model,
@@ -233,6 +240,7 @@ def _apply_incremental_update(
     *,
     directory: Path,
     include_hidden: bool,
+    respect_gitignore: bool,
     mode: str,
     recursive: bool,
     model_name: str,
@@ -268,6 +276,7 @@ def _apply_incremental_update(
         root=directory,
         model=model_name,
         include_hidden=include_hidden,
+        respect_gitignore=respect_gitignore,
         mode=mode,
         recursive=recursive,
         ordered_entries=ordered_entries,

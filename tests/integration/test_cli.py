@@ -431,7 +431,15 @@ def test_index_clear_option(tmp_path, monkeypatch):
     runner = CliRunner()
     called = {}
 
-    def fake_clear(root, include_hidden, mode, recursive, model=None, extensions=None):
+    def fake_clear(
+        root,
+        include_hidden,
+        respect_gitignore,
+        mode,
+        recursive,
+        model=None,
+        extensions=None,
+    ):
         called["root"] = root
         called["include_hidden"] = include_hidden
         called["mode"] = mode
@@ -465,7 +473,15 @@ def test_index_clear_honors_no_recursive(tmp_path, monkeypatch):
     runner = CliRunner()
     called = {}
 
-    def fake_clear(root, include_hidden, mode, recursive, model=None, extensions=None):
+    def fake_clear(
+        root,
+        include_hidden,
+        respect_gitignore,
+        mode,
+        recursive,
+        model=None,
+        extensions=None,
+    ):
         called["recursive"] = recursive
         called["mode"] = mode
         return 0
@@ -766,6 +782,7 @@ def test_head_mode_end_to_end(tmp_path, monkeypatch):
         project,
         DEFAULT_MODEL,
         include_hidden=False,
+        respect_gitignore=True,
         mode="head",
         recursive=True,
     )
@@ -822,6 +839,7 @@ def test_full_mode_chunked_previews(tmp_path, monkeypatch):
         project,
         DEFAULT_MODEL,
         include_hidden=False,
+        respect_gitignore=True,
         mode="full",
         recursive=True,
     )

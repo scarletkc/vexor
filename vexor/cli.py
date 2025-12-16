@@ -118,6 +118,11 @@ def search(
         "-i",
         help=Messages.HELP_INCLUDE_HIDDEN,
     ),
+    respect_gitignore: bool = typer.Option(
+        True,
+        "--respect-gitignore/--no-respect-gitignore",
+        help=Messages.HELP_RESPECT_GITIGNORE,
+    ),
     mode: str = typer.Option(
         ...,
         "--mode",
@@ -173,6 +178,7 @@ def search(
         query=clean_query,
         directory=directory,
         include_hidden=include_hidden,
+        respect_gitignore=respect_gitignore,
         mode=mode_value,
         recursive=recursive,
         top_k=top,
@@ -241,6 +247,11 @@ def index(
         "-i",
         help=Messages.HELP_INDEX_INCLUDE,
     ),
+    respect_gitignore: bool = typer.Option(
+        True,
+        "--respect-gitignore/--no-respect-gitignore",
+        help=Messages.HELP_RESPECT_GITIGNORE,
+    ),
     mode: str = typer.Option(
         ...,
         "--mode",
@@ -292,6 +303,7 @@ def index(
             directory,
             model_name,
             include_hidden,
+            respect_gitignore,
             mode_value,
             recursive,
             extensions=normalized_exts,
@@ -314,6 +326,7 @@ def index(
             model=metadata.get("model"),
             hidden="yes" if metadata.get("include_hidden") else "no",
             recursive="yes" if metadata.get("recursive") else "no",
+            gitignore="yes" if metadata.get("respect_gitignore", True) else "no",
             extensions=_format_extensions_display(metadata.get("extensions")),
             files=len(files),
             dimension=metadata.get("dimension"),
@@ -327,6 +340,7 @@ def index(
         removed = clear_index_entries(
             directory,
             include_hidden=include_hidden,
+            respect_gitignore=respect_gitignore,
             mode=mode_value,
             recursive=recursive,
             extensions=normalized_exts,
@@ -357,6 +371,7 @@ def index(
         result = build_index(
             directory,
             include_hidden=include_hidden,
+            respect_gitignore=respect_gitignore,
             mode=mode_value,
             recursive=recursive,
             model_name=model_name,
@@ -530,14 +545,15 @@ def config(
         else:
             console.print(_styled(Messages.INFO_INDEX_ALL_HEADER, Styles.TITLE))
             table = Table(show_header=True, header_style=Styles.TABLE_HEADER)
-            table.add_column(Messages.TABLE_INDEX_HEADER_ROOT)
-            table.add_column(Messages.TABLE_INDEX_HEADER_MODE)
-            table.add_column(Messages.TABLE_INDEX_HEADER_MODEL)
+            table.add_column(Messages.TABLE_INDEX_HEADER_ROOT, overflow="fold")
+            table.add_column(Messages.TABLE_INDEX_HEADER_MODE, no_wrap=True)
+            table.add_column(Messages.TABLE_INDEX_HEADER_MODEL, no_wrap=True)
             table.add_column(Messages.TABLE_INDEX_HEADER_HIDDEN, justify="center")
             table.add_column(Messages.TABLE_INDEX_HEADER_RECURSIVE, justify="center")
+            table.add_column(Messages.TABLE_INDEX_HEADER_GITIGNORE, justify="center")
             table.add_column(Messages.TABLE_INDEX_HEADER_EXTENSIONS)
             table.add_column(Messages.TABLE_INDEX_HEADER_FILES, justify="right")
-            table.add_column(Messages.TABLE_INDEX_HEADER_GENERATED)
+            table.add_column(Messages.TABLE_INDEX_HEADER_GENERATED, overflow="fold")
             for entry in entries:
                 table.add_row(
                     str(entry["root_path"]),
@@ -545,6 +561,7 @@ def config(
                     str(entry["model"]),
                     "yes" if entry["include_hidden"] else "no",
                     "yes" if entry["recursive"] else "no",
+                    "yes" if entry.get("respect_gitignore", True) else "no",
                     _format_extensions_display(entry.get("extensions")),
                     str(entry["file_count"]),
                     str(entry["generated_at"]),

@@ -76,3 +76,59 @@ def test_normalize_extensions_deduplicates_and_sorts():
     result = normalize_extensions(["py", ".MD", ".py", "", ".md"])  # mixed case + blanks
 
     assert result == (".md", ".py")
+
+
+def test_collect_files_respects_gitignore(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / ".git" / "info").mkdir(parents=True)
+    (root / ".git" / "info" / "exclude").write_text("exclude_me.txt\n", encoding="utf-8")
+    (root / ".gitignore").write_text("ignored/\n*.log\n", encoding="utf-8")
+
+    (root / "keep.txt").write_text("keep", encoding="utf-8")
+    (root / "notes.log").write_text("log", encoding="utf-8")
+    (root / "exclude_me.txt").write_text("exclude", encoding="utf-8")
+
+    (root / "ignored").mkdir()
+    (root / "ignored" / "ignored_only.txt").write_text("ignored", encoding="utf-8")
+
+    (root / "sub").mkdir()
+    (root / "sub" / "keep2.txt").write_text("keep2", encoding="utf-8")
+    (root / "sub" / "sub_keep.txt").write_text("sub keep", encoding="utf-8")
+    (root / "sub" / ".gitignore").write_text("sub_ignored.txt\n", encoding="utf-8")
+    (root / "sub" / "sub_ignored.txt").write_text("sub ignored", encoding="utf-8")
+    (root / "sub" / "ignored").mkdir()
+    (root / "sub" / "ignored" / "ignored_nested.txt").write_text("nested ignored", encoding="utf-8")
+
+    files = collect_files(root)
+
+    rel_paths = [path.relative_to(root).as_posix() for path in files]
+    assert rel_paths == ["keep.txt", "sub/keep2.txt", "sub/sub_keep.txt"]
+
+
+def test_collect_files_can_disable_gitignore(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / ".git" / "info").mkdir(parents=True)
+    (root / ".git" / "info" / "exclude").write_text("exclude_me.txt\n", encoding="utf-8")
+    (root / ".gitignore").write_text("ignored/\n*.log\n", encoding="utf-8")
+
+    paths = [
+        root / "keep.txt",
+        root / "notes.log",
+        root / "exclude_me.txt",
+        root / "ignored" / "ignored_only.txt",
+        root / "sub" / "keep2.txt",
+        root / "sub" / "sub_keep.txt",
+        root / "sub" / "sub_ignored.txt",
+        root / "sub" / "ignored" / "ignored_nested.txt",
+    ]
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("data", encoding="utf-8")
+    (root / "sub" / ".gitignore").write_text("sub_ignored.txt\n", encoding="utf-8")
+
+    files = collect_files(root, respect_gitignore=False)
+
+    rel_paths = [path.relative_to(root).as_posix() for path in files]
+    assert rel_paths == sorted([path.relative_to(root).as_posix() for path in paths])

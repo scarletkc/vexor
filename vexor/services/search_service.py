@@ -14,6 +14,7 @@ class SearchRequest:
     query: str
     directory: Path
     include_hidden: bool
+    respect_gitignore: bool
     mode: str
     recursive: bool
     top_k: int
@@ -48,12 +49,14 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         request.mode,
         request.recursive,
         request.extensions,
+        respect_gitignore=request.respect_gitignore,
     )
     file_snapshot = metadata.get("files", [])
     chunk_entries = metadata.get("chunks", [])
     stale = bool(file_snapshot) and not is_cache_current(
         request.directory,
         request.include_hidden,
+        request.respect_gitignore,
         file_snapshot,
         recursive=request.recursive,
         extensions=request.extensions,

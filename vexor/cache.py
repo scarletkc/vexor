@@ -33,11 +33,15 @@ class IndexedChunk:
 def _cache_key(
     root: Path,
     include_hidden: bool,
+    respect_gitignore: bool,
     recursive: bool,
     mode: str,
     extensions: Sequence[str] | None = None,
 ) -> str:
-    base = f"{root.resolve()}|hidden={include_hidden}|recursive={recursive}|mode={mode}"
+    base = (
+        f"{root.resolve()}|hidden={include_hidden}|gitignore={respect_gitignore}"
+        f"|recursive={recursive}|mode={mode}"
+    )
     ext_key = _serialize_extensions(extensions)
     if ext_key:
         base = f"{base}|ext={ext_key}"
@@ -91,6 +95,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             root_path TEXT NOT NULL,
             model TEXT NOT NULL,
             include_hidden INTEGER NOT NULL,
+            respect_gitignore INTEGER NOT NULL DEFAULT 1,
             recursive INTEGER NOT NULL DEFAULT 1,
             mode TEXT NOT NULL,
             dimension INTEGER NOT NULL,
@@ -128,6 +133,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         )
     except sqlite3.OperationalError:
         # Column already exists; ignore error.
+        pass
+    try:
+        conn.execute(
+            "ALTER TABLE index_metadata ADD COLUMN respect_gitignore INTEGER NOT NULL DEFAULT 1"
+        )
+    except sqlite3.OperationalError:
         pass
     try:
         conn.execute(
@@ -221,6 +232,7 @@ def store_index(
     root: Path,
     model: str,
     include_hidden: bool,
+    respect_gitignore: bool = True,
     mode: str,
     recursive: bool,
     entries: Sequence[IndexedChunk],
@@ -230,10 +242,11 @@ def store_index(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive, mode, extensions)
+        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
         generated_at = datetime.now(timezone.utc).isoformat()
         dimension = int(len(entries[0].embedding) if entries else 0)
         include_flag = 1 if include_hidden else 0
+        gitignore_flag = 1 if respect_gitignore else 0
         recursive_flag = 1 if recursive else 0
         extensions_value = _serialize_extensions(extensions)
 
@@ -250,19 +263,21 @@ def store_index(
                     root_path,
                     model,
                     include_hidden,
+                    respect_gitignore,
                     recursive,
                     mode,
                     dimension,
                     version,
                     generated_at,
                     extensions
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     key,
                     str(root),
                     model,
                     include_flag,
+                    gitignore_flag,
                     recursive_flag,
                     mode,
                     dimension,
@@ -336,6 +351,7 @@ def apply_index_updates(
     root: Path,
     model: str,
     include_hidden: bool,
+    respect_gitignore: bool = True,
     mode: str,
     recursive: bool,
     ordered_entries: Sequence[tuple[str, int]],
@@ -352,8 +368,9 @@ def apply_index_updates(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive, mode, extensions)
+        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
         include_flag = 1 if include_hidden else 0
+        gitignore_flag = 1 if respect_gitignore else 0
         recursive_flag = 1 if recursive else 0
 
         with conn:
@@ -362,9 +379,9 @@ def apply_index_updates(
                 """
                 SELECT id, dimension
                 FROM index_metadata
-                WHERE cache_key = ? AND model = ? AND include_hidden = ? AND recursive = ? AND mode = ?
+                WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
                 """,
-                (key, model, include_flag, recursive_flag, mode),
+                (key, model, include_flag, gitignore_flag, recursive_flag, mode),
             ).fetchone()
             if meta is None:
                 raise FileNotFoundError(db_path)
@@ -482,6 +499,8 @@ def load_index(
     mode: str,
     recursive: bool,
     extensions: Sequence[str] | None = None,
+    *,
+    respect_gitignore: bool = True,
 ) -> dict:
     db_path = cache_file(root, model, include_hidden)
     if not db_path.exists():
@@ -490,16 +509,17 @@ def load_index(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive, mode, extensions)
+        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
         include_flag = 1 if include_hidden else 0
+        gitignore_flag = 1 if respect_gitignore else 0
         recursive_flag = 1 if recursive else 0
         meta = conn.execute(
             """
-            SELECT id, root_path, model, include_hidden, recursive, mode, dimension, version, generated_at, extensions
+            SELECT id, root_path, model, include_hidden, respect_gitignore, recursive, mode, dimension, version, generated_at, extensions
             FROM index_metadata
-            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND recursive = ? AND mode = ?
+            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
             """,
-            (key, model, include_flag, recursive_flag, mode),
+            (key, model, include_flag, gitignore_flag, recursive_flag, mode),
         ).fetchone()
         if meta is None:
             raise FileNotFoundError(db_path)
@@ -543,6 +563,7 @@ def load_index(
             "root": meta["root_path"],
             "model": meta["model"],
             "include_hidden": bool(meta["include_hidden"]),
+            "respect_gitignore": bool(meta["respect_gitignore"]),
             "recursive": bool(meta["recursive"]),
             "mode": meta["mode"],
             "dimension": meta["dimension"],
@@ -561,6 +582,8 @@ def load_index_vectors(
     mode: str,
     recursive: bool,
     extensions: Sequence[str] | None = None,
+    *,
+    respect_gitignore: bool = True,
 ):
     db_path = cache_file(root, model, include_hidden)
     if not db_path.exists():
@@ -569,16 +592,17 @@ def load_index_vectors(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive, mode, extensions)
+        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
         include_flag = 1 if include_hidden else 0
+        gitignore_flag = 1 if respect_gitignore else 0
         recursive_flag = 1 if recursive else 0
         meta = conn.execute(
             """
-            SELECT id, root_path, model, include_hidden, recursive, mode, dimension, version, generated_at, extensions
+            SELECT id, root_path, model, include_hidden, respect_gitignore, recursive, mode, dimension, version, generated_at, extensions
             FROM index_metadata
-            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND recursive = ? AND mode = ?
+            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
             """,
-            (key, model, include_flag, recursive_flag, mode),
+            (key, model, include_flag, gitignore_flag, recursive_flag, mode),
         ).fetchone()
         if meta is None:
             raise FileNotFoundError(db_path)
@@ -599,6 +623,7 @@ def load_index_vectors(
                 "root": meta["root_path"],
                 "model": meta["model"],
                 "include_hidden": bool(meta["include_hidden"]),
+                "respect_gitignore": bool(meta["respect_gitignore"]),
                 "recursive": bool(meta["recursive"]),
                 "mode": meta["mode"],
                 "dimension": meta["dimension"],
@@ -658,6 +683,7 @@ def load_index_vectors(
             "root": meta["root_path"],
             "model": meta["model"],
             "include_hidden": bool(meta["include_hidden"]),
+            "respect_gitignore": bool(meta["respect_gitignore"]),
             "recursive": bool(meta["recursive"]),
             "mode": meta["mode"],
             "dimension": meta["dimension"],
@@ -677,6 +703,8 @@ def clear_index(
     recursive: bool,
     model: str | None = None,
     extensions: Sequence[str] | None = None,
+    *,
+    respect_gitignore: bool = True,
 ) -> int:
     """Remove cached index entries for *root* (optionally filtered by *model*)."""
     db_path = cache_file(root, model or "_", include_hidden)
@@ -686,7 +714,7 @@ def clear_index(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, recursive, mode, extensions)
+        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
         # when model is None we still need a mode; reuse provided mode
         if model is None:
             query = "DELETE FROM index_metadata WHERE cache_key = ? AND mode = ?"
@@ -717,6 +745,7 @@ def list_cache_entries() -> list[dict[str, object]]:
                 root_path,
                 model,
                 include_hidden,
+                respect_gitignore,
                 recursive,
                 mode,
                 dimension,
@@ -740,6 +769,7 @@ def list_cache_entries() -> list[dict[str, object]]:
                     "root_path": row["root_path"],
                     "model": row["model"],
                     "include_hidden": bool(row["include_hidden"]),
+                    "respect_gitignore": bool(row["respect_gitignore"]),
                     "recursive": bool(row["recursive"]),
                     "mode": row["mode"],
                     "dimension": row["dimension"],
@@ -787,6 +817,7 @@ def compare_snapshot(
     recursive: bool,
     extensions: Sequence[str] | None = None,
     current_files: Sequence[Path] | None = None,
+    respect_gitignore: bool = True,
 ) -> bool:
     """Return True if the current filesystem matches the cached snapshot."""
     if current_files is None:
@@ -795,6 +826,7 @@ def compare_snapshot(
             include_hidden=include_hidden,
             recursive=recursive,
             extensions=extensions,
+            respect_gitignore=respect_gitignore,
         )
     if len(current_files) != len(cached_files):
         return False
