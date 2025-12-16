@@ -103,7 +103,7 @@ vexor config --clear-index-all
 | Command | Description |
 | ------- | ----------- |
 | `vexor index --path PATH --mode MODE [--include-hidden] [--no-recursive] [--ext EXT ...] [--clear/--show]` | Scans `PATH` (recursively by default), embeds content according to `MODE` (`name`, `head`, or `full`), and writes a cache under `~/.vexor`. |
-| `vexor search QUERY --path PATH --mode MODE [--top K] [--include-hidden] [--no-recursive] [--ext EXT ...] [--format rich|porcelain|porcelain-z]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden settings), shows matches for `QUERY`. |
+| `vexor search QUERY --path PATH --mode MODE [--top K] [--include-hidden] [--no-recursive] [--ext EXT ...] [--format rich/porcelain/porcelain-z]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden settings), shows matches for `QUERY`. |
 | `vexor doctor` | Checks whether the `vexor` command is available on the current `PATH`. |
 | `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |
 | `vexor config --set-api-key/--clear-api-key` | Manage the stored API key (Gemini by default). |
