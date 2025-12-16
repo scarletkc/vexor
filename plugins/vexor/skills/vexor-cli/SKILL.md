@@ -14,9 +14,9 @@ Use Vexor to build a cached semantic index for a directory, then search it quick
 1. Verify the CLI is available:
    - Run `vexor doctor` (installed entrypoint), or `python -m vexor --help` (repo/dev environments).
 2. Build or refresh an index (required before searching):
-   - Run `vexor index --path <ROOT> --mode <MODE> [--include-hidden] [--no-recursive] [--ext EXT ...]`.
+   - Run `vexor index --path <ROOT> --mode <MODE> [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...]`.
 3. Search the same index key:
-   - Run `vexor search "<QUERY>" --path <ROOT> --mode <MODE> [--top K] [--include-hidden] [--no-recursive] [--ext EXT ...] [--format porcelain|porcelain-z]`.
+   - Run `vexor search "<QUERY>" --path <ROOT> --mode <MODE> [--top K] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--format porcelain|porcelain-z]`.
 
 Always pass `--mode` for both `index` and `search` (it is required; there is no default).
 Omit `--format` to use the default `rich` table output.
@@ -40,6 +40,7 @@ Treat these options as part of the cache identity; a mismatch often looks like �
 - `--mode` / `-m`
 - `--include-hidden` / `-i` (hidden files are included only when both `index` and `search` use it)
 - `--no-recursive` / `-n` (recursive by default; recursive and non-recursive indexes are stored separately)
+- `--no-respect-gitignore` (respects `.gitignore` by default, including nested `.gitignore` files and `.git/info/exclude`)
 - `--ext` / `-e` (repeatable; normalize to `.py`, `.md`, etc.; indexing and searching must use the same set)
 
 ## Query and scope tips
@@ -77,6 +78,7 @@ Indexes are stored in a shared SQLite database at `~/.vexor/index.db`.
 ## Troubleshooting
 
 - Handle “No cached index found…” by rerunning `vexor index` with the same `--path/--mode/--include-hidden/--no-recursive/--ext` combination you plan to use for searching.
+- When you need to include files normally ignored by git, add `--no-respect-gitignore` to both `vexor index` and `vexor search`.
 - Handle “Cached index … appears outdated” by rerunning `vexor index` (it re-embeds only changed files when possible).
 - Handle “API key is missing…” by setting `vexor config --set-api-key "<TOKEN>"` or the appropriate environment variable.
 - Expect `vexor update` to require network access (it fetches the latest version info).

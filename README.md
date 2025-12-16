@@ -90,6 +90,7 @@ vexor config --clear-index-all
 - Keep one index per project root; subdirectories need separate indexes only if you explicitly run `vexor index` on them.
 - Toggle `--no-recursive` (or `-n`) on both `index` and `search` when you only care about the current directory; recursive and non-recursive caches are stored separately.
 - Hidden files are included only if both `index` and `search` use `--include-hidden` (or `-i`).
+- By default, Vexor respects `.gitignore` (including nested `.gitignore` files and `.git/info/exclude`) while scanning. Use `--no-respect-gitignore` on both `index` and `search` to include ignored files.
 - Use `--ext`/`-e` (repeatable) on both `index` and `search` to limit indexing and search results to specific extensions, e.g. `--ext .py --ext .md`.
 - Re-running `vexor index` only re-embeds files whose names/contents changed (or were added/removed); if more than half the files differ, it automatically falls back to a full rebuild for consistency.
 - Specify the indexing mode with `--mode`:
@@ -102,8 +103,8 @@ vexor config --clear-index-all
 ## Commands
 | Command | Description |
 | ------- | ----------- |
-| `vexor index --path PATH --mode MODE [--include-hidden] [--no-recursive] [--ext EXT ...] [--clear/--show]` | Scans `PATH` (recursively by default), embeds content according to `MODE` (`name`, `head`, or `full`), and writes a cache under `~/.vexor`. |
-| `vexor search QUERY --path PATH --mode MODE [--top K] [--include-hidden] [--no-recursive] [--ext EXT ...] [--format rich/porcelain/porcelain-z]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden settings), shows matches for `QUERY`. |
+| `vexor index --path PATH --mode MODE [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--clear/--show]` | Scans `PATH` (recursively by default), respects `.gitignore` by default, embeds content according to `MODE` (`name`, `head`, or `full`), and writes a cache under `~/.vexor`. |
+| `vexor search QUERY --path PATH --mode MODE [--top K] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--format rich/porcelain/porcelain-z]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden/gitignore/ext settings), shows matches for `QUERY`. |
 | `vexor doctor` | Checks whether the `vexor` command is available on the current `PATH`. |
 | `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |
 | `vexor config --set-api-key/--clear-api-key` | Manage the stored API key (Gemini by default). |
