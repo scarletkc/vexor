@@ -686,12 +686,14 @@ def _render_results(results: Sequence["SearchResult"], base: Path, backend: str 
     table.add_column(Messages.TABLE_HEADER_INDEX, justify="right")
     table.add_column(Messages.TABLE_HEADER_SIMILARITY, justify="right")
     table.add_column(Messages.TABLE_HEADER_PATH, overflow="fold")
+    table.add_column(Messages.TABLE_HEADER_LINES, justify="right")
     table.add_column(Messages.TABLE_HEADER_PREVIEW, overflow="fold")
     for idx, result in enumerate(results, start=1):
         table.add_row(
             str(idx),
             f"{result.score:.3f}",
             format_path(result.path, base),
+            _format_lines(result.start_line, result.end_line),
             _format_preview(result.preview),
         )
     console.print(table)
@@ -712,11 +714,15 @@ def _render_results_porcelain(
 ) -> None:
     for idx, result in enumerate(results, start=1):
         preview = result.preview if result.preview is not None else "-"
+        start_line = str(result.start_line) if result.start_line is not None else "-"
+        end_line = str(result.end_line) if result.end_line is not None else "-"
         fields = (
             str(idx),
             f"{result.score:.3f}",
             format_path(result.path, base),
             str(result.chunk_index),
+            start_line,
+            end_line,
             _escape_porcelain_field(preview),
         )
         typer.echo("\t".join(fields))
@@ -725,11 +731,15 @@ def _render_results_porcelain(
 def _render_results_porcelain_z(results: Sequence["SearchResult"], base: Path) -> None:
     for idx, result in enumerate(results, start=1):
         preview = result.preview if result.preview is not None else "-"
+        start_line = str(result.start_line) if result.start_line is not None else "-"
+        end_line = str(result.end_line) if result.end_line is not None else "-"
         fields = (
             str(idx),
             f"{result.score:.3f}",
             format_path(result.path, base),
             str(result.chunk_index),
+            start_line,
+            end_line,
             preview.replace("\0", ""),
         )
         sys.stdout.write("\0".join(fields) + "\0")
@@ -746,6 +756,14 @@ def _format_preview(text: str | None, limit: int = 80) -> str:
     if len(snippet) <= limit:
         return snippet
     return snippet[: limit - 1].rstrip() + "…"
+
+
+def _format_lines(start_line: int | None, end_line: int | None) -> str:
+    if start_line is None:
+        return "-"
+    if end_line is None or end_line <= start_line:
+        return f"L{start_line}"
+    return f"L{start_line}-{end_line}"
 
 
 def run(argv: list[str] | None = None) -> None:

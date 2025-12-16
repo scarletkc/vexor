@@ -138,6 +138,7 @@ class Messages:
     TABLE_HEADER_INDEX = "#"
     TABLE_HEADER_SIMILARITY = "Similarity"
     TABLE_HEADER_PATH = "File path"
+    TABLE_HEADER_LINES = "Lines"
     TABLE_HEADER_PREVIEW = "Preview"
     TABLE_BACKEND_PREFIX = "Backend: "
     TABLE_INDEX_HEADER_ROOT = "Root"

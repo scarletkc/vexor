@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import MutableMapping, Sequence
 
 from .cache_service import load_index_metadata_safe
-from ..cache import IndexedChunk
+from ..cache import CACHE_VERSION, IndexedChunk, backfill_chunk_lines
 from ..modes import get_strategy, ModePayload
 
 INCREMENTAL_CHANGE_THRESHOLD = 0.5
@@ -82,9 +82,41 @@ def build_index(
     )
 
     if cached_files:
+        cached_version = int(existing_meta.get("version", 0) or 0) if existing_meta else 0
+        needs_line_backfill = cached_version < CACHE_VERSION or _has_missing_line_metadata(
+            existing_meta,
+            payloads,
+            directory,
+        )
+
         snapshot = _snapshot_current_files(files, directory, stat_cache=stat_cache)
         diff = _diff_cached_files(snapshot, cached_files)
         if diff.is_noop:
+            if needs_line_backfill:
+                updates = [
+                    (
+                        _relative_to_root(payload.file, directory),
+                        payload.chunk_index,
+                        payload.start_line,
+                        payload.end_line,
+                    )
+                    for payload in payloads
+                ]
+                cache_path = backfill_chunk_lines(
+                    root=directory,
+                    model=model_name,
+                    include_hidden=include_hidden,
+                    respect_gitignore=respect_gitignore,
+                    mode=mode,
+                    recursive=recursive,
+                    updates=updates,
+                    extensions=extensions,
+                )
+                return IndexResult(
+                    status=IndexStatus.STORED,
+                    cache_path=cache_path,
+                    files_indexed=len(files),
+                )
             return IndexResult(status=IndexStatus.UP_TO_DATE, files_indexed=len(files))
 
         change_ratio = diff.change_ratio(len(snapshot), len(cached_files))
@@ -103,6 +135,26 @@ def build_index(
                 extensions=extensions,
                 stat_cache=stat_cache,
             )
+            if needs_line_backfill:
+                updates = [
+                    (
+                        _relative_to_root(payload.file, directory),
+                        payload.chunk_index,
+                        payload.start_line,
+                        payload.end_line,
+                    )
+                    for payload in payloads
+                ]
+                cache_path = backfill_chunk_lines(
+                    root=directory,
+                    model=model_name,
+                    include_hidden=include_hidden,
+                    respect_gitignore=respect_gitignore,
+                    mode=mode,
+                    recursive=recursive,
+                    updates=updates,
+                    extensions=extensions,
+                )
             return IndexResult(
                 status=IndexStatus.STORED,
                 cache_path=cache_path,
@@ -295,6 +347,42 @@ def _relative_to_root(path: Path, root: Path) -> str:
     return str(rel)
 
 
+def _has_missing_line_metadata(
+    metadata: dict | None,
+    payloads: Sequence[ModePayload],
+    root: Path,
+) -> bool:
+    if not metadata:
+        return False
+    chunk_entries = metadata.get("chunks") or []
+    if not chunk_entries:
+        return False
+    line_map: dict[tuple[str, int], tuple[int | None, int | None]] = {}
+    for entry in chunk_entries:
+        rel_path = entry.get("path")
+        if not isinstance(rel_path, str):
+            continue
+        try:
+            chunk_index = int(entry.get("chunk_index", 0))
+        except (TypeError, ValueError):
+            chunk_index = 0
+        start_line = entry.get("start_line")
+        end_line = entry.get("end_line")
+        line_map[(rel_path, chunk_index)] = (start_line, end_line)
+
+    for payload in payloads:
+        if payload.start_line is None and payload.end_line is None:
+            continue
+        rel_path = _relative_to_root(payload.file, root)
+        existing = line_map.get((rel_path, payload.chunk_index))
+        if existing is None:
+            continue
+        existing_start, existing_end = existing
+        if existing_start is None and existing_end is None:
+            return True
+    return False
+
+
 def _build_index_entries(
     payloads: Sequence[ModePayload],
     embeddings: Sequence[Sequence[float]],
@@ -314,6 +402,8 @@ def _build_index_entries(
                 embedding=embeddings[idx],
                 size_bytes=stat.st_size,
                 mtime=stat.st_mtime,
+                start_line=payload.start_line,
+                end_line=payload.end_line,
             )
         )
     return entries

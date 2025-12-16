@@ -23,6 +23,8 @@ class SearchResult:
     score: float
     preview: str | None = None
     chunk_index: int = 0
+    start_line: int | None = None
+    end_line: int | None = None
 
 
 class EmbeddingBackend(Protocol):

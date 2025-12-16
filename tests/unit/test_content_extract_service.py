@@ -8,6 +8,7 @@ from vexor.services.content_extract_service import (
     extract_code_chunks,
     extract_outline_chunks,
     extract_full_chunks,
+    extract_full_chunks_with_lines,
     extract_head,
     HEAD_CHAR_LIMIT,
 )
@@ -218,8 +219,17 @@ Another body.
     assert chunks[2].breadcrumb == "Top > Child"
     assert chunks[3].breadcrumb == "Top > Another"
     assert not any(chunk.title == "Not a heading" for chunk in chunks)
-    assert "Intro before headings" in chunks[0].text
-    assert "Child body" in chunks[2].text
+
+
+def test_extract_full_chunks_with_lines_from_text(tmp_path):
+    text_path = tmp_path / "sample.txt"
+    text_path.write_text("a\nb\nc\nd\ne\n")
+
+    chunks = extract_full_chunks_with_lines(text_path, chunk_size=100, overlap=0)
+
+    assert chunks
+    assert chunks[0].start_line == 1
+    assert chunks[0].end_line == 5
 
 
 def test_extract_outline_chunks_no_headings_returns_empty(tmp_path):

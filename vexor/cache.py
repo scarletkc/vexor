@@ -15,7 +15,7 @@ import numpy as np
 from .utils import collect_files
 
 CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 DB_FILENAME = "index.db"
 
 
@@ -28,6 +28,8 @@ class IndexedChunk:
     embedding: Sequence[float]
     size_bytes: int | None = None
     mtime: float | None = None
+    start_line: int | None = None
+    end_line: int | None = None
 
 
 def _cache_key(
@@ -115,6 +117,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             position INTEGER NOT NULL,
             preview TEXT DEFAULT '',
             chunk_index INTEGER NOT NULL DEFAULT 0,
+            start_line INTEGER,
+            end_line INTEGER,
             UNIQUE(index_id, rel_path, chunk_index)
         );
 
@@ -152,6 +156,14 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         )
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE indexed_file ADD COLUMN start_line INTEGER")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE indexed_file ADD COLUMN end_line INTEGER")
+    except sqlite3.OperationalError:
+        pass
     if not _table_has_column(conn, "indexed_file", "chunk_index"):
         _upgrade_indexed_file_with_chunk(conn)
     try:
@@ -183,6 +195,8 @@ def _upgrade_indexed_file_with_chunk(conn: sqlite3.Connection) -> None:
             position INTEGER NOT NULL,
             preview TEXT DEFAULT '',
             chunk_index INTEGER NOT NULL DEFAULT 0,
+            start_line INTEGER,
+            end_line INTEGER,
             UNIQUE(index_id, rel_path, chunk_index)
         );
 
@@ -201,7 +215,9 @@ def _upgrade_indexed_file_with_chunk(conn: sqlite3.Connection) -> None:
             mtime,
             position,
             preview,
-            chunk_index
+            chunk_index,
+            start_line,
+            end_line
         )
         SELECT
             id,
@@ -212,7 +228,9 @@ def _upgrade_indexed_file_with_chunk(conn: sqlite3.Connection) -> None:
             mtime,
             position,
             preview,
-            0
+            0,
+            NULL,
+            NULL
         FROM indexed_file_legacy;
         """
     )
@@ -307,6 +325,8 @@ def store_index(
                         position,
                         entry.preview,
                         entry.chunk_index,
+                        entry.start_line,
+                        entry.end_line,
                     )
                 )
                 vector_blobs.append(
@@ -323,8 +343,10 @@ def store_index(
                     mtime,
                     position,
                     preview,
-                    chunk_index
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    chunk_index,
+                    start_line,
+                    end_line
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 file_rows,
             )
@@ -430,6 +452,8 @@ def apply_index_updates(
                                 0,
                                 chunk.preview,
                                 chunk.chunk_index,
+                                chunk.start_line,
+                                chunk.end_line,
                             )
                         )
                         vector_blobs.append(vector.tobytes())
@@ -444,8 +468,10 @@ def apply_index_updates(
                             mtime,
                             position,
                             preview,
-                            chunk_index
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            chunk_index,
+                            start_line,
+                            end_line
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         file_rows,
                     )
@@ -481,10 +507,74 @@ def apply_index_updates(
             conn.execute(
                 """
                 UPDATE index_metadata
-                SET generated_at = ?, dimension = ?
+                SET generated_at = ?, dimension = ?, version = ?
                 WHERE id = ?
                 """,
-                (generated_at, new_dimension, index_id),
+                (generated_at, new_dimension, CACHE_VERSION, index_id),
+            )
+
+        return db_path
+    finally:
+        conn.close()
+
+
+def backfill_chunk_lines(
+    *,
+    root: Path,
+    model: str,
+    include_hidden: bool,
+    mode: str,
+    recursive: bool,
+    updates: Sequence[tuple[str, int, int | None, int | None]],
+    extensions: Sequence[str] | None = None,
+    respect_gitignore: bool = True,
+) -> Path:
+    """Backfill start/end line metadata for an existing cached index."""
+
+    db_path = cache_file(root, model, include_hidden)
+    if not db_path.exists():
+        raise FileNotFoundError(db_path)
+
+    conn = _connect(db_path)
+    try:
+        _ensure_schema(conn)
+        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
+        include_flag = 1 if include_hidden else 0
+        gitignore_flag = 1 if respect_gitignore else 0
+        recursive_flag = 1 if recursive else 0
+        meta = conn.execute(
+            """
+            SELECT id
+            FROM index_metadata
+            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
+            """,
+            (key, model, include_flag, gitignore_flag, recursive_flag, mode),
+        ).fetchone()
+        if meta is None:
+            raise FileNotFoundError(db_path)
+        index_id = int(meta["id"])
+
+        with conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            conn.executemany(
+                """
+                UPDATE indexed_file
+                SET start_line = ?, end_line = ?
+                WHERE index_id = ? AND rel_path = ? AND chunk_index = ?
+                """,
+                (
+                    (start_line, end_line, index_id, rel_path, chunk_index)
+                    for rel_path, chunk_index, start_line, end_line in updates
+                ),
+            )
+            generated_at = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                """
+                UPDATE index_metadata
+                SET generated_at = ?, version = ?
+                WHERE id = ?
+                """,
+                (generated_at, CACHE_VERSION, index_id),
             )
 
         return db_path
@@ -526,7 +616,7 @@ def load_index(
 
         rows = conn.execute(
             """
-            SELECT rel_path, abs_path, size_bytes, mtime, preview, chunk_index
+            SELECT rel_path, abs_path, size_bytes, mtime, preview, chunk_index, start_line, end_line
             FROM indexed_file
             WHERE index_id = ?
             ORDER BY position ASC
@@ -547,6 +637,8 @@ def load_index(
                     "size": row["size_bytes"],
                     "preview": row["preview"],
                     "chunk_index": chunk_index,
+                    "start_line": row["start_line"],
+                    "end_line": row["end_line"],
                 }
             )
             if rel_path not in file_snapshot:
@@ -640,7 +732,7 @@ def load_index_vectors(
 
         cursor = conn.execute(
             """
-            SELECT f.rel_path, f.abs_path, f.size_bytes, f.mtime, f.preview, f.chunk_index, e.vector_blob
+            SELECT f.rel_path, f.abs_path, f.size_bytes, f.mtime, f.preview, f.chunk_index, f.start_line, f.end_line, e.vector_blob
             FROM indexed_file AS f
             JOIN file_embedding AS e ON e.file_id = f.id
             WHERE f.index_id = ?
@@ -667,6 +759,8 @@ def load_index_vectors(
                     "size": row["size_bytes"],
                     "preview": row["preview"],
                     "chunk_index": chunk_index,
+                    "start_line": row["start_line"],
+                    "end_line": row["end_line"],
                 }
             )
             if rel_path not in file_snapshot:

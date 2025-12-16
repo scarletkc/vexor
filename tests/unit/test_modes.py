@@ -48,6 +48,8 @@ def test_full_strategy_chunks_text(tmp_path):
     payloads = strategy.payloads_for_files([file_path])
     assert len(payloads) >= 1
     assert payloads[0].chunk_index == 0
+    assert all(payload.start_line == 1 for payload in payloads)
+    assert all(payload.end_line == 1 for payload in payloads)
     if len(payloads) > 1:
         assert payloads[1].chunk_index == 1
     assert "[Chunk" not in payloads[0].preview
@@ -124,6 +126,7 @@ TAIL_CONSTANT = "tail"
 
     assert payloads
     assert payloads[0].chunk_index == 0
+    assert all(payload.start_line is not None and payload.end_line is not None for payload in payloads)
     assert any("foo" in payload.label for payload in payloads)
     assert any("VALUE = 42" in payload.label for payload in payloads)
     assert any("Bar.method" in (payload.preview or "") for payload in payloads)
@@ -161,6 +164,7 @@ Child body.
     assert payloads
     assert payloads[0].chunk_index == 0
     assert payloads[0].preview is not None
+    assert all(payload.start_line is not None and payload.end_line is not None for payload in payloads)
     assert payloads[0].preview.startswith("preamble")
     assert any("Top > Child" in (payload.preview or "") for payload in payloads)
 

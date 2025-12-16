@@ -43,7 +43,15 @@ def test_search_outputs_table(tmp_path, monkeypatch):
         return SearchResponse(
             base_path=tmp_path,
             backend="fake-backend",
-            results=[SearchResult(path=sample_file, score=0.99, preview="alpha")],
+            results=[
+                SearchResult(
+                    path=sample_file,
+                    score=0.99,
+                    preview="alpha",
+                    start_line=12,
+                    end_line=34,
+                )
+            ],
             is_stale=False,
             index_empty=False,
         )
@@ -65,7 +73,9 @@ def test_search_outputs_table(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "alpha.txt" in result.stdout
     assert "Similarity" in result.stdout
+    assert "Lines" in result.stdout
     assert "Preview" in result.stdout
+    assert "L12-34" in result.stdout
     assert captured["recursive"] is True
     assert captured["mode"] == "auto"
 
@@ -81,7 +91,15 @@ def test_search_outputs_porcelain(tmp_path, monkeypatch):
         return SearchResponse(
             base_path=tmp_path,
             backend="fake-backend",
-            results=[SearchResult(path=sample_file, score=0.99, preview="alpha\tbeta\ncharlie")],
+            results=[
+                SearchResult(
+                    path=sample_file,
+                    score=0.99,
+                    preview="alpha\tbeta\ncharlie",
+                    start_line=5,
+                    end_line=6,
+                )
+            ],
             is_stale=False,
             index_empty=False,
         )
@@ -105,7 +123,7 @@ def test_search_outputs_porcelain(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert "1\t0.990\t./alpha.txt\t0\talpha\\tbeta\\ncharlie\n" in result.stdout
+    assert "1\t0.990\t./alpha.txt\t0\t5\t6\talpha\\tbeta\\ncharlie\n" in result.stdout
     assert "Similarity" not in result.stdout
     assert captured["recursive"] is True
 
@@ -119,7 +137,15 @@ def test_search_outputs_porcelain_z(tmp_path, monkeypatch):
         return SearchResponse(
             base_path=tmp_path,
             backend="fake-backend",
-            results=[SearchResult(path=sample_file, score=0.99, preview="alpha\tbeta")],
+            results=[
+                SearchResult(
+                    path=sample_file,
+                    score=0.99,
+                    preview="alpha\tbeta",
+                    start_line=7,
+                    end_line=7,
+                )
+            ],
             is_stale=False,
             index_empty=False,
         )
@@ -147,7 +173,7 @@ def test_search_outputs_porcelain_z(tmp_path, monkeypatch):
     fields = result.stdout.split("\0")
     # Trailing delimiter yields an empty field at end.
     fields = [field for field in fields if field]
-    assert fields[-5:] == ["1", "0.990", "./alpha.txt", "0", "alpha\tbeta"]
+    assert fields[-7:] == ["1", "0.990", "./alpha.txt", "0", "7", "7", "alpha\tbeta"]
 
 
 def test_search_respects_no_recursive_flag(tmp_path, monkeypatch):

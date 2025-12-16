@@ -52,6 +52,13 @@ class OutlineChunk:
     end_line: int
 
 
+@dataclass(frozen=True, slots=True)
+class FullChunk:
+    text: str
+    start_line: int | None
+    end_line: int | None
+
+
 _registry: Dict[str, HeadExtractor] = {}
 
 TEXT_EXTENSIONS = (
@@ -149,6 +156,67 @@ def extract_full_chunks(
         if window:
             chunks.append(window)
         if start + size >= length:
+            break
+        start += stride
+    return chunks
+
+
+def extract_full_chunks_with_lines(
+    path: Path,
+    *,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    overlap: int = DEFAULT_CHUNK_OVERLAP,
+    char_limit: int = FULL_CHAR_LIMIT,
+) -> list[FullChunk]:
+    """Return sliding-window chunks and approximate line ranges for text-like files.
+
+    Line ranges are computed only for plain text inputs (TEXT_EXTENSIONS). Other extractors
+    return chunks with line metadata set to None.
+    """
+
+    suffix = path.suffix.lower()
+    text: str | None = None
+    include_lines = False
+    if suffix in TEXT_EXTENSIONS:
+        include_lines = True
+        text = _read_text_full(path, char_limit)
+    elif suffix == ".pdf":
+        text = _pdf_extractor(path, char_limit)
+    elif suffix == ".docx":
+        text = _docx_extractor(path, char_limit)
+    elif suffix == ".pptx":
+        text = _pptx_extractor(path, char_limit)
+    else:
+        return []
+    if text is None:
+        return []
+
+    normalized = text.replace("\r\n", "\n").strip()
+    if not normalized:
+        return []
+
+    size = max(int(chunk_size), 1)
+    stride = max(size - max(int(overlap), 0), 1)
+    chunks: list[FullChunk] = []
+    start = 0
+    length = len(normalized)
+    while start < length:
+        end = min(start + size, length)
+        window = normalized[start:end]
+        cleaned = window.strip()
+        if cleaned:
+            start_line: int | None = None
+            end_line: int | None = None
+            if include_lines:
+                leading = len(window) - len(window.lstrip())
+                trailing = len(window) - len(window.rstrip())
+                span_start = min(start + leading, length)
+                span_end = max(span_start, end - trailing)
+                start_line = normalized.count("\n", 0, span_start) + 1
+                last_index = max(span_start, span_end - 1)
+                end_line = normalized.count("\n", 0, last_index) + 1
+            chunks.append(FullChunk(text=cleaned, start_line=start_line, end_line=end_line))
+        if end >= length:
             break
         start += stride
     return chunks

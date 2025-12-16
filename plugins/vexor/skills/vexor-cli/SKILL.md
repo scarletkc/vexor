@@ -19,7 +19,9 @@ Use Vexor to build a cached semantic index for a directory, then search it quick
    - Run `vexor search "<QUERY>" --path <ROOT> [--mode <MODE>] [--top K] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--format porcelain|porcelain-z]`.
 
 Mode defaults to `auto`. If you pass `--mode`, use the same value for both `index` and `search`.
-Omit `--format` to use the default `rich` table output.
+Omit `--format` to use the default `rich` table output (includes a `Lines` column when available).
+
+Porcelain formats emit: `rank`, `similarity`, `path`, `chunk_index`, `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
 
 ## Pick an indexing mode
 

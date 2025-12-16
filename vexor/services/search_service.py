@@ -86,12 +86,16 @@ def perform_search(request: SearchRequest) -> SearchResponse:
     scored = []
     for idx, (path, score) in enumerate(zip(paths, similarities)):
         chunk_meta = chunk_entries[idx] if idx < len(chunk_entries) else {}
+        start_line = chunk_meta.get("start_line")
+        end_line = chunk_meta.get("end_line")
         scored.append(
             SearchResult(
                 path=path,
                 score=float(score),
                 preview=chunk_meta.get("preview"),
                 chunk_index=int(chunk_meta.get("chunk_index", 0)),
+                start_line=int(start_line) if start_line is not None else None,
+                end_line=int(end_line) if end_line is not None else None,
             )
         )
     scored.sort(key=lambda item: item.score, reverse=True)

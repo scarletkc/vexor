@@ -12,6 +12,7 @@ from .services.content_extract_service import (
     extract_code_chunks,
     extract_outline_chunks,
     extract_full_chunks,
+    extract_full_chunks_with_lines,
     extract_head,
 )
 from .services.keyword_service import (
@@ -30,6 +31,8 @@ class ModePayload:
     label: str
     preview: str | None
     chunk_index: int = 0
+    start_line: int | None = None
+    end_line: int | None = None
 
 
 class IndexModeStrategy(Protocol):
@@ -92,7 +95,7 @@ class FullStrategy(IndexModeStrategy):
         return self.fallback.payload_for_file(file)
 
     def _payloads_for_file(self, file: Path) -> list[ModePayload]:
-        chunks = extract_full_chunks(
+        chunks = extract_full_chunks_with_lines(
             file,
             chunk_size=self.chunk_size,
             overlap=self.overlap,
@@ -101,7 +104,7 @@ class FullStrategy(IndexModeStrategy):
             return [self.fallback.payload_for_file(file)]
         payloads: list[ModePayload] = []
         for index, chunk in enumerate(chunks):
-            normalized = _normalize_preview_chunk(chunk)
+            normalized = _normalize_preview_chunk(chunk.text)
             if not normalized:
                 continue
             preview = _trim_preview(normalized)
@@ -112,6 +115,8 @@ class FullStrategy(IndexModeStrategy):
                     label=label,
                     preview=preview,
                     chunk_index=index,
+                    start_line=chunk.start_line,
+                    end_line=chunk.end_line,
                 )
             )
         if not payloads:
@@ -164,6 +169,8 @@ class CodeStrategy(IndexModeStrategy):
                         label=label,
                         preview=preview,
                         chunk_index=chunk_index,
+                        start_line=chunk.start_line,
+                        end_line=chunk.end_line,
                     )
                 )
                 chunk_index += 1
@@ -213,6 +220,8 @@ class OutlineStrategy(IndexModeStrategy):
                     label=label,
                     preview=preview,
                     chunk_index=index,
+                    start_line=chunk.start_line,
+                    end_line=chunk.end_line,
                 )
             )
         return payloads

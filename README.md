@@ -76,14 +76,15 @@ vexor config --clear-index-all
    vexor search "api client config" --path ~/projects/demo --mode name --top 5
    ```
    For script/agent-friendly output, add `--format porcelain` (TSV) or `--format porcelain-z` (NUL-delimited), default format `rich` (table).
+   Porcelain formats emit: `rank`, `similarity`, `path`, `chunk_index`, `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
    Output example:
    ```
    Vexor semantic file search results
    ──────────────────────────────────
-   #   Similarity   File path                      Preview
-   1   0.923        ./src/config_loader.py        config loader entrypoint
-   2   0.871        ./src/utils/config_parse.py   parse config helpers
-   3   0.809        ./tests/test_config_loader.py tests for config loader
+   #   Similarity   File path                      Lines   Preview
+   1   0.923        ./src/config_loader.py        -       config loader entrypoint
+   2   0.871        ./src/utils/config_parse.py   -       parse config helpers
+   3   0.809        ./tests/test_config_loader.py -       tests for config loader
    ```
 
 **Tips:**
