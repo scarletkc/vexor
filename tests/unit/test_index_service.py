@@ -1,7 +1,12 @@
+from pathlib import Path
+
 import numpy as np
 
 import vexor.cache as cache
-from vexor.services.index_service import build_index, IndexStatus
+from vexor.services import index_service
+from vexor.services.index_service import IndexStatus, build_index
+
+import sqlite3
 
 
 class DummySearcher:
@@ -109,3 +114,168 @@ def test_build_index_falls_back_to_full_rebuild(tmp_path, monkeypatch):
     build_index(root, include_hidden=False, mode="name", recursive=True, model_name="model", batch_size=0, provider="gemini", base_url=None, api_key=None)
     assert len(DummySearcher.calls) == 1
     assert len(DummySearcher.calls[0]) == 4  # full rebuild embeds every file
+
+
+def test_build_index_backfills_line_metadata_when_missing(tmp_path, monkeypatch):
+    _patch_cache_dir(tmp_path, monkeypatch)
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    DummySearcher.calls = []
+
+    root = tmp_path / "project"
+    root.mkdir()
+    py_path = root / "sample.py"
+    py_path.write_text(
+        """\"\"\"Doc.\"\"\"\n\nX = 1\n\n\ndef foo():\n    return X\n""",
+        encoding="utf-8",
+    )
+
+    kwargs = dict(provider="gemini", base_url=None, api_key=None)
+    first = build_index(
+        root,
+        include_hidden=False,
+        mode="code",
+        recursive=True,
+        model_name="model",
+        batch_size=0,
+        **kwargs,
+    )
+    assert first.status == IndexStatus.STORED
+
+    # Simulate an old cache that lacks line metadata.
+    db_path = cache.cache_db_path()
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.row_factory = sqlite3.Row
+        meta_row = conn.execute(
+            """
+            SELECT id FROM index_metadata
+            WHERE root_path = ? AND model = ? AND include_hidden = 0 AND respect_gitignore = 1
+              AND recursive = 1 AND mode = 'code'
+            """,
+            (str(root), "model"),
+        ).fetchone()
+        assert meta_row is not None
+        index_id = int(meta_row["id"])
+        conn.execute("UPDATE index_metadata SET version = 5 WHERE id = ?", (index_id,))
+        conn.execute(
+            "UPDATE indexed_file SET start_line = NULL, end_line = NULL WHERE index_id = ?",
+            (index_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    second = build_index(
+        root,
+        include_hidden=False,
+        mode="code",
+        recursive=True,
+        model_name="model",
+        batch_size=0,
+        **kwargs,
+    )
+    assert second.status == IndexStatus.STORED
+
+    meta = cache.load_index(root, "model", False, "code", True)
+    chunks = [entry for entry in meta["chunks"] if entry["path"] == "sample.py"]
+    assert chunks
+    assert any(entry["start_line"] is not None and entry["end_line"] is not None for entry in chunks)
+
+
+def test_build_index_returns_empty_when_no_files(tmp_path, monkeypatch):
+    _patch_cache_dir(tmp_path, monkeypatch)
+    monkeypatch.setattr("vexor.utils.collect_files", lambda *_args, **_kwargs: [])
+
+    result = build_index(
+        tmp_path,
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key=None,
+    )
+    assert result.status == IndexStatus.EMPTY
+
+
+def test_build_index_returns_up_to_date_when_no_changes(tmp_path, monkeypatch):
+    _patch_cache_dir(tmp_path, monkeypatch)
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+
+    root = tmp_path / "project"
+    root.mkdir()
+    file_a = root / "a.txt"
+    file_a.write_text("a", encoding="utf-8")
+
+    monkeypatch.setattr("vexor.utils.collect_files", lambda *_args, **_kwargs: [file_a])
+    monkeypatch.setattr(index_service, "_diff_cached_files", lambda *_args, **_kwargs: index_service.FileDiff())
+    monkeypatch.setattr(index_service, "_has_missing_line_metadata", lambda *_args, **_kwargs: False)
+
+    payload = index_service.ModePayload(file=file_a, label="a", preview="a", chunk_index=0, start_line=1, end_line=1)
+
+    class DummyStrategy:
+        def payloads_for_files(self, files):
+            assert files == [file_a]
+            return [payload]
+
+    monkeypatch.setattr(index_service, "get_strategy", lambda *_args, **_kwargs: DummyStrategy())
+
+    monkeypatch.setattr(
+        index_service,
+        "load_index_metadata_safe",
+        lambda *_args, **_kwargs: {
+            "version": cache.CACHE_VERSION,
+            "files": [{"path": "a.txt"}],
+            "chunks": [{"path": "a.txt", "chunk_index": 0, "start_line": 1, "end_line": 1}],
+        },
+    )
+
+    result = build_index(
+        root,
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key=None,
+    )
+
+    assert result.status == IndexStatus.UP_TO_DATE
+    assert result.files_indexed == 1
+
+
+def test_clear_index_entries_delegates_to_cache(tmp_path, monkeypatch):
+    called = {}
+
+    def fake_clear_index(*_args, **_kwargs):
+        called["ok"] = True
+        return 3
+
+    monkeypatch.setattr("vexor.cache.clear_index", fake_clear_index)
+
+    removed = index_service.clear_index_entries(
+        tmp_path,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=True,
+        model=None,
+    )
+    assert called["ok"] is True
+    assert removed == 3
+
+
+def test_relative_to_root_handles_unrelated_path(tmp_path):
+    rel = index_service._relative_to_root(Path("/tmp/elsewhere"), tmp_path)  # type: ignore[attr-defined]
+    assert "elsewhere" in rel
+
+
+def test_stat_for_path_without_cache(tmp_path):
+    file_path = tmp_path / "sample.txt"
+    file_path.write_text("x", encoding="utf-8")
+    stat = index_service._stat_for_path(file_path, cache=None)  # type: ignore[attr-defined]
+    assert stat.st_size == 1

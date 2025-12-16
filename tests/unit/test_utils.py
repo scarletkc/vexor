@@ -1,134 +1,196 @@
+from __future__ import annotations
+
 from pathlib import Path
+
 import pytest
 
-from vexor.utils import collect_files, format_path, resolve_directory, normalize_extensions
+import vexor.utils as utils
 
 
-def test_collect_files_ignores_hidden(tmp_path):
-    visible = tmp_path / "visible.txt"
-    visible.write_text("data")
-    hidden_file = tmp_path / ".hidden.txt"
-    hidden_file.write_text("secret")
-    hidden_dir = tmp_path / ".hidden"
-    hidden_dir.mkdir()
-    (hidden_dir / "nested.txt").write_text("nested")
-
-    files = collect_files(tmp_path)
-
-    assert files == [visible]
-
-
-def test_collect_files_includes_hidden(tmp_path):
-    visible = tmp_path / "visible.txt"
-    visible.write_text("data")
-    hidden_file = tmp_path / ".hidden.txt"
-    hidden_file.write_text("secret")
-
-    files = collect_files(tmp_path, include_hidden=True)
-
-    assert set(files) == {visible, hidden_file}
-
-
-def test_collect_files_non_recursive(tmp_path):
-    top = tmp_path / "top.txt"
-    top.write_text("data")
-    nested_dir = tmp_path / "nested"
-    nested_dir.mkdir()
-    nested_file = nested_dir / "child.txt"
-    nested_file.write_text("child")
-
-    files = collect_files(tmp_path, recursive=False)
-
-    assert files == [top]
-
-
-def test_collect_files_filters_extensions(tmp_path):
-    py_file = tmp_path / "demo.PY"
-    py_file.write_text("py")
-    md_file = tmp_path / "readme.md"
-    md_file.write_text("md")
-    other = tmp_path / "plain.txt"
-    other.write_text("txt")
-
-    filtered = collect_files(tmp_path, extensions=normalize_extensions([".py", ".MD"]))
-
-    assert [path.name for path in filtered] == ["demo.PY", "readme.md"]
-
-
-def test_resolve_directory_invalid(tmp_path):
+def test_resolve_directory_validates(tmp_path):
     with pytest.raises(FileNotFoundError):
-        resolve_directory(tmp_path / "missing")
+        utils.resolve_directory(tmp_path / "missing")
+
+    file_path = tmp_path / "file.txt"
+    file_path.write_text("x", encoding="utf-8")
+    with pytest.raises(NotADirectoryError):
+        utils.resolve_directory(file_path)
+
+    assert utils.resolve_directory(tmp_path) == tmp_path.resolve()
 
 
-def test_format_path_relative(tmp_path):
-    root = tmp_path
-    file_path = tmp_path / "folder" / "file.txt"
-    file_path.parent.mkdir()
-    file_path.write_text("data")
-
-    human = format_path(file_path, base=root)
-
-    assert human.startswith(".")
-    assert "file.txt" in human
+def test_normalize_extensions():
+    assert utils.normalize_extensions(None) == ()
+    assert utils.normalize_extensions([]) == ()
+    assert utils.normalize_extensions(["py", ".py", " .MD ", ".", "", None]) == (".md", ".py")
+    assert utils.normalize_extensions([".", " ", None]) == ()
 
 
-def test_normalize_extensions_deduplicates_and_sorts():
-    result = normalize_extensions(["py", ".MD", ".py", "", ".md"])  # mixed case + blanks
+def test_scope_gitignore_line_variants():
+    assert utils._scope_gitignore_line("", "base") is None
+    assert utils._scope_gitignore_line("# comment", "base") is None
+    assert utils._scope_gitignore_line(r"\#not-comment", "base") == r"base/**/\#not-comment"
+    assert utils._scope_gitignore_line("foo", "") == "foo"
 
-    assert result == (".md", ".py")
+    assert utils._scope_gitignore_line("/foo.txt", "src") == "src/foo.txt"
+    assert utils._scope_gitignore_line("foo.txt", "src") == "src/**/foo.txt"
+    assert utils._scope_gitignore_line("nested/foo.txt", "src") == "src/nested/foo.txt"
+    assert utils._scope_gitignore_line("build/", "src") == "src/**/build/"
+    assert utils._scope_gitignore_line("!keep.txt", "src") == "!src/**/keep.txt"
 
 
-def test_collect_files_respects_gitignore(tmp_path):
-    root = tmp_path / "project"
+def test_resolve_git_dir(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
     root.mkdir()
-    (root / ".git" / "info").mkdir(parents=True)
-    (root / ".git" / "info" / "exclude").write_text("exclude_me.txt\n", encoding="utf-8")
-    (root / ".gitignore").write_text("ignored/\n*.log\n", encoding="utf-8")
 
-    (root / "keep.txt").write_text("keep", encoding="utf-8")
-    (root / "notes.log").write_text("log", encoding="utf-8")
-    (root / "exclude_me.txt").write_text("exclude", encoding="utf-8")
+    git_dir = root / ".git"
+    git_dir.mkdir()
+    assert utils._resolve_git_dir(root) == git_dir
 
-    (root / "ignored").mkdir()
-    (root / "ignored" / "ignored_only.txt").write_text("ignored", encoding="utf-8")
+    # Gitdir indirection via file.
+    shutil_root = tmp_path / "repo2"
+    shutil_root.mkdir()
+    (shutil_root / ".git").write_text("gitdir: .git/modules/x\n", encoding="utf-8")
+    expected = (shutil_root / ".git" / "modules" / "x").resolve()
+    assert utils._resolve_git_dir(shutil_root) == expected
 
-    (root / "sub").mkdir()
-    (root / "sub" / "keep2.txt").write_text("keep2", encoding="utf-8")
-    (root / "sub" / "sub_keep.txt").write_text("sub keep", encoding="utf-8")
-    (root / "sub" / ".gitignore").write_text("sub_ignored.txt\n", encoding="utf-8")
-    (root / "sub" / "sub_ignored.txt").write_text("sub ignored", encoding="utf-8")
-    (root / "sub" / "ignored").mkdir()
-    (root / "sub" / "ignored" / "ignored_nested.txt").write_text("nested ignored", encoding="utf-8")
+    (shutil_root / ".git").write_text("not a gitdir", encoding="utf-8")
+    assert utils._resolve_git_dir(shutil_root) is None
 
-    files = collect_files(root)
+    (shutil_root / ".git").write_text("gitdir:", encoding="utf-8")
+    assert utils._resolve_git_dir(shutil_root) is None
 
-    rel_paths = [path.relative_to(root).as_posix() for path in files]
-    assert rel_paths == ["keep.txt", "sub/keep2.txt", "sub/sub_keep.txt"]
+    def raise_oserror(*_args, **_kwargs):
+        raise OSError("boom")
+
+    monkeypatch.setattr(Path, "read_text", lambda *_a, **_k: raise_oserror())
+    assert utils._resolve_git_dir(shutil_root) is None
 
 
-def test_collect_files_can_disable_gitignore(tmp_path):
-    root = tmp_path / "project"
+def test_read_gitignore_lines_returns_empty_on_error(tmp_path, monkeypatch):
+    gitignore = tmp_path / ".gitignore"
+    gitignore.write_text("ignored.txt\n", encoding="utf-8")
+
+    def boom(*_args, **_kwargs):
+        raise OSError("nope")
+
+    monkeypatch.setattr(Path, "read_text", boom)
+    assert utils._read_gitignore_lines(gitignore) == []
+
+
+def test_build_gitignore_base_spec_outside_root_returns_default(tmp_path):
+    ignore_root = tmp_path / "root"
+    ignore_root.mkdir()
+    scan_root = tmp_path / "other"
+    scan_root.mkdir()
+
+    spec, ignored = utils._build_gitignore_base_spec(ignore_root, scan_root)
+    assert ignored is False
+    assert utils._is_ignored(spec, "anything.txt", is_dir=False) is False
+
+
+def test_build_gitignore_base_spec_marks_ignored_ancestor(tmp_path):
+    root = tmp_path / "repo"
     root.mkdir()
+    (root / ".gitignore").write_text("ignored_dir/\n", encoding="utf-8")
+
+    ignored_dir = root / "ignored_dir"
+    ignored_dir.mkdir()
+    scan_root = ignored_dir / "inner"
+    scan_root.mkdir()
+
+    spec, ignored = utils._build_gitignore_base_spec(root, scan_root)
+    assert ignored is True
+    assert utils._is_ignored(spec, "ignored_dir", is_dir=True) is True
+
+
+def test_collect_files_respects_gitignore_and_exclude(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").mkdir()
     (root / ".git" / "info").mkdir(parents=True)
-    (root / ".git" / "info" / "exclude").write_text("exclude_me.txt\n", encoding="utf-8")
-    (root / ".gitignore").write_text("ignored/\n*.log\n", encoding="utf-8")
+    (root / ".git" / "info" / "exclude").write_text("excluded.txt\n", encoding="utf-8")
 
-    paths = [
-        root / "keep.txt",
-        root / "notes.log",
-        root / "exclude_me.txt",
-        root / "ignored" / "ignored_only.txt",
-        root / "sub" / "keep2.txt",
-        root / "sub" / "sub_keep.txt",
-        root / "sub" / "sub_ignored.txt",
-        root / "sub" / "ignored" / "ignored_nested.txt",
-    ]
-    for path in paths:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("data", encoding="utf-8")
-    (root / "sub" / ".gitignore").write_text("sub_ignored.txt\n", encoding="utf-8")
+    (root / ".gitignore").write_text(
+        "ignored.txt\nsub/sub_ignored.txt\nignored_dir/\n",
+        encoding="utf-8",
+    )
+    (root / "kept.txt").write_text("ok", encoding="utf-8")
+    (root / "ignored.txt").write_text("no", encoding="utf-8")
+    (root / "excluded.txt").write_text("no", encoding="utf-8")
+    (root / ".hidden.txt").write_text("hidden", encoding="utf-8")
+    sub = root / "sub"
+    sub.mkdir()
+    (sub / "sub_ignored.txt").write_text("no", encoding="utf-8")
+    (sub / "sub_kept.py").write_text("print('x')\n", encoding="utf-8")
+    ignored_dir = root / "ignored_dir"
+    ignored_dir.mkdir()
+    (ignored_dir / "never_seen.txt").write_text("no", encoding="utf-8")
 
-    files = collect_files(root, respect_gitignore=False)
+    files = utils.collect_files(root, include_hidden=False, recursive=True, respect_gitignore=True)
+    names = [path.name for path in files]
+    assert "kept.txt" in names
+    assert "sub_kept.py" in names
+    assert "ignored.txt" not in names
+    assert "excluded.txt" not in names
+    assert ".hidden.txt" not in names
 
-    rel_paths = [path.relative_to(root).as_posix() for path in files]
-    assert rel_paths == sorted([path.relative_to(root).as_posix() for path in paths])
+    # include hidden still respects ignore rules.
+    files_hidden = utils.collect_files(root, include_hidden=True, recursive=True, respect_gitignore=True)
+    names_hidden = [path.name for path in files_hidden]
+    assert ".hidden.txt" in names_hidden
+    assert "ignored.txt" not in names_hidden
+
+    # no respect gitignore includes ignored/excluded.
+    files_all = utils.collect_files(root, include_hidden=True, recursive=True, respect_gitignore=False)
+    names_all = [path.name for path in files_all]
+    assert "ignored.txt" in names_all
+    assert "excluded.txt" in names_all
+
+    # extension filtering intersects.
+    files_py = utils.collect_files(root, include_hidden=True, recursive=True, respect_gitignore=False, extensions=[".py"])
+    assert [path.name for path in files_py] == ["sub_kept.py"]
+
+    # non-recursive.
+    top_only = utils.collect_files(root, include_hidden=True, recursive=False, respect_gitignore=False)
+    assert all(path.parent == root for path in top_only)
+
+
+def test_format_path_and_ensure_positive(tmp_path):
+    base = tmp_path / "base"
+    base.mkdir()
+    path = base / "a.txt"
+    path.write_text("x", encoding="utf-8")
+    assert utils.format_path(path, base) == "./a.txt"
+
+    other = tmp_path / "other"
+    other.mkdir()
+    assert utils.format_path(path, other) == str(path)
+    assert utils.format_path(path) == str(path)
+
+    assert utils.ensure_positive(1, "x") == 1
+    with pytest.raises(ValueError):
+        utils.ensure_positive(0, "x")
+
+
+def test_collect_files_non_recursive_respects_gitignore_and_filters(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").write_text("not a gitdir", encoding="utf-8")
+    (root / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
+
+    (root / "kept.py").write_text("print('ok')\n", encoding="utf-8")
+    (root / "ignored.txt").write_text("no", encoding="utf-8")
+    (root / ".hidden.txt").write_text("hidden", encoding="utf-8")
+
+    files = utils.collect_files(root, include_hidden=False, recursive=False, respect_gitignore=True)
+    assert [path.name for path in files] == ["kept.py"]
+
+    py_only = utils.collect_files(
+        root,
+        include_hidden=True,
+        recursive=False,
+        respect_gitignore=True,
+        extensions=[".py"],
+    )
+    assert [path.name for path in py_only] == ["kept.py"]

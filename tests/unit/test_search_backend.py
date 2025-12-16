@@ -49,6 +49,57 @@ def test_gemini_backend_chunks_requests(monkeypatch):
     assert models.calls[0] == ["a", "bb"]
 
 
+def test_gemini_backend_rejects_placeholder_api_key():
+    with pytest.raises(RuntimeError) as exc:
+        gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=2, api_key="your_api_key_here")
+    assert "api key" in str(exc.value).lower()
+
+
+def test_gemini_backend_passes_base_url(monkeypatch):
+    captured = {}
+
+    def fake_client(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(models=FakeModels([[[1.0, 2.0]]]))
+
+    monkeypatch.setattr(gemini_backend.genai, "Client", fake_client)
+
+    backend = gemini_backend.GeminiEmbeddingBackend(
+        model_name="demo",
+        chunk_size=None,
+        api_key="cfg-key",
+        base_url="https://example.com/",
+    )
+    vectors = backend.embed(["x"])
+    assert vectors.shape == (1, 2)
+    assert "http_options" in captured
+
+
+def test_gemini_backend_formats_client_errors(monkeypatch):
+    class DummyClientError(Exception):
+        def __init__(self, message: str):
+            super().__init__(message)
+            self.message = message
+
+    monkeypatch.setattr(gemini_backend.genai_errors, "ClientError", DummyClientError)
+
+    class BoomModels:
+        def embed_content(self, *_args, **_kwargs):
+            raise DummyClientError("API key invalid")
+
+    monkeypatch.setattr(
+        gemini_backend.genai,
+        "Client",
+        lambda **_kwargs: SimpleNamespace(models=BoomModels()),
+    )
+    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=None, api_key="cfg-key")
+
+    with pytest.raises(RuntimeError) as exc:
+        backend.embed(["x"])
+
+    assert "invalid" in str(exc.value).lower()
+
+
 def test_gemini_backend_empty(monkeypatch):
     _install_fake_client(monkeypatch, batches=[])
     backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=2, api_key="cfg-key")
@@ -132,6 +183,70 @@ def test_openai_backend_chunks_requests(monkeypatch):
     assert len(embeddings.calls) == 2
 
 
+def test_openai_backend_rejects_missing_api_key():
+    with pytest.raises(RuntimeError) as exc:
+        openai_backend.OpenAIEmbeddingBackend(
+            model_name="text-embedding-3-small",
+            api_key=None,
+        )
+    assert "api key" in str(exc.value).lower()
+
+
+def test_openai_backend_passes_base_url(monkeypatch):
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.embeddings = FakeOpenAIEmbeddings([[[1.0, 2.0]]])
+
+    monkeypatch.setattr(openai_backend, "OpenAI", FakeClient)
+
+    backend = openai_backend.OpenAIEmbeddingBackend(
+        model_name="text-embedding-3-small",
+        api_key="sk-test",
+        base_url="https://example.com/",
+    )
+    vectors = backend.embed(["x"])
+    assert vectors.shape == (1, 2)
+    assert captured["base_url"] == "https://example.com"
+
+
+def test_openai_backend_empty_texts(monkeypatch):
+    _install_fake_openai_client(monkeypatch, batches=[])
+    backend = openai_backend.OpenAIEmbeddingBackend(
+        model_name="text-embedding-3-small",
+        api_key="sk-test",
+    )
+
+    result = backend.embed([])
+
+    assert result.shape == (0, 0)
+
+
+def test_openai_backend_skips_none_embeddings(monkeypatch):
+    class MixedEmbeddings:
+        def create(self, *_args, **_kwargs):
+            data = [
+                SimpleNamespace(embedding=None),
+                SimpleNamespace(embedding=[1.0, 0.0]),
+            ]
+            return SimpleNamespace(data=data)
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            self.embeddings = MixedEmbeddings()
+
+    monkeypatch.setattr(openai_backend, "OpenAI", FakeClient)
+
+    backend = openai_backend.OpenAIEmbeddingBackend(
+        model_name="text-embedding-3-small",
+        api_key="sk-test",
+    )
+    vectors = backend.embed(["x"])
+    assert vectors.shape == (1, 2)
+
+
 def test_openai_backend_no_embeddings(monkeypatch):
     _install_fake_openai_client(monkeypatch, batches=[[]])
     backend = openai_backend.OpenAIEmbeddingBackend(
@@ -143,6 +258,24 @@ def test_openai_backend_no_embeddings(monkeypatch):
         backend.embed(["input"])
 
     assert "no embeddings" in str(exc.value).lower()
+
+
+def test_openai_chunk_helper():
+    items = ["a", "b"]
+    assert list(openai_backend._chunk(items, None)) == [items]
+
+
+def test_format_openai_error_prefers_message_attr():
+    class FakeError(Exception):
+        def __init__(self, message: str) -> None:
+            super().__init__("ignored")
+            self.message = message
+
+        def __str__(self) -> str:
+            return "fallback"
+
+    msg = openai_backend._format_openai_error(FakeError("boom"))
+    assert "boom" in msg
 
 
 def test_vexor_searcher_embed_texts(monkeypatch):
