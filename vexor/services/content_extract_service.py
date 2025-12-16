@@ -287,9 +287,26 @@ def extract_code_chunks(
             for child in node.body:
                 if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     method_names.append(child.name)
+
+            def is_docstring_expr(stmt: object) -> bool:
+                if not isinstance(stmt, ast.Expr):
+                    return False
+                value = getattr(stmt, "value", None)
+                if isinstance(value, ast.Constant):
+                    return isinstance(value.value, str)
+                return False
+
             class_parts = [slice_lines(start, node.lineno)]
             if docstring.strip():
                 class_parts.append(docstring.strip())
+            for idx, child in enumerate(node.body):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if idx == 0 and docstring and is_docstring_expr(child):
+                    continue
+                child_text = slice_lines(node_start_line(child), node_end_line(child))
+                if child_text:
+                    class_parts.append(child_text)
             if method_names:
                 class_parts.append("Methods: " + ", ".join(method_names))
             class_text = "\n".join(part for part in class_parts if part).strip()

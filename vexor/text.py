@@ -26,7 +26,7 @@ class Messages:
     HELP_INDEX_SHOW = "Display metadata for the cached index matching the provided options."
     HELP_RECURSIVE = "Recurse into subdirectories (default). Disable to work only on the specified directory."
     HELP_MODE = (
-        "Indexing mode (name=filename, head=head snippet, brief=keyword summary, "
+        "Indexing mode (auto=smart default, name=filename, head=head snippet, brief=keyword summary, "
         "full=chunked content, code=python module/function/class chunks, outline=markdown headings) "
         "to control how embeddings are built."
     )

@@ -1,6 +1,6 @@
 ---
 name: vexor-cli
-description: Use Vexor's CLI (`vexor index`, `vexor search`, `vexor config`) to do semantic file discovery in a codebase. Trigger this skill when you need to find files by intent/meaning (not exact text matches), when you forgot a filename/path, when you need to pick the right indexing mode (name/head/brief/full/code/outline), or when you need to inspect/refresh/clear the cached indexes under `~/.vexor` and configure Gemini/OpenAI embedding providers.
+description: Use Vexor's CLI (`vexor index`, `vexor search`, `vexor config`) to do semantic file discovery in a codebase. Trigger this skill when you need to find files by intent/meaning (not exact text matches), when you forgot a filename/path, when you need to pick the right indexing mode (auto/name/head/brief/full/code/outline), or when you need to inspect/refresh/clear the cached indexes under `~/.vexor` and configure Gemini/OpenAI embedding providers.
 ---
 
 # Vexor CLI
@@ -14,17 +14,18 @@ Use Vexor to build a cached semantic index for a directory, then search it quick
 1. Verify the CLI is available:
    - Run `vexor doctor` (installed entrypoint), or `python -m vexor --help` (repo/dev environments).
 2. Build or refresh an index (required before searching):
-   - Run `vexor index --path <ROOT> --mode <MODE> [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...]`.
+   - Run `vexor index --path <ROOT> [--mode <MODE>] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...]`.
 3. Search the same index key:
-   - Run `vexor search "<QUERY>" --path <ROOT> --mode <MODE> [--top K] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--format porcelain|porcelain-z]`.
+   - Run `vexor search "<QUERY>" --path <ROOT> [--mode <MODE>] [--top K] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--format porcelain|porcelain-z]`.
 
-Always pass `--mode` for both `index` and `search` (it is required; there is no default).
+Mode defaults to `auto`. If you pass `--mode`, use the same value for both `index` and `search`.
 Omit `--format` to use the default `rich` table output.
 
 ## Pick an indexing mode
 
 Use the mode to control what gets embedded:
 
+- `auto`: Smart default routing (Python → `code`, Markdown → `outline`, small files → `full`, large files → `head`/`name`).
 - `name`: Embed file names only (fastest, zero content reads).
 - `head`: Embed file name + a short head snippet (about the first 1000 characters) for supported text/code/PDF/DOCX/PPTX files; fall back to `name` when unsupported.
 - `brief`: Embed a keyword summary extracted from the document head (English + Chinese tokenization); best for specs/PRDs.
@@ -39,7 +40,7 @@ Prefer `head` for general codebase discovery, `name` for quick filename recall, 
 Treat these options as part of the cache identity; a mismatch often looks like “No cached index found…”:
 
 - `--path` / `-p` (root directory; default is current working directory)
-- `--mode` / `-m`
+- `--mode` / `-m` (defaults to `auto` when omitted)
 - `--include-hidden` / `-i` (hidden files are included only when both `index` and `search` use it)
 - `--no-recursive` / `-n` (recursive by default; recursive and non-recursive indexes are stored separately)
 - `--no-respect-gitignore` (respects `.gitignore` by default, including nested `.gitignore` files and `.git/info/exclude`)

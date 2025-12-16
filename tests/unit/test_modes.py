@@ -3,6 +3,7 @@ from pathlib import Path
 from docx import Document
 
 from vexor.modes import (
+    AutoStrategy,
     BriefStrategy,
     CodeStrategy,
     FullStrategy,
@@ -108,6 +109,8 @@ def foo(a, b):
 
 
 class Bar:
+    VALUE = 42
+
     def method(self, x):
         return x * 2
 
@@ -122,6 +125,7 @@ TAIL_CONSTANT = "tail"
     assert payloads
     assert payloads[0].chunk_index == 0
     assert any("foo" in payload.label for payload in payloads)
+    assert any("VALUE = 42" in payload.label for payload in payloads)
     assert any("Bar.method" in (payload.preview or "") for payload in payloads)
     assert any((payload.preview or "").startswith("module globals") for payload in payloads)
 
@@ -170,3 +174,53 @@ def test_outline_strategy_falls_back_to_full_for_non_markdown(tmp_path):
 
     assert payloads
     assert payloads[0].label.startswith("long.txt")
+
+
+def test_auto_strategy_routes_python_to_code(tmp_path):
+    py_path = tmp_path / "sample.py"
+    py_path.write_text(
+        """def foo(a, b):\n    return a + b\n\nTAIL_CONSTANT = \"tail\"\n"""
+    )
+
+    strategy = AutoStrategy()
+    payloads = strategy.payloads_for_files([py_path])
+
+    assert payloads
+    assert any((payload.preview or "").startswith("module globals") for payload in payloads)
+    assert any("def foo" in (payload.preview or "") for payload in payloads)
+
+
+def test_auto_strategy_routes_markdown_to_outline(tmp_path):
+    md_path = tmp_path / "doc.md"
+    md_path.write_text(
+        """Intro before headings.\n\n# Top\nTop body.\n\n## Child\nChild body.\n"""
+    )
+
+    strategy = AutoStrategy()
+    payloads = strategy.payloads_for_files([md_path])
+
+    assert payloads
+    assert any((payload.preview or "").startswith("preamble") for payload in payloads)
+    assert any("Top > Child" in (payload.preview or "") for payload in payloads)
+
+
+def test_auto_strategy_routes_small_text_to_full(tmp_path):
+    text_path = tmp_path / "note.txt"
+    text_path.write_text("Hello world\nSecond line\n")
+
+    strategy = AutoStrategy()
+    payload = strategy.payload_for_file(text_path)
+
+    assert payload.preview == "Hello world Second line"
+    assert "[#1]" in payload.label
+
+
+def test_auto_strategy_routes_large_text_to_head(tmp_path):
+    text_path = tmp_path / "big.txt"
+    text_path.write_text("a" * 20_000)
+
+    strategy = AutoStrategy()
+    payload = strategy.payload_for_file(text_path)
+
+    assert payload.preview is not None
+    assert "[#1]" not in payload.label

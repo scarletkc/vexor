@@ -39,6 +39,7 @@ def test_search_outputs_table(tmp_path, monkeypatch):
 
     def fake_perform_search(request):
         captured["recursive"] = request.recursive
+        captured["mode"] = request.mode
         return SearchResponse(
             base_path=tmp_path,
             backend="fake-backend",
@@ -58,8 +59,6 @@ def test_search_outputs_table(tmp_path, monkeypatch):
             str(tmp_path),
             "--top",
             "1",
-            "--mode",
-            "name",
         ],
     )
 
@@ -68,6 +67,7 @@ def test_search_outputs_table(tmp_path, monkeypatch):
     assert "Similarity" in result.stdout
     assert "Preview" in result.stdout
     assert captured["recursive"] is True
+    assert captured["mode"] == "auto"
 
 
 def test_search_outputs_porcelain(tmp_path, monkeypatch):
@@ -278,6 +278,7 @@ def test_index_writes_cache(tmp_path, monkeypatch):
 
     def fake_build_index(*args, **kwargs):
         captured["recursive"] = kwargs.get("recursive")
+        captured["mode"] = kwargs.get("mode")
         return IndexResult(status=IndexStatus.STORED, cache_path=cache_file, files_indexed=1)
 
     monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
@@ -288,14 +289,13 @@ def test_index_writes_cache(tmp_path, monkeypatch):
             "index",
             "--path",
             str(tmp_path),
-            "--mode",
-            "name",
         ],
     )
 
     assert result.exit_code == 0
     assert "Index saved" in result.stdout
     assert captured["recursive"] is True
+    assert captured["mode"] == "auto"
 
 
 def test_index_skips_when_up_to_date(tmp_path, monkeypatch):

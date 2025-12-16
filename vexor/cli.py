@@ -124,7 +124,7 @@ def search(
         help=Messages.HELP_RESPECT_GITIGNORE,
     ),
     mode: str = typer.Option(
-        ...,
+        "auto",
         "--mode",
         "-m",
         help=Messages.HELP_MODE,
@@ -253,7 +253,7 @@ def index(
         help=Messages.HELP_RESPECT_GITIGNORE,
     ),
     mode: str = typer.Option(
-        ...,
+        "auto",
         "--mode",
         "-m",
         help=Messages.HELP_MODE,

@@ -219,6 +219,43 @@ class OutlineStrategy(IndexModeStrategy):
 
 
 @dataclass(frozen=True, slots=True)
+class AutoStrategy(IndexModeStrategy):
+    name: str = "auto"
+    full_max_bytes: int = 10_000
+    code: CodeStrategy = CodeStrategy()
+    outline: OutlineStrategy = OutlineStrategy()
+    full: FullStrategy = FullStrategy()
+    head: HeadStrategy = HeadStrategy()
+    fallback: NameStrategy = NameStrategy()
+
+    def payloads_for_files(self, files: Sequence[Path]) -> list[ModePayload]:
+        payloads: list[ModePayload] = []
+        for file in files:
+            payloads.extend(self._payloads_for_file(file))
+        return payloads
+
+    def payload_for_file(self, file: Path) -> ModePayload:
+        chunks = self._payloads_for_file(file)
+        if chunks:
+            return chunks[0]
+        return self.fallback.payload_for_file(file)
+
+    def _payloads_for_file(self, file: Path) -> list[ModePayload]:
+        suffix = file.suffix.lower()
+        if suffix == ".py":
+            return self.code.payloads_for_files([file])
+        if suffix in {".md", ".markdown", ".mdx"}:
+            return self.outline.payloads_for_files([file])
+        try:
+            size_bytes = file.stat().st_size
+        except OSError:
+            size_bytes = None
+        if size_bytes is not None and size_bytes <= self.full_max_bytes:
+            return self.full.payloads_for_files([file])
+        return self.head.payloads_for_files([file])
+
+
+@dataclass(frozen=True, slots=True)
 class BriefStrategy(IndexModeStrategy):
     name: str = "brief"
     fallback: NameStrategy = NameStrategy()
@@ -246,6 +283,7 @@ class BriefStrategy(IndexModeStrategy):
 
 
 _STRATEGIES: Dict[str, IndexModeStrategy] = {
+    "auto": AutoStrategy(),
     "name": NameStrategy(),
     "head": HeadStrategy(),
     "brief": BriefStrategy(),
