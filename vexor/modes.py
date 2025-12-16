@@ -9,6 +9,7 @@ from typing import Dict, Protocol, Sequence
 from .services.content_extract_service import (
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
+    extract_code_chunks,
     extract_full_chunks,
     extract_head,
 )
@@ -118,6 +119,60 @@ class FullStrategy(IndexModeStrategy):
 
 
 @dataclass(frozen=True, slots=True)
+class CodeStrategy(IndexModeStrategy):
+    name: str = "code"
+    chunk_size: int = DEFAULT_CHUNK_SIZE
+    overlap: int = DEFAULT_CHUNK_OVERLAP
+    fallback: FullStrategy = FullStrategy()
+
+    def payloads_for_files(self, files: Sequence[Path]) -> list[ModePayload]:
+        payloads: list[ModePayload] = []
+        for file in files:
+            payloads.extend(self._payloads_for_file(file))
+        return payloads
+
+    def payload_for_file(self, file: Path) -> ModePayload:
+        chunks = self._payloads_for_file(file)
+        if chunks:
+            return chunks[0]
+        return self.fallback.payload_for_file(file)
+
+    def _payloads_for_file(self, file: Path) -> list[ModePayload]:
+        code_chunks = extract_code_chunks(file)
+        if not code_chunks:
+            return self.fallback.payloads_for_files([file])
+
+        payloads: list[ModePayload] = []
+        chunk_index = 0
+        for chunk in code_chunks:
+            windows = _chunk_text(chunk.text, chunk_size=self.chunk_size, overlap=self.overlap)
+            if not windows:
+                continue
+            local_total = len(windows)
+            for local_idx, window in enumerate(windows, start=1):
+                normalized = _normalize_preview_chunk(window)
+                if not normalized:
+                    continue
+                preview_snippet = _trim_preview(normalized)
+                suffix = f" [#{local_idx}]" if local_total > 1 else ""
+                label = f"{file.name} :: {chunk.display}{suffix} :: {normalized}"
+                preview = f"{chunk.display}{suffix} :: {preview_snippet}"
+                payloads.append(
+                    ModePayload(
+                        file=file,
+                        label=label,
+                        preview=preview,
+                        chunk_index=chunk_index,
+                    )
+                )
+                chunk_index += 1
+
+        if not payloads:
+            return self.fallback.payloads_for_files([file])
+        return payloads
+
+
+@dataclass(frozen=True, slots=True)
 class BriefStrategy(IndexModeStrategy):
     name: str = "brief"
     fallback: NameStrategy = NameStrategy()
@@ -149,6 +204,7 @@ _STRATEGIES: Dict[str, IndexModeStrategy] = {
     "head": HeadStrategy(),
     "brief": BriefStrategy(),
     "full": FullStrategy(),
+    "code": CodeStrategy(),
 }
 
 
@@ -176,3 +232,22 @@ def _normalize_preview_chunk(text: str) -> str | None:
         return " ".join(lines)
     stripped = text.strip()
     return stripped or None
+
+
+def _chunk_text(text: str, *, chunk_size: int, overlap: int) -> list[str]:
+    normalized = text.replace("\r\n", "\n").strip()
+    if not normalized:
+        return []
+    size = max(int(chunk_size), 1)
+    stride = max(size - max(int(overlap), 0), 1)
+    chunks: list[str] = []
+    start = 0
+    length = len(normalized)
+    while start < length:
+        window = normalized[start : start + size].strip()
+        if window:
+            chunks.append(window)
+        if start + size >= length:
+            break
+        start += stride
+    return chunks

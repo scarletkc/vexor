@@ -5,6 +5,7 @@ from pptx import Presentation
 
 import vexor.services.content_extract_service as ces
 from vexor.services.content_extract_service import (
+    extract_code_chunks,
     extract_full_chunks,
     extract_head,
     HEAD_CHAR_LIMIT,
@@ -123,3 +124,62 @@ def test_extract_full_chunks_from_pptx(tmp_path):
 
     assert chunks
     assert chunks[0].startswith("Chunk Title")
+
+
+def test_extract_code_chunks_from_python(tmp_path):
+    py_path = tmp_path / "sample.py"
+    py_path.write_text(
+        """\"\"\"Module docstring.\"\"\"
+
+import os
+import sys
+
+CONSTANT = 1
+
+def foo(a, b):
+    \"\"\"Foo does bar.\"\"\"
+    return a + b
+
+
+class Bar:
+    \"\"\"Bar class.\"\"\"
+
+    def method(self, x):
+        return x * 2
+
+    async def async_method(self):
+        return 42
+
+
+TAIL_CONSTANT = "tail"
+if __name__ == "__main__":
+    print(TAIL_CONSTANT)
+"""
+    )
+
+    chunks = extract_code_chunks(py_path)
+
+    assert chunks
+    assert [chunk.kind for chunk in chunks[:3]] == ["module", "function", "class"]
+    assert chunks[1].name == "foo"
+    assert "def foo" in chunks[1].display
+    assert "Foo does bar" in chunks[1].text
+    assert chunks[2].name == "Bar"
+    assert "Methods: method, async_method" in chunks[2].text
+    assert any(chunk.name == "Bar.method" for chunk in chunks)
+    assert any(chunk.name == "Bar.async_method" for chunk in chunks)
+    assert any("TAIL_CONSTANT" in chunk.text for chunk in chunks if chunk.kind == "module")
+
+
+def test_extract_code_chunks_syntax_error_returns_empty(tmp_path):
+    py_path = tmp_path / "broken.py"
+    py_path.write_text("def nope(:\n    pass\n")
+
+    assert extract_code_chunks(py_path) == []
+
+
+def test_extract_code_chunks_non_python_returns_empty(tmp_path):
+    text_path = tmp_path / "sample.txt"
+    text_path.write_text("Hello\n")
+
+    assert extract_code_chunks(text_path) == []

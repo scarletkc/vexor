@@ -98,12 +98,13 @@ vexor config --clear-index-all
   - `head`: grab the first snippet of supported text/code/PDF/DOCX/PPTX files for lightweight semantic context.
   - `brief`: summarize PRDs/high-frequency keywords (English/Chinese) in requirements documents enable quick location of key requirements.
   - `full`: chunk the entire contents of supported text/code/PDF/DOCX/PPTX files into windows so long documents stay searchable end-to-end.
+  - `code`: chunk Python `.py` files by module globals + class/function/method boundaries (AST-aware); other files fall back to `full`.
 - Switch embedding providers (Gemini by default, OpenAI format supported) via `vexor config --set-provider PROVIDER` and pick a matching embedding model.
 
 ## Commands
 | Command | Description |
 | ------- | ----------- |
-| `vexor index --path PATH --mode MODE [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--clear/--show]` | Scans `PATH` (recursively by default), respects `.gitignore` by default, embeds content according to `MODE` (`name`, `head`, or `full`), and writes a cache under `~/.vexor`. |
+| `vexor index --path PATH --mode MODE [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--clear/--show]` | Scans `PATH` (recursively by default), respects `.gitignore` by default, embeds content according to `MODE` (`name`, `head`, `brief`, `full`, or `code`), and writes a cache under `~/.vexor`. |
 | `vexor search QUERY --path PATH --mode MODE [--top K] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--format rich/porcelain/porcelain-z]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden/gitignore/ext settings), shows matches for `QUERY`. |
 | `vexor doctor` | Checks whether the `vexor` command is available on the current `PATH`. |
 | `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |

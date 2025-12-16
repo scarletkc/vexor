@@ -2,7 +2,7 @@ from pathlib import Path
 
 from docx import Document
 
-from vexor.modes import BriefStrategy, FullStrategy, HeadStrategy, ModePayload, NameStrategy
+from vexor.modes import BriefStrategy, CodeStrategy, FullStrategy, HeadStrategy, ModePayload, NameStrategy
 
 
 def test_name_strategy_payload():
@@ -87,3 +87,44 @@ def test_brief_strategy_handles_chinese(tmp_path):
     payload = strategy.payload_for_file(file_path)
     assert payload.preview is not None
     assert "离线" in payload.preview
+
+
+def test_code_strategy_chunks_python(tmp_path):
+    py_path = tmp_path / "sample.py"
+    py_path.write_text(
+        """\"\"\"Module docstring.\"\"\"
+
+def foo(a, b):
+    \"\"\"Foo does bar.\"\"\"
+    return a + b
+
+
+class Bar:
+    def method(self, x):
+        return x * 2
+
+
+TAIL_CONSTANT = "tail"
+"""
+    )
+
+    strategy = CodeStrategy(chunk_size=80, overlap=0)
+    payloads = strategy.payloads_for_files([py_path])
+
+    assert payloads
+    assert payloads[0].chunk_index == 0
+    assert any("foo" in payload.label for payload in payloads)
+    assert any("Bar.method" in (payload.preview or "") for payload in payloads)
+    assert any((payload.preview or "").startswith("module globals") for payload in payloads)
+
+
+def test_code_strategy_falls_back_to_full_for_non_python(tmp_path):
+    file_path = tmp_path / "long.txt"
+    file_path.write_text("abc" * 400)
+
+    strategy = CodeStrategy(chunk_size=50, overlap=0)
+    payloads = strategy.payloads_for_files([file_path])
+
+    assert payloads
+    assert payloads[0].label.startswith("long.txt")
+    assert payloads[0].preview is None or "\n" not in payloads[0].preview

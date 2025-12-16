@@ -1,6 +1,6 @@
 ---
 name: vexor-cli
-description: Use Vexor's CLI (`vexor index`, `vexor search`, `vexor config`) to do semantic file discovery in a codebase. Trigger this skill when you need to find files by intent/meaning (not exact text matches), when you forgot a filename/path, when you need to pick the right indexing mode (name/head/brief/full), or when you need to inspect/refresh/clear the cached indexes under `~/.vexor` and configure Gemini/OpenAI embedding providers.
+description: Use Vexor's CLI (`vexor index`, `vexor search`, `vexor config`) to do semantic file discovery in a codebase. Trigger this skill when you need to find files by intent/meaning (not exact text matches), when you forgot a filename/path, when you need to pick the right indexing mode (name/head/brief/full/code), or when you need to inspect/refresh/clear the cached indexes under `~/.vexor` and configure Gemini/OpenAI embedding providers.
 ---
 
 # Vexor CLI
@@ -29,6 +29,7 @@ Use the mode to control what gets embedded:
 - `head`: Embed file name + a short head snippet (about the first 1000 characters) for supported text/code/PDF/DOCX/PPTX files; fall back to `name` when unsupported.
 - `brief`: Embed a keyword summary extracted from the document head (English + Chinese tokenization); best for specs/PRDs.
 - `full`: Chunk up to ~200k characters of supported files into sliding windows and embed each chunk; expect repeated file paths with different previews.
+- `code`: Chunk Python `.py` files by module globals + class/function/method boundaries (AST-aware); other files fall back to `full`.
 
 Prefer `head` for general codebase discovery, `name` for quick filename recall, `brief` for requirements docs, and `full` for long documents when `head` is too shallow.
 

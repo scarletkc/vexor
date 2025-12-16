@@ -25,7 +25,10 @@ class Messages:
     HELP_INDEX_CLEAR = "Remove the cached index for the specified path (respecting include-hidden, mode and recursion)."
     HELP_INDEX_SHOW = "Display metadata for the cached index matching the provided options."
     HELP_RECURSIVE = "Recurse into subdirectories (default). Disable to work only on the specified directory."
-    HELP_MODE = "Indexing mode (name=filename, head=head snippet, brief=keyword summary, full=chunked content) to control how embeddings are built."
+    HELP_MODE = (
+        "Indexing mode (name=filename, head=head snippet, brief=keyword summary, "
+        "full=chunked content, code=python module/function/class chunks) to control how embeddings are built."
+    )
     HELP_EXTENSIONS = "Limit indexing/searching to files whose names end with the provided extensions (repeat --ext for multiple)."
     HELP_RESPECT_GITIGNORE = (
         "Respect .gitignore-style exclude rules when scanning (default). "
