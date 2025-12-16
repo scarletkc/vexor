@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Protocol
@@ -36,6 +37,16 @@ class CodeChunk:
     kind: str
     name: str
     display: str
+    text: str
+    start_line: int
+    end_line: int
+
+
+@dataclass(frozen=True, slots=True)
+class OutlineChunk:
+    level: int
+    title: str
+    breadcrumb: str
     text: str
     start_line: int
     end_line: int
@@ -334,6 +345,211 @@ def extract_code_chunks(
 
     if cursor <= max_line:
         add_module_chunk(cursor, max_line, prelude=False)
+
+    return chunks
+
+
+def extract_outline_chunks(
+    path: Path,
+    *,
+    context_char_limit: int = 800,
+    char_limit: int = FULL_CHAR_LIMIT,
+) -> list[OutlineChunk]:
+    """Return outline chunks for Markdown files (headings + section snippets)."""
+
+    if path.suffix.lower() not in {".md", ".markdown", ".mdx"}:
+        return []
+
+    source = _read_text_full(path, char_limit)
+    if not source:
+        return []
+    source = source.replace("\r\n", "\n")
+    lines = source.splitlines()
+    if not lines:
+        return []
+
+    front_matter_end: int | None = None
+    if lines and lines[0].strip() == "---":
+        for idx, line in enumerate(lines[1:], start=1):
+            marker = line.strip()
+            if marker in {"---", "..."}:
+                front_matter_end = idx
+                break
+
+    @dataclass(frozen=True, slots=True)
+    class Heading:
+        line: int
+        end_line: int
+        level: int
+        title: str
+        content_start: int
+
+    headings: list[Heading] = []
+    heading_starts: set[int] = set()
+
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    prev_line_text: str | None = None
+    prev_line_index: int | None = None
+
+    fence_re = re.compile(r"^\s*([`~]{3,})")
+    atx_re = re.compile(r"^\s{0,3}(#{1,6})\s+(.*)$")
+    setext_re = re.compile(r"^\s{0,3}([=-]{3,})\s*$")
+
+    def handle_fence(line: str) -> bool:
+        nonlocal in_fence, fence_char, fence_len, prev_line_text, prev_line_index
+        match = fence_re.match(line)
+        if not match:
+            return False
+        marker = match.group(1)
+        if not in_fence:
+            in_fence = True
+            fence_char = marker[0]
+            fence_len = len(marker)
+            prev_line_text = None
+            prev_line_index = None
+            return True
+        if marker[0] == fence_char and len(marker) >= fence_len:
+            in_fence = False
+            fence_char = ""
+            fence_len = 0
+            prev_line_text = None
+            prev_line_index = None
+            return True
+        return True
+
+    def record_atx(line_no: int, marker: str, raw_title: str) -> None:
+        title = raw_title.strip()
+        title = re.sub(r"\s#+\s*$", "", title).strip()
+        if not title:
+            return
+        if line_no in heading_starts:
+            return
+        heading_starts.add(line_no)
+        headings.append(
+            Heading(
+                line=line_no,
+                end_line=line_no,
+                level=len(marker),
+                title=title,
+                content_start=line_no + 1,
+            )
+        )
+
+    def record_setext(title_line: int, underline_line: int, underline: str, title: str) -> None:
+        title = title.strip()
+        if not title:
+            return
+        if title_line in heading_starts:
+            return
+        heading_starts.add(title_line)
+        level = 1 if underline.startswith("=") else 2
+        headings.append(
+            Heading(
+                line=title_line,
+                end_line=underline_line,
+                level=level,
+                title=title,
+                content_start=underline_line + 1,
+            )
+        )
+
+    for idx, line in enumerate(lines, start=1):
+        if front_matter_end is not None and idx <= front_matter_end + 1:
+            prev_line_text = None
+            prev_line_index = None
+            continue
+        if handle_fence(line):
+            continue
+        if in_fence:
+            continue
+
+        atx = atx_re.match(line)
+        if atx:
+            record_atx(idx, atx.group(1), atx.group(2))
+            prev_line_text = None
+            prev_line_index = None
+            continue
+
+        setext = setext_re.match(line)
+        if setext and prev_line_text and prev_line_index:
+            underline = setext.group(1)
+            if prev_line_text.lstrip().startswith("#"):
+                prev_line_text = line
+                prev_line_index = idx
+                continue
+            record_setext(prev_line_index, idx, underline, prev_line_text)
+            prev_line_text = None
+            prev_line_index = None
+            continue
+
+        prev_line_text = line
+        prev_line_index = idx
+
+    if not headings:
+        return []
+
+    headings.sort(key=lambda item: item.line)
+
+    preamble_start = 1
+    if front_matter_end is not None:
+        preamble_start = front_matter_end + 2
+    first_heading_line = headings[0].line
+    if preamble_start <= first_heading_line - 1:
+        preamble_text = _cleanup_snippet("\n".join(lines[preamble_start - 1 : first_heading_line - 1]))
+        if preamble_text:
+            headings.insert(
+                0,
+                Heading(
+                    line=preamble_start,
+                    end_line=first_heading_line - 1,
+                    level=0,
+                    title="preamble",
+                    content_start=preamble_start,
+                ),
+            )
+
+    stack: list[tuple[int, str]] = []
+    chunks: list[OutlineChunk] = []
+
+    for idx, heading in enumerate(headings):
+        if heading.level == 0:
+            breadcrumb = "preamble"
+        else:
+            while stack and stack[-1][0] >= heading.level:
+                stack.pop()
+            stack.append((heading.level, heading.title))
+            breadcrumb = " > ".join(title for _, title in stack)
+
+        section_end = len(lines)
+        for next_heading in headings[idx + 1 :]:
+            if next_heading.line <= heading.line:
+                continue
+            if heading.level == 0:
+                section_end = next_heading.line - 1
+                break
+            if next_heading.level <= heading.level:
+                section_end = next_heading.line - 1
+                break
+
+        start = max(heading.content_start, 1)
+        end = max(section_end, start)
+        section_text = "\n".join(lines[start - 1 : end])
+        cleaned = _cleanup_snippet(section_text) or ""
+        if context_char_limit > 0 and len(cleaned) > context_char_limit:
+            cleaned = cleaned[:context_char_limit].rstrip()
+
+        chunks.append(
+            OutlineChunk(
+                level=heading.level,
+                title=heading.title,
+                breadcrumb=breadcrumb,
+                text=cleaned,
+                start_line=heading.line,
+                end_line=section_end,
+            )
+        )
 
     return chunks
 

@@ -6,6 +6,7 @@ from pptx import Presentation
 import vexor.services.content_extract_service as ces
 from vexor.services.content_extract_service import (
     extract_code_chunks,
+    extract_outline_chunks,
     extract_full_chunks,
     extract_head,
     HEAD_CHAR_LIMIT,
@@ -183,3 +184,53 @@ def test_extract_code_chunks_non_python_returns_empty(tmp_path):
     text_path.write_text("Hello\n")
 
     assert extract_code_chunks(text_path) == []
+
+
+def test_extract_outline_chunks_from_markdown(tmp_path):
+    md_path = tmp_path / "doc.md"
+    md_path.write_text(
+        """---
+title: Demo
+---
+
+Intro before headings.
+
+# Top
+Top body.
+
+## Child
+Child body.
+
+```python
+### Not a heading
+```
+
+## Another
+Another body.
+"""
+    )
+
+    chunks = extract_outline_chunks(md_path, context_char_limit=200)
+
+    assert chunks
+    assert chunks[0].breadcrumb == "preamble"
+    assert chunks[1].breadcrumb == "Top"
+    assert chunks[2].breadcrumb == "Top > Child"
+    assert chunks[3].breadcrumb == "Top > Another"
+    assert not any(chunk.title == "Not a heading" for chunk in chunks)
+    assert "Intro before headings" in chunks[0].text
+    assert "Child body" in chunks[2].text
+
+
+def test_extract_outline_chunks_no_headings_returns_empty(tmp_path):
+    md_path = tmp_path / "plain.md"
+    md_path.write_text("Just text.\nNo headings here.\n")
+
+    assert extract_outline_chunks(md_path) == []
+
+
+def test_extract_outline_chunks_non_markdown_returns_empty(tmp_path):
+    txt_path = tmp_path / "doc.txt"
+    txt_path.write_text("# Not markdown by extension\n")
+
+    assert extract_outline_chunks(txt_path) == []

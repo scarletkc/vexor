@@ -10,6 +10,7 @@ from .services.content_extract_service import (
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
     extract_code_chunks,
+    extract_outline_chunks,
     extract_full_chunks,
     extract_head,
 )
@@ -173,6 +174,51 @@ class CodeStrategy(IndexModeStrategy):
 
 
 @dataclass(frozen=True, slots=True)
+class OutlineStrategy(IndexModeStrategy):
+    name: str = "outline"
+    context_char_limit: int = 800
+    fallback: FullStrategy = FullStrategy()
+
+    def payloads_for_files(self, files: Sequence[Path]) -> list[ModePayload]:
+        payloads: list[ModePayload] = []
+        for file in files:
+            payloads.extend(self._payloads_for_file(file))
+        return payloads
+
+    def payload_for_file(self, file: Path) -> ModePayload:
+        chunks = self._payloads_for_file(file)
+        if chunks:
+            return chunks[0]
+        return self.fallback.payload_for_file(file)
+
+    def _payloads_for_file(self, file: Path) -> list[ModePayload]:
+        outline_chunks = extract_outline_chunks(
+            file,
+            context_char_limit=self.context_char_limit,
+        )
+        if not outline_chunks:
+            return self.fallback.payloads_for_files([file])
+
+        payloads: list[ModePayload] = []
+        for index, chunk in enumerate(outline_chunks):
+            if chunk.text:
+                label = f"{file.name} :: {chunk.breadcrumb} :: {chunk.text}"
+                preview = f"{chunk.breadcrumb} :: {_trim_preview(chunk.text)}"
+            else:
+                label = f"{file.name} :: {chunk.breadcrumb}"
+                preview = chunk.breadcrumb
+            payloads.append(
+                ModePayload(
+                    file=file,
+                    label=label,
+                    preview=preview,
+                    chunk_index=index,
+                )
+            )
+        return payloads
+
+
+@dataclass(frozen=True, slots=True)
 class BriefStrategy(IndexModeStrategy):
     name: str = "brief"
     fallback: NameStrategy = NameStrategy()
@@ -205,6 +251,7 @@ _STRATEGIES: Dict[str, IndexModeStrategy] = {
     "brief": BriefStrategy(),
     "full": FullStrategy(),
     "code": CodeStrategy(),
+    "outline": OutlineStrategy(),
 }
 
 

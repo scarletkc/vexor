@@ -27,7 +27,8 @@ class Messages:
     HELP_RECURSIVE = "Recurse into subdirectories (default). Disable to work only on the specified directory."
     HELP_MODE = (
         "Indexing mode (name=filename, head=head snippet, brief=keyword summary, "
-        "full=chunked content, code=python module/function/class chunks) to control how embeddings are built."
+        "full=chunked content, code=python module/function/class chunks, outline=markdown headings) "
+        "to control how embeddings are built."
     )
     HELP_EXTENSIONS = "Limit indexing/searching to files whose names end with the provided extensions (repeat --ext for multiple)."
     HELP_RESPECT_GITIGNORE = (

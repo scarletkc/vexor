@@ -2,7 +2,15 @@ from pathlib import Path
 
 from docx import Document
 
-from vexor.modes import BriefStrategy, CodeStrategy, FullStrategy, HeadStrategy, ModePayload, NameStrategy
+from vexor.modes import (
+    BriefStrategy,
+    CodeStrategy,
+    FullStrategy,
+    HeadStrategy,
+    ModePayload,
+    NameStrategy,
+    OutlineStrategy,
+)
 
 
 def test_name_strategy_payload():
@@ -128,3 +136,37 @@ def test_code_strategy_falls_back_to_full_for_non_python(tmp_path):
     assert payloads
     assert payloads[0].label.startswith("long.txt")
     assert payloads[0].preview is None or "\n" not in payloads[0].preview
+
+
+def test_outline_strategy_chunks_markdown(tmp_path):
+    md_path = tmp_path / "doc.md"
+    md_path.write_text(
+        """Intro before headings.
+
+# Top
+Top body.
+
+## Child
+Child body.
+"""
+    )
+
+    strategy = OutlineStrategy(context_char_limit=200)
+    payloads = strategy.payloads_for_files([md_path])
+
+    assert payloads
+    assert payloads[0].chunk_index == 0
+    assert payloads[0].preview is not None
+    assert payloads[0].preview.startswith("preamble")
+    assert any("Top > Child" in (payload.preview or "") for payload in payloads)
+
+
+def test_outline_strategy_falls_back_to_full_for_non_markdown(tmp_path):
+    file_path = tmp_path / "long.txt"
+    file_path.write_text("abc" * 400)
+
+    strategy = OutlineStrategy(context_char_limit=200)
+    payloads = strategy.payloads_for_files([file_path])
+
+    assert payloads
+    assert payloads[0].label.startswith("long.txt")

@@ -910,3 +910,70 @@ The chat module must support offline messaging. Offline send, offline sync, and 
     )
     assert search_result.exit_code == 0
     assert "offline" in search_result.stdout
+
+
+def test_outline_mode_headings(tmp_path, monkeypatch):
+    class DummySearcher:
+        def __init__(self, *args, **kwargs):
+            self.device = "dummy"
+
+        def embed_texts(self, texts):
+            if not texts:
+                return np.zeros((0, 3), dtype=np.float32)
+            return np.ones((len(texts), 3), dtype=np.float32)
+
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr("vexor.cache.CACHE_DIR", cache_dir)
+    runner = CliRunner()
+    project = tmp_path / "proj-outline"
+    project.mkdir()
+    doc_path = project / "doc.md"
+    doc_path.write_text(
+        """Intro before headings.
+
+# Top
+Top body.
+
+## Child
+Child body.
+"""
+    )
+
+    index_result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(project),
+            "--mode",
+            "outline",
+        ],
+    )
+    assert index_result.exit_code == 0
+
+    data = cache.load_index(
+        project,
+        DEFAULT_MODEL,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="outline",
+        recursive=True,
+    )
+    previews = [entry.get("preview") for entry in data.get("chunks", [])]
+    assert any((preview or "").startswith("preamble") for preview in previews)
+    assert any("Top > Child" in (preview or "") for preview in previews)
+
+    search_result = runner.invoke(
+        app,
+        [
+            "search",
+            "child",
+            "--path",
+            str(project),
+            "--mode",
+            "outline",
+        ],
+    )
+    assert search_result.exit_code == 0
+    assert "Top > Child" in search_result.stdout
