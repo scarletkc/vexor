@@ -13,6 +13,7 @@ Use Vexor to build a cached semantic index for a directory, then search it quick
 
 1. Verify the CLI is available:
    - Run `vexor doctor` (installed entrypoint), or `python -m vexor --help` (repo/dev environments).
+   - If `vexor` is missing, install it from PyPI: `python -m pip install vexor` (or `pip install vexor` / `pipx install vexor`).
 2. Build or refresh an index (required before searching):
    - Run `vexor index --path <ROOT> [--mode <MODE>] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...]`.
 3. Search the same index key:
