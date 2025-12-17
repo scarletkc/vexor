@@ -1,5 +1,8 @@
 {
-  "name": "vexor",
+  "name": "vexor-marketplace",
+  "metadata": {
+    "description": "Marketplace for the Vexor Claude Code plugin (skills for indexing and semantic search)."
+  },
   "owner": {
     "name": "scarletkc"
   },
