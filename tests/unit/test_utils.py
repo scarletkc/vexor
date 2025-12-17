@@ -23,6 +23,9 @@ def test_normalize_extensions():
     assert utils.normalize_extensions(None) == ()
     assert utils.normalize_extensions([]) == ()
     assert utils.normalize_extensions(["py", ".py", " .MD ", ".", "", None]) == (".md", ".py")
+    assert utils.normalize_extensions([".py,.md"]) == (".md", ".py")
+    assert utils.normalize_extensions([".py .md"]) == (".md", ".py")
+    assert utils.normalize_extensions(["py, md", " .PY "]) == (".md", ".py")
     assert utils.normalize_extensions([".", " ", None]) == ()
 
 

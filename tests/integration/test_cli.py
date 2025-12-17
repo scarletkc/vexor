@@ -211,6 +211,74 @@ def test_search_respects_no_recursive_flag(tmp_path, monkeypatch):
     assert captured["recursive"] is False
 
 
+def test_search_parses_multiple_extensions_in_single_flag(tmp_path, monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["extensions"] = request.extensions
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake",
+            results=[],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "alpha",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+            "--ext",
+            ".py,.md",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["extensions"] == (".md", ".py")
+
+
+def test_search_parses_space_separated_extensions_in_single_flag(tmp_path, monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["extensions"] = request.extensions
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake",
+            results=[],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "alpha",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+            "--ext",
+            ".py .md",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["extensions"] == (".md", ".py")
+
+
 def test_install_skills_to_custom_path(tmp_path):
     runner = CliRunner()
     destination = tmp_path / "skills-root"
@@ -292,6 +360,31 @@ def test_index_handles_empty_directory(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert "No files found" in result.stdout
+
+
+def test_index_parses_multiple_extensions_in_single_flag(tmp_path, monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    def fake_build_index(*_args, **kwargs):
+        captured["extensions"] = kwargs.get("extensions")
+        return IndexResult(status=IndexStatus.EMPTY)
+
+    monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
+
+    result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(tmp_path),
+            "--ext",
+            ".py,.md",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["extensions"] == (".md", ".py")
 
 
 def test_index_writes_cache(tmp_path, monkeypatch):

@@ -92,7 +92,7 @@ vexor config --clear-index-all
 - Toggle `--no-recursive` (or `-n`) on both `index` and `search` when you only care about the current directory; recursive and non-recursive caches are stored separately.
 - Hidden files are included only if both `index` and `search` use `--include-hidden` (or `-i`).
 - By default, Vexor respects `.gitignore` (including nested `.gitignore` files and `.git/info/exclude`) while scanning. Use `--no-respect-gitignore` on both `index` and `search` to include ignored files.
-- Use `--ext`/`-e` (repeatable) on both `index` and `search` to limit indexing and search results to specific extensions, e.g. `--ext .py --ext .md`.
+- Use `--ext`/`-e` on both `index` and `search` to limit indexing and search results to specific extensions. It is repeatable, and each value can also be a comma/space-separated list (e.g. `--ext .py,.md` or `--ext '.py .md'`).
 - Re-running `vexor index` only re-embeds files whose names/contents changed (or were added/removed); if more than half the files differ, it automatically falls back to a full rebuild for consistency.
 - Specify the indexing mode with `--mode`:
   - `auto`: smart default routing (Python → `code`, Markdown → `outline`, small files → `full`, large files → `head`/`name`).

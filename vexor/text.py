@@ -30,7 +30,11 @@ class Messages:
         "full=chunked content, code=python module/function/class chunks, outline=markdown headings) "
         "to control how embeddings are built."
     )
-    HELP_EXTENSIONS = "Limit indexing/searching to files whose names end with the provided extensions (repeat --ext for multiple)."
+    HELP_EXTENSIONS = (
+        "Limit indexing/searching to files whose names end with the provided extensions "
+        "(repeat --ext; each value may also be a comma/space-separated list like "
+        "--ext .py,.md or --ext '.py .md')."
+    )
     HELP_RESPECT_GITIGNORE = (
         "Respect .gitignore-style exclude rules when scanning (default). "
         "Use --no-respect-gitignore to include ignored files."

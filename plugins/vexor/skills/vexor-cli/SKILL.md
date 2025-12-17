@@ -26,9 +26,9 @@ Use this skill when you need intent-based file discovery (not exact string match
    - Prefer `vexor doctor` or `python -m vexor --help`.
    - If `vexor` is missing: `python -m pip install vexor` (or `pip install vexor` / `pipx install vexor`).
 2. Index the target root (required once per cache key):
-   - `vexor index --path <ROOT> [--mode <MODE>] [--ext .py ...] [--include-hidden] [--no-recursive]`
+   - `vexor index --path <ROOT> [--mode <MODE>] [--ext .py,.md] [--include-hidden] [--no-recursive]`
 3. Search using the same cache key flags:
-   - `vexor search "<QUERY>" --path <ROOT> [--mode <MODE>] [--ext .py ...] [--top 10]`
+   - `vexor search "<QUERY>" --path <ROOT> [--mode <MODE>] [--ext .py,.md] [--top 10]`
 
 ## Cache key (avoid "No cached index found…")
 
@@ -37,7 +37,7 @@ These flags must match between `index` and `search`:
 - `--path`, `--mode` (defaults to `auto` when omitted)
 - `--include-hidden`, `--no-recursive`
 - `--respect-gitignore/--no-respect-gitignore` (default: respect, including nested `.gitignore`)
-- `--ext` (repeatable; treat as a set)
+- `--ext` (repeatable; each value may be a comma/space-separated list like `--ext .py,.md` or `--ext '.py .md'`)
 
 ## Mode guidance (pick the least expensive that works)
 

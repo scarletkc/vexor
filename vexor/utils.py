@@ -28,16 +28,17 @@ def normalize_extensions(values: Iterable[str] | None) -> tuple[str, ...]:
     for raw in values:
         if raw is None:
             continue
-        token = raw.strip().lower()
-        if not token:
-            continue
-        if not token.startswith("."):
-            token = f".{token}"
-        if token == ".":
-            continue
-        if token not in seen:
-            seen.add(token)
-            normalized.append(token)
+        for piece in raw.replace(",", " ").split():
+            token = piece.strip().lower()
+            if not token:
+                continue
+            if not token.startswith("."):
+                token = f".{token}"
+            if token == ".":
+                continue
+            if token not in seen:
+                seen.add(token)
+                normalized.append(token)
     if not normalized:
         return ()
     return tuple(sorted(normalized))
