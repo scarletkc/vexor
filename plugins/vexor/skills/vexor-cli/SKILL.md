@@ -1,6 +1,7 @@
 ---
 name: vexor-cli
-description: Use Vexor's CLI (`vexor index`, `vexor search`, `vexor config`) to do semantic file discovery in a codebase. Trigger this skill when you need to find files by intent/meaning (not exact text matches), when you forgot a filename/path, when you need to pick the right indexing mode (auto/name/head/brief/full/code/outline), or when you need to inspect/refresh/clear the cached indexes under `~/.vexor` and configure Gemini/OpenAI embedding providers.
+description: Semantic file discovery via `vexor` (use when you need intent-based file lookup in a repo).
+license: MIT
 ---
 
 # Vexor CLI
