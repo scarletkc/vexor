@@ -174,6 +174,7 @@ def test_star_falls_back_to_browser_when_gh_fails(monkeypatch):
     assert result.exit_code == 0
     assert "opening" in result.stdout.lower()
     assert len(opened_urls) == 1
+    assert "github.com" in opened_urls[0]
 
 
 def test_feedback_opens_browser_when_gh_missing(monkeypatch):
