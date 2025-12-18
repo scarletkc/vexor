@@ -6,6 +6,7 @@ import json
 import shlex
 import subprocess
 import sys
+import webbrowser
 from enum import Enum
 from pathlib import Path
 from typing import Sequence, TYPE_CHECKING
@@ -50,6 +51,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 REMOTE_VERSION_URL = "https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/vexor/__init__.py"
 PROJECT_URL = "https://github.com/scarletkc/vexor"
+REPO_OWNER_AND_NAME = "scarletkc/vexor"
 PYPI_URL = "https://pypi.org/project/vexor/"
 
 console = Console()
@@ -785,6 +787,29 @@ def update() -> None:
     console.print(
         _styled(Messages.INFO_UPDATE_UP_TO_DATE.format(latest=latest), Styles.SUCCESS)
     )
+
+
+@app.command()
+def star() -> None:
+    """Star the Vexor repository on GitHub."""
+    gh_path = find_command_on_path("gh")
+    if gh_path:
+        try:
+            result = subprocess.run(
+                [gh_path, "repo", "star", REPO_OWNER_AND_NAME],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                console.print(_styled(Messages.INFO_STAR_SUCCESS, Styles.SUCCESS))
+                return
+            # gh CLI failed, fall back to browser
+        except OSError:
+            pass  # Fall back to browser
+
+    # Fall back to opening the browser
+    console.print(_styled(Messages.INFO_STAR_BROWSER.format(url=PROJECT_URL), Styles.INFO))
+    webbrowser.open(PROJECT_URL)
 
 
 def _render_results(results: Sequence["SearchResult"], base: Path, backend: str | None) -> None:

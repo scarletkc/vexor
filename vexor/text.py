@@ -186,3 +186,6 @@ class Messages:
 
     INFO_INSTALL_SKILL_UP_TO_DATE = "Skill already up to date at {path}."
     INFO_INSTALL_SKILL_DONE = "Installed skill to {path}."
+
+    INFO_STAR_SUCCESS = "Thank you for starring the Vexor repository!"
+    INFO_STAR_BROWSER = "Opening {url} in your browser to star the repository..."

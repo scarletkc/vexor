@@ -116,3 +116,65 @@ def test_search_rejects_respect_gitignore_flag(tmp_path):
     )
     assert result.exit_code == 2
     assert "no such option" in result.output.lower()
+
+
+def test_star_uses_gh_cli_when_available(monkeypatch):
+    runner = CliRunner()
+
+    # Mock gh command found on path
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: "/usr/bin/gh" if cmd == "gh" else None)
+
+    # Mock successful subprocess run for gh CLI
+    import subprocess
+
+    class MockCompletedProcess:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr("vexor.cli.subprocess.run", lambda *args, **kwargs: MockCompletedProcess())
+
+    result = runner.invoke(app, ["star"])
+    assert result.exit_code == 0
+    assert "thank you" in result.stdout.lower()
+
+
+def test_star_falls_back_to_browser_when_gh_missing(monkeypatch):
+    runner = CliRunner()
+
+    # Mock gh command not found
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: None)
+
+    # Mock webbrowser.open
+    opened_urls = []
+    monkeypatch.setattr("vexor.cli.webbrowser.open", lambda url: opened_urls.append(url))
+
+    result = runner.invoke(app, ["star"])
+    assert result.exit_code == 0
+    assert "opening" in result.stdout.lower()
+    assert len(opened_urls) == 1
+    assert "github.com" in opened_urls[0]
+
+
+def test_star_falls_back_to_browser_when_gh_fails(monkeypatch):
+    runner = CliRunner()
+
+    # Mock gh command found on path
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: "/usr/bin/gh" if cmd == "gh" else None)
+
+    # Mock failed subprocess run for gh CLI
+    class MockCompletedProcess:
+        returncode = 1
+        stdout = ""
+        stderr = "error"
+
+    monkeypatch.setattr("vexor.cli.subprocess.run", lambda *args, **kwargs: MockCompletedProcess())
+
+    # Mock webbrowser.open
+    opened_urls = []
+    monkeypatch.setattr("vexor.cli.webbrowser.open", lambda url: opened_urls.append(url))
+
+    result = runner.invoke(app, ["star"])
+    assert result.exit_code == 0
+    assert "opening" in result.stdout.lower()
+    assert len(opened_urls) == 1
