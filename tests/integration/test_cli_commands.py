@@ -122,19 +122,28 @@ def test_search_rejects_respect_gitignore_flag(tmp_path):
 
 def test_star_uses_gh_cli_when_available(monkeypatch):
     runner = CliRunner()
+    captured = {}
 
     monkeypatch.setattr(
         "vexor.cli.find_command_on_path",
         lambda cmd: "/usr/bin/gh" if cmd == "gh" else None,
     )
-    monkeypatch.setattr(
-        "vexor.cli.subprocess.run",
-        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
-    )
+
+    def fake_run(args, **_kwargs):
+        captured["args"] = args
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def should_not_launch(_url: str):
+        raise AssertionError("Browser launch should not be used when gh succeeds")
+
+    monkeypatch.setattr("vexor.cli.subprocess.run", fake_run)
+    monkeypatch.setattr("vexor.cli.typer.launch", should_not_launch)
 
     result = runner.invoke(app, ["star"])
     assert result.exit_code == 0
     assert "thank you" in result.stdout.lower()
+    assert captured["args"][:3] == ["/usr/bin/gh", "repo", "star"]
+    assert "scarletkc/vexor" in captured["args"]
 
 
 def test_star_falls_back_to_browser_when_gh_missing(monkeypatch):
