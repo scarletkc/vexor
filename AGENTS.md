@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Runtime code sits inside `vexor/`: Typer entrypoints (`cli.py`, `__main__.py`) delegate to service layers (`services/index_service.py`, `services/search_service.py`, `services/config_service.py`) and shared helpers (`cache.py`, `config.py`, `text.py`, `utils.py`). Provider adapters for Gemini/OpenAI live under `providers/`. Documentation (`docs/development.md`, `docs/roadmap.md`, `docs/workflow-diagram.md`) and assets (`assets/`) explain workflows and future work, while build outputs only appear in `dist/`. Tests mirror the structure—`tests/unit/` covers helpers/services and `tests/integration/` drives CLI runs such as `test_cli.py` and `test_end_to_end.py`.
+Runtime code sits inside `vexor/`: Typer entrypoints (`cli.py`, `__main__.py`) delegate to service layers (`services/index_service.py`, `services/search_service.py`, `services/config_service.py`, `services/skill_service.py`) and shared helpers (`cache.py`, `config.py`, `text.py`, `utils.py`, `modes.py`). Provider adapters for Gemini/OpenAI live under `providers/`. Documentation (`docs/development.md`, `docs/roadmap.md`, `docs/workflow-diagram.md`) and assets (`assets/`) explain workflows and future work, while build outputs only appear in `dist/`. Tests mirror the structure—`tests/unit/` covers helpers/services and `tests/integration/` drives CLI runs such as `test_cli.py` and `test_end_to_end.py`.
 
 ## Build, Test, and Development Commands
 - `pip install -e .[dev]` installs Vexor plus pytest, coverage, and packaging helpers.
