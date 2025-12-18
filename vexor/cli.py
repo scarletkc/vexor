@@ -871,7 +871,7 @@ def update(
 
 @app.command()
 def star() -> None:
-    """Star the Vexor repository on GitHub."""
+    """Star the Vexor repository on GitHub (or use `gh` if available)."""
     gh_path = find_command_on_path("gh")
     if gh_path:
         try:

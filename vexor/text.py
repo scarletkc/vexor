@@ -44,6 +44,7 @@ class Messages:
     HELP_UPDATE_UPGRADE = "Upgrade Vexor automatically when a newer version is available."
     HELP_UPDATE_PRE = "Include pre-release versions when checking/upgrading."
     HELP_FEEDBACK = "Open the GitHub issue form (or use `gh` if available) to send feedback."
+    HELP_STAR = "Star the Vexor repository on GitHub (or use `gh` if available)."
     HELP_SET_API_KEY = "Persist an API key in ~/.vexor/config.json."
     HELP_CLEAR_API_KEY = "Remove the stored API key."
     HELP_SET_MODEL = "Set the default embedding model."
