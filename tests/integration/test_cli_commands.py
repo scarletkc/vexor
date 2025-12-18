@@ -120,6 +120,72 @@ def test_search_rejects_respect_gitignore_flag(tmp_path):
     assert "no such option" in result.output.lower()
 
 
+def test_star_uses_gh_cli_when_available(monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    monkeypatch.setattr(
+        "vexor.cli.find_command_on_path",
+        lambda cmd: "/usr/bin/gh" if cmd == "gh" else None,
+    )
+
+    def fake_run(args, **_kwargs):
+        captured["args"] = args
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def should_not_launch(_url: str):
+        raise AssertionError("Browser launch should not be used when gh succeeds")
+
+    monkeypatch.setattr("vexor.cli.subprocess.run", fake_run)
+    monkeypatch.setattr("vexor.cli.typer.launch", should_not_launch)
+
+    result = runner.invoke(app, ["star"])
+    assert result.exit_code == 0
+    assert "thank you" in result.stdout.lower()
+    assert captured["args"][:3] == ["/usr/bin/gh", "repo", "star"]
+    assert "scarletkc/vexor" in captured["args"]
+
+
+def test_star_falls_back_to_browser_when_gh_missing(monkeypatch):
+    runner = CliRunner()
+
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda _cmd: None)
+    opened_urls = []
+    monkeypatch.setattr("vexor.cli.typer.launch", lambda url: opened_urls.append(url))
+
+    result = runner.invoke(app, ["star"])
+    assert result.exit_code == 0
+    assert "opening" in result.stdout.lower()
+    assert len(opened_urls) == 1
+    assert "github.com" in opened_urls[0]
+
+
+def test_star_falls_back_to_browser_when_gh_fails(monkeypatch):
+    runner = CliRunner()
+
+    monkeypatch.setattr(
+        "vexor.cli.find_command_on_path",
+        lambda cmd: "/usr/bin/gh" if cmd == "gh" else None,
+    )
+
+    import subprocess
+
+    def raise_called_process_error(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, "gh")
+
+    monkeypatch.setattr("vexor.cli.subprocess.run", raise_called_process_error)
+
+    # Mock typer.launch
+    opened_urls = []
+    monkeypatch.setattr("vexor.cli.typer.launch", lambda url: opened_urls.append(url))
+
+    result = runner.invoke(app, ["star"])
+    assert result.exit_code == 0
+    assert "opening" in result.stdout.lower()
+    assert len(opened_urls) == 1
+    assert "github.com" in opened_urls[0]
+
+
 def test_feedback_opens_browser_when_gh_missing(monkeypatch):
     runner = CliRunner()
     captured = {}

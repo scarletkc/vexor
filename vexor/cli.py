@@ -57,6 +57,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 REMOTE_VERSION_URL = "https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/vexor/__init__.py"
 PROJECT_URL = "https://github.com/scarletkc/vexor"
+REPO_OWNER_AND_NAME = "scarletkc/vexor"
 PYPI_URL = "https://pypi.org/project/vexor/"
 
 console = Console()
@@ -866,6 +867,38 @@ def update(
     console.print(
         _styled(Messages.INFO_UPDATE_UP_TO_DATE.format(latest=latest), Styles.SUCCESS)
     )
+
+
+@app.command()
+def star() -> None:
+    """Star the Vexor repository on GitHub (or use `gh` if available)."""
+    gh_path = find_command_on_path("gh")
+    if gh_path:
+        try:
+            subprocess.run(
+                [gh_path, "repo", "star", REPO_OWNER_AND_NAME],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            console.print(_styled(Messages.INFO_STAR_SUCCESS, Styles.SUCCESS))
+            return
+        except subprocess.CalledProcessError:
+            # gh CLI failed with a non-zero exit code; fall back to browser
+            pass
+
+    # Fall back to opening the browser
+    console.print(_styled(Messages.INFO_STAR_BROWSER.format(url=PROJECT_URL), Styles.INFO))
+    try:
+        typer.launch(PROJECT_URL)
+    except Exception as exc:  # pragma: no cover - depends on system setup
+        console.print(
+            _styled(
+                f"Failed to open your browser for {PROJECT_URL}: {exc}",
+                Styles.ERROR,
+            )
+        )
+        raise typer.Exit(code=1) from exc
 
 
 @app.command()
