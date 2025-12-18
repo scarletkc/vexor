@@ -147,7 +147,7 @@ Skill source: [`plugins/vexor/skills/vexor-cli`](https://github.com/scarletkc/ve
 
 See [docs](https://github.com/scarletkc/vexor/tree/main/docs) for more details.
 
-Contributions, issues, and PRs welcome! Star ⭐ if you find it helpful.
+Contributions, issues, and PRs welcome! Star if you find it helpful.
 
 ## License
 
