@@ -32,6 +32,18 @@ def test_version_tuple_parses_release_and_suffix():
     assert system_service.version_tuple("1.2.3.4.5") == (1, 2, 3, 4)
 
 
+def test_parse_version_orders_prereleases_before_final():
+    assert system_service.parse_version("1.0.0a1") < system_service.parse_version("1.0.0b1")
+    assert system_service.parse_version("1.0.0b1") < system_service.parse_version("1.0.0rc1")
+    assert system_service.parse_version("1.0.0rc1") < system_service.parse_version("1.0.0")
+
+
+def test_select_latest_version_respects_prerelease_flag():
+    versions = ["0.9.2", "0.10.0a1"]
+    assert system_service.select_latest_version(versions, include_prerelease=False) == "0.9.2"
+    assert system_service.select_latest_version(versions, include_prerelease=True) == "0.10.0a1"
+
+
 def test_fetch_remote_version_success(monkeypatch):
     def fake_urlopen(url, timeout=10.0):
         assert "example.com" in url

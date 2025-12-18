@@ -30,9 +30,16 @@ from .services.index_service import IndexStatus, build_index, clear_index_entrie
 from .services.search_service import SearchRequest, perform_search
 from .services.system_service import (
     DoctorCheckResult,
-    fetch_remote_version,
+    build_standalone_download_url,
+    build_upgrade_commands,
+    detect_install_method,
+    fetch_latest_pypi_version,
     find_command_on_path,
+    git_worktree_is_dirty,
+    InstallMethod,
+    parse_version,
     resolve_editor_command,
+    run_upgrade_commands,
     run_all_doctor_checks,
     version_tuple,
 )
@@ -757,19 +764,38 @@ def doctor(
 
 
 @app.command()
-def update() -> None:
+def update(
+    upgrade: bool = typer.Option(
+        False,
+        "--upgrade",
+        help=Messages.HELP_UPDATE_UPGRADE,
+    ),
+    pre: bool = typer.Option(
+        False,
+        "--pre",
+        help=Messages.HELP_UPDATE_PRE,
+    ),
+) -> None:
     """Check whether a newer release is available online."""
     console.print(_styled(Messages.INFO_UPDATE_CHECKING, Styles.INFO))
     console.print(_styled(Messages.INFO_UPDATE_CURRENT.format(current=__version__), Styles.INFO))
     try:
-        latest = fetch_remote_version(REMOTE_VERSION_URL)
+        latest = fetch_latest_pypi_version("vexor", include_prerelease=pre)
     except RuntimeError as exc:
         console.print(
             _styled(Messages.ERROR_UPDATE_FETCH.format(reason=str(exc)), Styles.ERROR)
         )
         raise typer.Exit(code=1)
 
-    if version_tuple(latest) > version_tuple(__version__):
+    latest_parsed = parse_version(latest)
+    current_parsed = parse_version(__version__)
+    is_newer = False
+    if latest_parsed and current_parsed:
+        is_newer = latest_parsed > current_parsed
+    elif version_tuple(latest) > version_tuple(__version__):
+        is_newer = True
+
+    if is_newer:
         console.print(
             _styled(
                 Messages.INFO_UPDATE_AVAILABLE.format(
@@ -780,6 +806,61 @@ def update() -> None:
                 Styles.WARNING,
             )
         )
+        if not upgrade:
+            return
+
+        install_info = detect_install_method()
+        console.print(
+            _styled(
+                Messages.INFO_UPDATE_INSTALL_METHOD.format(method=install_info.method.value),
+                Styles.INFO,
+            )
+        )
+        if install_info.method == InstallMethod.GIT_EDITABLE and install_info.editable_root:
+            if git_worktree_is_dirty(install_info.editable_root):
+                console.print(
+                    _styled(
+                        Messages.WARNING_UPDATE_GIT_DIRTY.format(path=install_info.editable_root),
+                        Styles.WARNING,
+                    )
+                )
+        if install_info.requires_admin:
+            console.print(_styled(Messages.WARNING_UPDATE_ADMIN, Styles.WARNING))
+
+        if install_info.method == InstallMethod.STANDALONE:
+            asset, url = build_standalone_download_url(latest)
+            console.print(
+                _styled(
+                    Messages.WARNING_UPDATE_STANDALONE.format(path=sys.executable),
+                    Styles.WARNING,
+                )
+            )
+            if asset:
+                console.print(_styled(Messages.INFO_UPDATE_STANDALONE_ASSET.format(asset=asset), Styles.INFO))
+            console.print(_styled(Messages.INFO_UPDATE_STANDALONE_URL.format(url=url), Styles.INFO))
+            return
+
+        commands = build_upgrade_commands(install_info, include_prerelease=pre)
+        for command in commands:
+            console.print(
+                _styled(
+                    Messages.INFO_UPDATE_UPGRADE_CMD.format(cmd=shlex.join(command)),
+                    Styles.INFO,
+                )
+            )
+
+        if not typer.confirm(Messages.PROMPT_UPDATE_UPGRADE_CONFIRM):
+            console.print(_styled(Messages.INFO_UPDATE_UPGRADE_CANCELLED, Styles.INFO))
+            return
+
+        console.print(_styled(Messages.INFO_UPDATE_UPGRADING, Styles.INFO))
+        exit_code = run_upgrade_commands(commands)
+        if exit_code != 0:
+            console.print(
+                _styled(Messages.ERROR_UPDATE_UPGRADE_FAILED.format(code=exit_code), Styles.ERROR)
+            )
+            raise typer.Exit(code=1)
+        console.print(_styled(Messages.INFO_UPDATE_UPGRADE_DONE, Styles.SUCCESS))
         return
 
     console.print(

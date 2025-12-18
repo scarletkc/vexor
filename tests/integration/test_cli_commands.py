@@ -40,7 +40,7 @@ def test_doctor_reports_missing(monkeypatch):
 
 def test_update_reports_available(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.fetch_remote_version", lambda *_: "99.0.0")
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_args, **_kwargs: "99.0.0")
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
     assert "new version" in result.stdout.lower()
@@ -48,7 +48,7 @@ def test_update_reports_available(monkeypatch):
 
 def test_update_reports_up_to_date(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.fetch_remote_version", lambda *_: "0.0.0")
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_args, **_kwargs: "0.0.0")
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
     assert "latest version" in result.stdout.lower()
@@ -60,7 +60,7 @@ def test_update_reports_fetch_error(monkeypatch):
     def raise_fetch(*_args, **_kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("vexor.cli.fetch_remote_version", raise_fetch)
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", raise_fetch)
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 1
 

@@ -979,7 +979,7 @@ def test_doctor_handles_malformed_config(monkeypatch, temp_config_home):
 
 def test_update_detects_newer_version(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.fetch_remote_version", lambda url: "9.9.9")
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_args, **_kwargs: "9.9.9")
 
     result = runner.invoke(app, ["update"])
 
@@ -989,7 +989,7 @@ def test_update_detects_newer_version(monkeypatch):
 
 def test_update_reports_up_to_date(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.fetch_remote_version", lambda url: __version__)
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_args, **_kwargs: __version__)
 
     result = runner.invoke(app, ["update"])
 
@@ -1000,15 +1000,101 @@ def test_update_reports_up_to_date(monkeypatch):
 def test_update_handles_fetch_error(monkeypatch):
     runner = CliRunner()
 
-    def boom(url):
+    def boom(*_args, **_kwargs):
         raise RuntimeError("network down")
 
-    monkeypatch.setattr("vexor.cli.fetch_remote_version", boom)
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", boom)
 
     result = runner.invoke(app, ["update"])
 
     assert result.exit_code == 1
     assert "Unable to fetch" in result.stdout
+
+
+def test_update_upgrade_runs_commands(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_a, **_k: "9.9.9")
+
+    from vexor.services.system_service import InstallInfo, InstallMethod
+
+    monkeypatch.setattr(
+        "vexor.cli.detect_install_method",
+        lambda: InstallInfo(
+            method=InstallMethod.PIP_VENV,
+            executable=None,
+            editable_root=None,
+            dist_location=None,
+            requires_admin=False,
+        ),
+    )
+
+    captured = {}
+
+    def fake_run_upgrade_commands(commands, *args, **kwargs):
+        captured["commands"] = commands
+        return 0
+
+    monkeypatch.setattr("vexor.cli.run_upgrade_commands", fake_run_upgrade_commands)
+
+    result = runner.invoke(app, ["update", "--upgrade"], input="y\n")
+
+    assert result.exit_code == 0
+    assert "Upgrading Vexor" in result.stdout
+    assert captured["commands"][0][-2:] == ["--upgrade", "vexor"]
+
+
+def test_update_upgrade_pre_adds_flag(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_a, **_k: "9.9.9")
+
+    from vexor.services.system_service import InstallInfo, InstallMethod
+
+    monkeypatch.setattr(
+        "vexor.cli.detect_install_method",
+        lambda: InstallInfo(
+            method=InstallMethod.PIP_VENV,
+            executable=None,
+            editable_root=None,
+            dist_location=None,
+            requires_admin=False,
+        ),
+    )
+
+    captured = {}
+
+    def fake_run_upgrade_commands(commands, *args, **kwargs):
+        captured["commands"] = commands
+        return 0
+
+    monkeypatch.setattr("vexor.cli.run_upgrade_commands", fake_run_upgrade_commands)
+
+    result = runner.invoke(app, ["update", "--upgrade", "--pre"], input="y\n")
+
+    assert result.exit_code == 0
+    assert "--pre" in captured["commands"][0]
+
+
+def test_update_upgrade_standalone_shows_download_url(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_a, **_k: "9.9.9")
+
+    from vexor.services.system_service import InstallInfo, InstallMethod
+
+    monkeypatch.setattr(
+        "vexor.cli.detect_install_method",
+        lambda: InstallInfo(
+            method=InstallMethod.STANDALONE,
+            executable=None,
+            editable_root=None,
+            dist_location=None,
+            requires_admin=False,
+        ),
+    )
+
+    result = runner.invoke(app, ["update", "--upgrade"])
+
+    assert result.exit_code == 0
+    assert "Download:" in result.stdout
 
 def test_head_mode_end_to_end(tmp_path, monkeypatch):
     class DummySearcher:
