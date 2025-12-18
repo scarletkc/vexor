@@ -160,13 +160,13 @@ def test_star_falls_back_to_browser_when_gh_fails(monkeypatch):
     # Mock gh command found on path
     monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: "/usr/bin/gh" if cmd == "gh" else None)
 
-    # Mock failed subprocess run for gh CLI
-    class MockCompletedProcess:
-        returncode = 1
-        stdout = ""
-        stderr = "error"
+    # Mock failed subprocess run for gh CLI (raises CalledProcessError with check=True)
+    import subprocess
 
-    monkeypatch.setattr("vexor.cli.subprocess.run", lambda *args, **kwargs: MockCompletedProcess())
+    def raise_called_process_error(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, "gh")
+
+    monkeypatch.setattr("vexor.cli.subprocess.run", raise_called_process_error)
 
     # Mock webbrowser.open
     opened_urls = []

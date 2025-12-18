@@ -795,16 +795,14 @@ def star() -> None:
     gh_path = find_command_on_path("gh")
     if gh_path:
         try:
-            result = subprocess.run(
+            subprocess.run(
                 [gh_path, "repo", "star", REPO_OWNER_AND_NAME],
                 capture_output=True,
                 text=True,
                 check=True,
             )
-            if result.returncode == 0:
-                console.print(_styled(Messages.INFO_STAR_SUCCESS, Styles.SUCCESS))
-                return
-            # gh CLI failed, fall back to browser
+            console.print(_styled(Messages.INFO_STAR_SUCCESS, Styles.SUCCESS))
+            return
         except subprocess.CalledProcessError:
             # gh CLI failed with a non-zero exit code; fall back to browser
             pass
