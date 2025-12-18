@@ -45,12 +45,12 @@ Choose the **least expensive mode** that works:
 | `auto` | Default choice (smart routing) | varies |
 | `name` | Only need filename matches | lowest |
 | `head` | Need quick content hint | low |
-| `code` | Need Python symbols (functions/classes) | medium |
+| `code` | Need Python/JS/TS symbols (functions/classes) | medium |
 | `outline` | Need Markdown structure | medium |
 | `brief` | Need PRD/requirements keywords | medium |
 | `full` | Need deep content search | highest |
 
-**Auto mode routing:** Python → `code`, Markdown → `outline`, small files → `full`, large files → `head`
+**Auto mode routing:** Python/JS/TS → `code`, Markdown → `outline`, small files → `full`, large files → `head`
 
 ## Cache Key Rules
 

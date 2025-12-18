@@ -227,10 +227,29 @@ def extract_code_chunks(
     *,
     char_limit: int = FULL_CHAR_LIMIT,
 ) -> list[CodeChunk]:
-    """Return AST-aware code chunks for supported languages (Python only for now)."""
+    """Return AST-aware code chunks for supported languages (Python, JavaScript, TypeScript)."""
 
-    if path.suffix.lower() != ".py":
-        return []
+    suffix = path.suffix.lower()
+
+    # Python: use built-in ast module
+    if suffix == ".py":
+        return _extract_python_chunks(path, char_limit=char_limit)
+
+    # JavaScript/TypeScript: use tree-sitter
+    from .js_parser import JSTS_EXTENSIONS, extract_js_chunks
+
+    if suffix in JSTS_EXTENSIONS:
+        return extract_js_chunks(path, char_limit=char_limit)
+
+    return []
+
+
+def _extract_python_chunks(
+    path: Path,
+    *,
+    char_limit: int = FULL_CHAR_LIMIT,
+) -> list[CodeChunk]:
+    """Return AST-aware code chunks for Python files."""
 
     source = _read_text_full(path, char_limit)
     if not source:

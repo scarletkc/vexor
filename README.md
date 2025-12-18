@@ -82,12 +82,12 @@ Control embedding granularity with `--mode`:
 
 | Mode | Description |
 |------|-------------|
-| `auto` | **Default.** Smart routing: Python → `code`, Markdown → `outline`, small files → `full`, large files → `head` |
+| `auto` | **Default.** Smart routing: Python/JS/TS → `code`, Markdown → `outline`, small files → `full`, large files → `head` |
 | `name` | Embed filename only (fastest, zero content reads) |
 | `head` | Extract first snippet for lightweight semantic context |
 | `brief` | Extract high-frequency keywords from PRDs/requirements docs |
 | `full` | Chunk entire content; long documents searchable end-to-end |
-| `code` | AST-aware chunking by Python module/class/function boundaries; non-`.py` falls back to `full` |
+| `code` | AST-aware chunking by module/class/function boundaries for Python and JavaScript/TypeScript; other files fall back to `full` |
 | `outline` | Chunk Markdown by heading hierarchy with breadcrumbs; non-`.md` falls back to `full` |
 
 ## Cache Behavior

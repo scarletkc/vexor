@@ -253,6 +253,8 @@ class AutoStrategy(IndexModeStrategy):
         suffix = file.suffix.lower()
         if suffix == ".py":
             return self.code.payloads_for_files([file])
+        if suffix in {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}:
+            return self.code.payloads_for_files([file])
         if suffix in {".md", ".markdown", ".mdx"}:
             return self.outline.payloads_for_files([file])
         try:
