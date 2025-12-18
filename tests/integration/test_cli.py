@@ -922,22 +922,38 @@ def test_config_clear_index_all_noop(tmp_path, monkeypatch):
 
 def test_doctor_reports_success(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: "/usr/local/bin/vexor")
+    # Mock all doctor checks to pass
+    from vexor.services.system_service import DoctorCheckResult
+    mock_results = [
+        DoctorCheckResult(name="Command", passed=True, message="`vexor` found at /usr/local/bin/vexor"),
+        DoctorCheckResult(name="Config", passed=True, message="Config exists"),
+        DoctorCheckResult(name="Cache Dir", passed=True, message="Cache writable"),
+        DoctorCheckResult(name="API Key", passed=True, message="API key configured"),
+    ]
+    monkeypatch.setattr("vexor.cli.run_all_doctor_checks", lambda **kw: mock_results)
 
-    result = runner.invoke(app, ["doctor"])
+    result = runner.invoke(app, ["doctor", "--skip-api-test"])
 
     assert result.exit_code == 0
-    assert "available" in result.stdout
+    assert "passed" in result.stdout.lower()
 
 
 def test_doctor_reports_failure(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: None)
+    # Mock doctor checks with failures
+    from vexor.services.system_service import DoctorCheckResult
+    mock_results = [
+        DoctorCheckResult(name="Command", passed=False, message="`vexor` not found on PATH"),
+        DoctorCheckResult(name="Config", passed=True, message="Config exists"),
+        DoctorCheckResult(name="Cache Dir", passed=True, message="Cache writable"),
+        DoctorCheckResult(name="API Key", passed=False, message="API key not configured"),
+    ]
+    monkeypatch.setattr("vexor.cli.run_all_doctor_checks", lambda **kw: mock_results)
 
-    result = runner.invoke(app, ["doctor"])
+    result = runner.invoke(app, ["doctor", "--skip-api-test"])
 
     assert result.exit_code == 1
-    assert "not on PATH" in result.stdout
+    assert "failed" in result.stdout.lower()
 
 
 def test_update_detects_newer_version(monkeypatch):

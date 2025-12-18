@@ -113,7 +113,7 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 | `vexor config --show` | Display current configuration |
 | `vexor install --skills claude` | Install Agent Skill for Claude Code |
 | `vexor install --skills codex` | Install Agent Skill for Codex |
-| `vexor doctor` | Check if vexor is on PATH |
+| `vexor doctor` | Run diagnostic checks (command, config, cache, API key, API connectivity) |
 | `vexor update` | Check for new version |
 
 ### Common Flags

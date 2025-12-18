@@ -130,6 +130,30 @@ class Messages:
     ERROR_DOCTOR_MISSING = (
         "`vexor` command is not on PATH. Install with pip or add the script directory to PATH."
     )
+    # Doctor check messages
+    DOCTOR_TITLE = "Vexor Doctor v{version}"
+    DOCTOR_CMD_FOUND = "`vexor` found at {path}"
+    DOCTOR_CMD_MISSING = "`vexor` not found on PATH"
+    DOCTOR_CMD_MISSING_DETAIL = "Install with pip or add the script directory to PATH."
+    DOCTOR_CONFIG_EXISTS = "Config file exists at {path}"
+    DOCTOR_CONFIG_DEFAULT = "No config file (using defaults)"
+    DOCTOR_CACHE_CREATED = "Created cache directory at {path}"
+    DOCTOR_CACHE_WRITABLE = "Cache directory writable at {path}"
+    DOCTOR_CACHE_NOT_WRITABLE = "Cache directory not writable at {path}"
+    DOCTOR_CACHE_CANNOT_CREATE = "Cannot create cache directory at {path}"
+    DOCTOR_API_KEY_CONFIGURED = "API key configured ({masked})"
+    DOCTOR_API_KEY_MISSING = "API key not configured"
+    DOCTOR_API_KEY_MISSING_DETAIL = (
+        "Run `vexor config --set-api-key <KEY>` or set VEXOR_API_KEY / "
+        "OPENAI_API_KEY / GOOGLE_GENAI_API_KEY environment variable."
+    )
+    DOCTOR_API_SKIPPED = "Skipped (no API key)"
+    DOCTOR_API_REACHABLE = "API reachable (model: {model}, dim: {dim})"
+    DOCTOR_API_UNEXPECTED = "API returned unexpected response"
+    DOCTOR_API_FAILED = "API request failed"
+    DOCTOR_ALL_PASSED = "All checks passed!"
+    DOCTOR_SOME_FAILED = "Some checks failed. See details above."
+    HELP_DOCTOR_SKIP_API = "Skip the API connectivity test."
     INFO_UPDATE_CHECKING = "Checking latest Vexor version..."
     INFO_UPDATE_CURRENT = "You are running Vexor v{current}."
     INFO_UPDATE_AVAILABLE = (

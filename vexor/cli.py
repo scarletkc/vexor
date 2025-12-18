@@ -31,6 +31,7 @@ from .services.system_service import (
     fetch_remote_version,
     find_command_on_path,
     resolve_editor_command,
+    run_all_doctor_checks,
     version_tuple,
 )
 from .services.skill_service import (
@@ -692,17 +693,48 @@ def install(
 
 
 @app.command()
-def doctor() -> None:
-    """Check whether the `vexor` command is available on PATH."""
-    console.print(_styled(Messages.INFO_DOCTOR_CHECKING, Styles.INFO))
-    command_path = find_command_on_path("vexor")
-    if command_path:
-        console.print(
-            _styled(Messages.INFO_DOCTOR_FOUND.format(path=command_path), Styles.SUCCESS)
-        )
-        return
-    console.print(_styled(Messages.ERROR_DOCTOR_MISSING, Styles.ERROR))
-    raise typer.Exit(code=1)
+def doctor(
+    skip_api_test: bool = typer.Option(
+        False,
+        "--skip-api-test",
+        help=Messages.HELP_DOCTOR_SKIP_API,
+    ),
+) -> None:
+    """Run diagnostic checks for Vexor installation and configuration."""
+    from . import __version__
+
+    console.print(_styled(Messages.DOCTOR_TITLE.format(version=__version__), Styles.TITLE))
+    console.print()
+
+    config = load_config()
+    provider = config.provider or DEFAULT_PROVIDER
+    model = config.model or DEFAULT_MODEL
+
+    results = run_all_doctor_checks(
+        provider=provider,
+        model=model,
+        api_key=config.api_key,
+        base_url=config.base_url,
+        skip_api_test=skip_api_test,
+    )
+
+    has_failure = False
+    for result in results:
+        if result.passed:
+            icon = "[green]✓[/green]"
+        else:
+            icon = "[red]✗[/red]"
+            has_failure = True
+
+        console.print(f"  {icon} [bold]{result.name}:[/bold] {result.message}")
+        if result.detail:
+            console.print(f"      [dim]{result.detail}[/dim]")
+
+    console.print()
+    if has_failure:
+        console.print(_styled(Messages.DOCTOR_SOME_FAILED, Styles.WARNING))
+        raise typer.Exit(code=1)
+    console.print(_styled(Messages.DOCTOR_ALL_PASSED, Styles.SUCCESS))
 
 
 @app.command()

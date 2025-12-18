@@ -88,6 +88,13 @@ Line fields are `-` when unavailable.
 | API errors | Run `vexor config --show` to check settings and let the user configure |
 | Missing command | `pip install --user vexor` |
 
+Run `vexor doctor` to diagnose; check API key and connectivity:
+- Command availability on PATH
+- Config file status
+- Cache directory writability
+- API key configuration
+- API connectivity (use `--skip-api-test` to skip)
+
 ## Examples
 
 ```bash

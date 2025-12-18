@@ -8,17 +8,34 @@ from vexor.cli import app
 
 def test_doctor_reports_found(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda _: "/bin/vexor")
-    result = runner.invoke(app, ["doctor"])
+    # Mock all doctor checks to pass
+    from vexor.services.system_service import DoctorCheckResult
+    mock_results = [
+        DoctorCheckResult(name="Command", passed=True, message="`vexor` found at /bin/vexor"),
+        DoctorCheckResult(name="Config", passed=True, message="Config exists"),
+        DoctorCheckResult(name="Cache Dir", passed=True, message="Cache writable"),
+        DoctorCheckResult(name="API Key", passed=True, message="API key configured"),
+    ]
+    monkeypatch.setattr("vexor.cli.run_all_doctor_checks", lambda **kw: mock_results)
+    result = runner.invoke(app, ["doctor", "--skip-api-test"])
     assert result.exit_code == 0
-    assert "available" in result.stdout.lower()
+    assert "passed" in result.stdout.lower()
 
 
 def test_doctor_reports_missing(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda _: None)
-    result = runner.invoke(app, ["doctor"])
+    # Mock doctor checks with command missing
+    from vexor.services.system_service import DoctorCheckResult
+    mock_results = [
+        DoctorCheckResult(name="Command", passed=False, message="`vexor` not found on PATH"),
+        DoctorCheckResult(name="Config", passed=True, message="Config exists"),
+        DoctorCheckResult(name="Cache Dir", passed=True, message="Cache writable"),
+        DoctorCheckResult(name="API Key", passed=False, message="API key not configured"),
+    ]
+    monkeypatch.setattr("vexor.cli.run_all_doctor_checks", lambda **kw: mock_results)
+    result = runner.invoke(app, ["doctor", "--skip-api-test"])
     assert result.exit_code == 1
+    assert "failed" in result.stdout.lower()
 
 
 def test_update_reports_available(monkeypatch):
