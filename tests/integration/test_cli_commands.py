@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from typer.testing import CliRunner
 
@@ -40,7 +42,7 @@ def test_doctor_reports_missing(monkeypatch):
 
 def test_update_reports_available(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.fetch_remote_version", lambda *_: "99.0.0")
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_args, **_kwargs: "99.0.0")
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
     assert "new version" in result.stdout.lower()
@@ -48,7 +50,7 @@ def test_update_reports_available(monkeypatch):
 
 def test_update_reports_up_to_date(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.fetch_remote_version", lambda *_: "0.0.0")
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_args, **_kwargs: "0.0.0")
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
     assert "latest version" in result.stdout.lower()
@@ -60,7 +62,7 @@ def test_update_reports_fetch_error(monkeypatch):
     def raise_fetch(*_args, **_kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("vexor.cli.fetch_remote_version", raise_fetch)
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", raise_fetch)
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 1
 
@@ -117,20 +119,17 @@ def test_search_rejects_respect_gitignore_flag(tmp_path):
     assert result.exit_code == 2
     assert "no such option" in result.output.lower()
 
-
 def test_star_uses_gh_cli_when_available(monkeypatch):
     runner = CliRunner()
 
-    # Mock gh command found on path
-    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: "/usr/bin/gh" if cmd == "gh" else None)
-
-    # Mock successful subprocess run for gh CLI
-    class MockCompletedProcess:
-        returncode = 0
-        stdout = ""
-        stderr = ""
-
-    monkeypatch.setattr("vexor.cli.subprocess.run", lambda *args, **kwargs: MockCompletedProcess())
+    monkeypatch.setattr(
+        "vexor.cli.find_command_on_path",
+        lambda cmd: "/usr/bin/gh" if cmd == "gh" else None,
+    )
+    monkeypatch.setattr(
+        "vexor.cli.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
 
     result = runner.invoke(app, ["star"])
     assert result.exit_code == 0
@@ -140,10 +139,7 @@ def test_star_uses_gh_cli_when_available(monkeypatch):
 def test_star_falls_back_to_browser_when_gh_missing(monkeypatch):
     runner = CliRunner()
 
-    # Mock gh command not found
-    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: None)
-
-    # Mock webbrowser.open
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda _cmd: None)
     opened_urls = []
     monkeypatch.setattr("vexor.cli.webbrowser.open", lambda url: opened_urls.append(url))
 
@@ -157,10 +153,11 @@ def test_star_falls_back_to_browser_when_gh_missing(monkeypatch):
 def test_star_falls_back_to_browser_when_gh_fails(monkeypatch):
     runner = CliRunner()
 
-    # Mock gh command found on path
-    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: "/usr/bin/gh" if cmd == "gh" else None)
+    monkeypatch.setattr(
+        "vexor.cli.find_command_on_path",
+        lambda cmd: "/usr/bin/gh" if cmd == "gh" else None,
+    )
 
-    # Mock failed subprocess run for gh CLI (raises CalledProcessError with check=True)
     import subprocess
 
     def raise_called_process_error(*args, **kwargs):
@@ -176,3 +173,53 @@ def test_star_falls_back_to_browser_when_gh_fails(monkeypatch):
     assert result.exit_code == 0
     assert "opening" in result.stdout.lower()
     assert len(opened_urls) == 1
+
+
+def test_feedback_opens_browser_when_gh_missing(monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda *_a, **_k: None)
+    monkeypatch.setattr("vexor.cli.typer.launch", lambda url: captured.setdefault("url", url))
+
+    result = runner.invoke(app, ["feedback"])
+
+    assert result.exit_code == 0
+    assert captured["url"].endswith("/issues/new")
+
+
+def test_feedback_uses_gh_when_available(monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda *_a, **_k: "/usr/bin/gh")
+
+    def fake_run(args, check=False):
+        captured["args"] = args
+        return SimpleNamespace(returncode=0)
+
+    def should_not_launch(_url: str):
+        raise AssertionError("Browser launch should not be used when gh succeeds")
+
+    monkeypatch.setattr("vexor.cli.subprocess.run", fake_run)
+    monkeypatch.setattr("vexor.cli.typer.launch", should_not_launch)
+
+    result = runner.invoke(app, ["feedback"])
+
+    assert result.exit_code == 0
+    assert captured["args"][:3] == ["/usr/bin/gh", "issue", "create"]
+    assert "--web" in captured["args"]
+
+
+def test_feedback_falls_back_to_browser_when_gh_fails(monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda *_a, **_k: "/usr/bin/gh")
+    monkeypatch.setattr("vexor.cli.subprocess.run", lambda *_a, **_k: SimpleNamespace(returncode=1))
+    monkeypatch.setattr("vexor.cli.typer.launch", lambda url: captured.setdefault("url", url))
+
+    result = runner.invoke(app, ["feedback"])
+
+    assert result.exit_code == 0
+    assert captured["url"].endswith("/issues/new")

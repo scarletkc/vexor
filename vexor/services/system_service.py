@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import os
+import platform
 import re
 import shlex
 import shutil
+import subprocess
+import sys
+from enum import Enum
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Sequence
+from urllib.parse import urlparse
 from urllib import error, request
 
 from ..text import Messages
@@ -223,6 +230,329 @@ def version_tuple(raw: str) -> tuple[int, int, int, int]:
         release_parts[3] = suffix_number
 
     return tuple(release_parts[:4])
+
+
+@dataclass(frozen=True, order=True, slots=True)
+class ParsedVersion:
+    release: tuple[int, int, int, int]
+    stage: int
+    stage_num: int
+    raw: str
+    is_prerelease: bool
+
+
+def parse_version(raw: str) -> ParsedVersion | None:
+    """Parse a semver-ish version string with optional a/b/rc suffix.
+
+    Ordering follows PEP 440 semantics for pre-releases:
+    a < b < rc < final for the same release segment.
+    """
+
+    text = (raw or "").strip()
+    if not text:
+        return None
+
+    release_parts: list[int] = []
+    stage = 3  # final
+    stage_num = 0
+    is_prerelease = False
+
+    for piece in text.split("."):
+        match = re.match(r"^(\d+)", piece)
+        if not match:
+            break
+        release_parts.append(int(match.group(1)))
+        remainder = piece[match.end() :]
+        if remainder:
+            suffix = remainder.lower()
+            suffix_match = re.match(r"^(a|b|rc)(\d+)?", suffix)
+            if suffix_match:
+                label = suffix_match.group(1)
+                stage_num = int(suffix_match.group(2) or 0)
+                stage = {"a": 0, "b": 1, "rc": 2}.get(label, 0)
+                is_prerelease = True
+            break
+        if len(release_parts) >= 4:
+            break
+
+    if not release_parts:
+        return None
+
+    while len(release_parts) < 4:
+        release_parts.append(0)
+
+    return ParsedVersion(
+        release=tuple(release_parts[:4]),
+        stage=stage,
+        stage_num=stage_num,
+        raw=text,
+        is_prerelease=is_prerelease,
+    )
+
+
+def fetch_pypi_versions(package: str, *, timeout: float = 10.0) -> list[str]:
+    """Fetch published versions from PyPI."""
+
+    url = f"https://pypi.org/pypi/{package}/json"
+    try:
+        with request.urlopen(url, timeout=timeout) as response:
+            if response.status != 200:
+                raise RuntimeError(f"HTTP {response.status}")
+            payload = response.read().decode("utf-8")
+    except error.URLError as exc:  # pragma: no cover - network error
+        raise RuntimeError(str(exc)) from exc
+
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Invalid PyPI response") from exc
+
+    releases = data.get("releases", {})
+    versions: list[str] = []
+    for version, files in releases.items():
+        if files:
+            versions.append(version)
+    return versions
+
+
+def select_latest_version(versions: Sequence[str], *, include_prerelease: bool) -> str:
+    parsed_versions: list[ParsedVersion] = []
+    for version in versions:
+        parsed = parse_version(version)
+        if parsed is None:
+            continue
+        if not include_prerelease and parsed.is_prerelease:
+            continue
+        parsed_versions.append(parsed)
+    if not parsed_versions:
+        raise RuntimeError("No matching versions found")
+    parsed_versions.sort()
+    return parsed_versions[-1].raw
+
+
+def fetch_latest_pypi_version(
+    package: str,
+    *,
+    include_prerelease: bool = False,
+    timeout: float = 10.0,
+) -> str:
+    versions = fetch_pypi_versions(package, timeout=timeout)
+    return select_latest_version(versions, include_prerelease=include_prerelease)
+
+
+class InstallMethod(str, Enum):
+    PIP_USER = "pip-user"
+    PIP_SYSTEM = "pip-system"
+    PIP_VENV = "pip-venv"
+    PIPX = "pipx"
+    UV = "uv"
+    GIT_EDITABLE = "git-editable"
+    STANDALONE = "standalone"
+    UNKNOWN = "unknown"
+
+
+@dataclass(slots=True)
+class InstallInfo:
+    method: InstallMethod
+    executable: Path | None
+    editable_root: Path | None
+    dist_location: Path | None
+    requires_admin: bool = False
+
+
+def detect_install_method() -> InstallInfo:
+    """Detect how the current Vexor process is installed."""
+
+    if getattr(sys, "frozen", False):
+        return InstallInfo(
+            method=InstallMethod.STANDALONE,
+            executable=Path(sys.executable).resolve(),
+            editable_root=None,
+            dist_location=None,
+            requires_admin=False,
+        )
+
+    dist_location = None
+    editable_root = None
+    try:
+        from importlib import metadata
+
+        dist = metadata.distribution("vexor")
+        dist_location = Path(dist.locate_file("")).resolve()
+        direct_url = dist.read_text("direct_url.json")
+        if direct_url:
+            try:
+                direct_data = json.loads(direct_url)
+            except json.JSONDecodeError:
+                direct_data = None
+            if direct_data:
+                dir_info = direct_data.get("dir_info") or {}
+                if bool(dir_info.get("editable")):
+                    parsed = urlparse(direct_data.get("url") or "")
+                    if parsed.scheme == "file":
+                        editable_root = Path(request.url2pathname(parsed.path)).resolve()
+    except Exception:
+        dist_location = None
+        editable_root = None
+
+    vexor_exe = find_command_on_path("vexor")
+    executable = Path(vexor_exe).resolve() if vexor_exe else None
+
+    if editable_root and (editable_root / ".git").exists():
+        return InstallInfo(
+            method=InstallMethod.GIT_EDITABLE,
+            executable=executable,
+            editable_root=editable_root,
+            dist_location=dist_location,
+            requires_admin=False,
+        )
+
+    prefix = Path(sys.prefix).resolve()
+    base_prefix = Path(getattr(sys, "base_prefix", sys.prefix)).resolve()
+
+    if "pipx" in prefix.parts and "venvs" in prefix.parts:
+        return InstallInfo(
+            method=InstallMethod.PIPX,
+            executable=executable,
+            editable_root=None,
+            dist_location=dist_location,
+            requires_admin=False,
+        )
+
+    if "uv" in prefix.parts and "tools" in prefix.parts:
+        return InstallInfo(
+            method=InstallMethod.UV,
+            executable=executable,
+            editable_root=None,
+            dist_location=dist_location,
+            requires_admin=False,
+        )
+
+    if prefix != base_prefix:
+        return InstallInfo(
+            method=InstallMethod.PIP_VENV,
+            executable=executable,
+            editable_root=None,
+            dist_location=dist_location,
+            requires_admin=False,
+        )
+
+    user_site = None
+    try:
+        import site
+
+        user_site = Path(site.getusersitepackages()).resolve()
+    except Exception:  # pragma: no cover - platform specific
+        user_site = None
+
+    if dist_location and user_site and dist_location.is_relative_to(user_site):
+        return InstallInfo(
+            method=InstallMethod.PIP_USER,
+            executable=executable,
+            editable_root=None,
+            dist_location=dist_location,
+            requires_admin=False,
+        )
+
+    if dist_location:
+        return InstallInfo(
+            method=InstallMethod.PIP_SYSTEM,
+            executable=executable,
+            editable_root=None,
+            dist_location=dist_location,
+            requires_admin=True,
+        )
+
+    return InstallInfo(
+        method=InstallMethod.UNKNOWN,
+        executable=executable,
+        editable_root=None,
+        dist_location=None,
+        requires_admin=False,
+    )
+
+
+def build_upgrade_commands(
+    install_info: InstallInfo,
+    *,
+    include_prerelease: bool = False,
+) -> list[list[str]]:
+    """Return the command(s) used to upgrade based on *install_info*."""
+
+    if install_info.method == InstallMethod.GIT_EDITABLE and install_info.editable_root:
+        return [
+            ["git", "-C", str(install_info.editable_root), "pull", "--ff-only"],
+            [sys.executable, "-m", "pip", "install", "-e", str(install_info.editable_root)],
+        ]
+
+    if install_info.method == InstallMethod.PIPX:
+        cmd = ["pipx", "upgrade", "vexor"]
+        if include_prerelease:
+            cmd.extend(["--pip-args", "--pre"])
+        return [cmd]
+
+    if install_info.method == InstallMethod.UV:
+        cmd = ["uv", "tool", "upgrade", "vexor"]
+        if include_prerelease:
+            cmd.extend(["--prerelease", "allow"])
+        return [cmd]
+
+    cmd = [sys.executable, "-m", "pip", "install", "--upgrade"]
+    if include_prerelease:
+        cmd.append("--pre")
+    if install_info.method == InstallMethod.PIP_USER:
+        cmd.append("--user")
+    cmd.append("vexor")
+    return [cmd]
+
+
+def build_standalone_download_url(version: str) -> tuple[str | None, str]:
+    """Return a (asset_name, url) tuple for the standalone binary download."""
+
+    system = platform.system().lower()
+    asset_suffix = None
+    if system.startswith("windows"):
+        asset_suffix = "windows.exe"
+    elif system.startswith("linux"):
+        asset_suffix = "linux"
+
+    tag = f"v{version}"
+    base = f"https://github.com/scarletkc/vexor/releases/tag/{tag}"
+    if asset_suffix is None:
+        return None, base
+
+    asset_name = f"vexor-{version}-{asset_suffix}"
+    download = f"https://github.com/scarletkc/vexor/releases/download/{tag}/{asset_name}"
+    return asset_name, download
+
+
+def run_upgrade_commands(commands: Sequence[Sequence[str]], *, timeout: float = 300.0) -> int:
+    """Run upgrade commands, returning the first non-zero exit code if any."""
+
+    for command in commands:
+        try:
+            completed = subprocess.run(list(command), check=False, timeout=timeout)
+        except FileNotFoundError:
+            return 127
+        except subprocess.TimeoutExpired:
+            return 124
+        if completed.returncode != 0:
+            return int(completed.returncode)
+    return 0
+
+
+def git_worktree_is_dirty(repo: Path, *, timeout: float = 10.0) -> bool:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except Exception:
+        return False
+    return bool(completed.stdout.strip())
 
 
 def fetch_remote_version(url: str, *, timeout: float = 10.0) -> str:
