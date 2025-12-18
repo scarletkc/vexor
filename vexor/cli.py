@@ -6,7 +6,6 @@ import json
 import shlex
 import subprocess
 import sys
-import webbrowser
 from enum import Enum
 from pathlib import Path
 from typing import Sequence, TYPE_CHECKING

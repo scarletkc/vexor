@@ -118,6 +118,8 @@ def test_search_rejects_respect_gitignore_flag(tmp_path):
     )
     assert result.exit_code == 2
     assert "no such option" in result.output.lower()
+
+
 def test_star_uses_gh_cli_when_available(monkeypatch):
     runner = CliRunner()
 
@@ -140,7 +142,7 @@ def test_star_falls_back_to_browser_when_gh_missing(monkeypatch):
 
     monkeypatch.setattr("vexor.cli.find_command_on_path", lambda _cmd: None)
     opened_urls = []
-    monkeypatch.setattr("vexor.cli.webbrowser.open", lambda url: opened_urls.append(url))
+    monkeypatch.setattr("vexor.cli.typer.launch", lambda url: opened_urls.append(url))
 
     result = runner.invoke(app, ["star"])
     assert result.exit_code == 0
@@ -164,9 +166,9 @@ def test_star_falls_back_to_browser_when_gh_fails(monkeypatch):
 
     monkeypatch.setattr("vexor.cli.subprocess.run", raise_called_process_error)
 
-    # Mock webbrowser.open
+    # Mock typer.launch
     opened_urls = []
-    monkeypatch.setattr("vexor.cli.webbrowser.open", lambda url: opened_urls.append(url))
+    monkeypatch.setattr("vexor.cli.typer.launch", lambda url: opened_urls.append(url))
 
     result = runner.invoke(app, ["star"])
     assert result.exit_code == 0
