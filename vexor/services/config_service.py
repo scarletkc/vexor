@@ -10,6 +10,7 @@ from ..config import (
     set_api_key,
     set_base_url,
     set_batch_size,
+    set_auto_index,
     set_model,
     set_provider,
 )
@@ -24,6 +25,7 @@ class ConfigUpdateResult:
     provider_set: bool = False
     base_url_set: bool = False
     base_url_cleared: bool = False
+    auto_index_set: bool = False
 
     @property
     def changed(self) -> bool:
@@ -36,6 +38,7 @@ class ConfigUpdateResult:
                 self.provider_set,
                 self.base_url_set,
                 self.base_url_cleared,
+                self.auto_index_set,
             )
         )
 
@@ -49,6 +52,7 @@ def apply_config_updates(
     provider: str | None = None,
     base_url: str | None = None,
     clear_base_url: bool = False,
+    auto_index: bool | None = None,
 ) -> ConfigUpdateResult:
     """Apply config mutations and report which fields were updated."""
 
@@ -74,6 +78,9 @@ def apply_config_updates(
     if clear_base_url:
         set_base_url(None)
         result.base_url_cleared = True
+    if auto_index is not None:
+        set_auto_index(auto_index)
+        result.auto_index_set = True
     return result
 
 

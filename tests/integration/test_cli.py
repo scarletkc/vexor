@@ -80,6 +80,64 @@ def test_search_outputs_table(tmp_path, monkeypatch):
     assert captured["mode"] == "auto"
 
 
+def test_search_prints_index_message_when_auto_index_missing(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.txt"
+    sample_file.write_text("data")
+
+    monkeypatch.setattr("vexor.cli.load_index_metadata_safe", lambda *_args, **_kwargs: None)
+
+    def fake_perform_search(request):
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[SearchResult(path=sample_file, score=0.99)],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(app, ["search", "alpha", "--path", str(tmp_path), "--top", "1"])
+
+    assert result.exit_code == 0
+    output = strip_ansi(result.stdout)
+    assert "Indexing files under" in output
+    assert str(tmp_path) in output
+    assert "Searching cached index under" not in output
+
+
+def test_search_prints_index_message_when_auto_index_stale(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.txt"
+    sample_file.write_text("data")
+
+    monkeypatch.setattr(
+        "vexor.cli.load_index_metadata_safe",
+        lambda *_args, **_kwargs: {"files": [{"path": "alpha.txt", "mtime": 0.0, "size": 1}]},
+    )
+    monkeypatch.setattr("vexor.cli.is_cache_current", lambda *_args, **_kwargs: False)
+
+    def fake_perform_search(request):
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[SearchResult(path=sample_file, score=0.99)],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(app, ["search", "alpha", "--path", str(tmp_path), "--top", "1"])
+
+    assert result.exit_code == 0
+    output = strip_ansi(result.stdout)
+    assert "Indexing files under" in output
+    assert str(tmp_path) in output
+    assert "Searching cached index under" not in output
+
+
 def test_search_outputs_porcelain(tmp_path, monkeypatch):
     runner = CliRunner()
     sample_file = tmp_path / "alpha.txt"
@@ -685,9 +743,24 @@ def test_config_set_and_show(tmp_path):
     assert data["batch_size"] == 42
     assert data["provider"] == "gemini"
     assert data["base_url"] == "https://proxy.example.com"
+    assert data["auto_index"] is True
 
     result_show = runner.invoke(app, ["config", "--show"])
     assert "custom-model" in result_show.stdout
+
+
+def test_config_set_auto_index(tmp_path):
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["config", "--set-auto-index", "false"])
+
+    assert result.exit_code == 0
+    config_path = tmp_path / "config" / "config.json"
+    data = json.loads(config_path.read_text())
+    assert data["auto_index"] is False
+
+    result_show = runner.invoke(app, ["config", "--show"])
+    assert "Auto index: no" in strip_ansi(result_show.stdout)
 
 
 def test_config_clear_api_key(tmp_path):

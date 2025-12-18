@@ -49,6 +49,7 @@ vexor config --set-model gemini-embedding-001
 vexor config --set-batch-size 0   # 0 = single request
 vexor config --set-provider gemini
 vexor config --set-base-url https://proxy.example.com  # optional proxy support for local LM Studio and similar tools; use --clear-base-url to reset
+vexor config --set-auto-index true  # default true; set false to require manual `vexor index`
 ```
 Provider defaults to `gemini`, so you only need to override it when switching to other backends (e.g., `openai`). Base URLs are optional and let you route requests through a custom proxy; run `vexor config --clear-base-url` to return to the official endpoint.
 
@@ -67,13 +68,15 @@ vexor config --clear-index-all
 ```
 
 ## Workflow
-1. **Index** the project root (includes every subdirectory):
-   ```bash
-   vexor index --path ~/projects/demo --mode name --include-hidden
-   ```
-2. **Search** from anywhere, pointing to the same path:
+1. **Search** from anywhere, pointing to a project root:
    ```bash
    vexor search "api client config" --path ~/projects/demo --mode name --top 5
+   ```
+   If the index is missing or stale, Vexor auto-builds/refreshes it before searching (default behavior).
+
+2. **(Optional) Index** explicitly (useful for warmup/CI, or when `auto_index` is disabled):
+   ```bash
+   vexor index --path ~/projects/demo --mode name --include-hidden
    ```
    For script/agent-friendly output, add `--format porcelain` (TSV) or `--format porcelain-z` (NUL-delimited), default format `rich` (table).
    Porcelain formats emit: `rank`, `similarity`, `path`, `chunk_index`, `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
@@ -88,11 +91,11 @@ vexor config --clear-index-all
    ```
 
 **Tips:**
-- Keep one index per project root; subdirectories need separate indexes only if you explicitly run `vexor index` on them.
-- Toggle `--no-recursive` (or `-n`) on both `index` and `search` when you only care about the current directory; recursive and non-recursive caches are stored separately.
-- Hidden files are included only if both `index` and `search` use `--include-hidden` (or `-i`).
-- By default, Vexor respects `.gitignore` (including nested `.gitignore` files and `.git/info/exclude`) while scanning. Use `--no-respect-gitignore` on both `index` and `search` to include ignored files.
-- Use `--ext`/`-e` on both `index` and `search` to limit indexing and search results to specific extensions. It is repeatable, and each value can also be a comma/space-separated list (e.g. `--ext .py,.md` or `--ext '.py .md'`).
+- Cache keys are derived from `--path`, `--mode`, recursion, hidden, gitignore, and `--ext`. Keep flags consistent to reuse the same cached index (otherwise Vexor will build a separate one).
+- Toggle `--no-recursive` (or `-n`) when you only care about the current directory; recursive and non-recursive caches are stored separately.
+- Hidden files are included only when using `--include-hidden` (or `-i`) for that cache key.
+- By default, Vexor respects `.gitignore` (including nested `.gitignore` files and `.git/info/exclude`) while scanning. Use `--no-respect-gitignore` to include ignored files.
+- Use `--ext`/`-e` to limit indexing/searching to specific extensions. It is repeatable, and each value can also be a comma/space-separated list (e.g. `--ext .py,.md` or `--ext '.py .md'`).
 - Re-running `vexor index` only re-embeds files whose names/contents changed (or were added/removed); if more than half the files differ, it automatically falls back to a full rebuild for consistency.
 - Specify the indexing mode with `--mode`:
   - `auto`: smart default routing (Python → `code`, Markdown → `outline`, small files → `full`, large files → `head`/`name`).
@@ -108,11 +111,11 @@ vexor config --clear-index-all
 | Command | Description |
 | ------- | ----------- |
 | `vexor index --path PATH [--mode MODE] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--clear/--show]` | Scans `PATH` (recursively by default), respects `.gitignore` by default, embeds content according to `MODE` (defaults to `auto`), and writes a cache under `~/.vexor`. |
-| `vexor search QUERY --path PATH [--mode MODE] [--top K] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--format rich/porcelain/porcelain-z]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden/gitignore/ext settings), shows matches for `QUERY`. |
+| `vexor search QUERY --path PATH [--mode MODE] [--top K] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--format rich/porcelain/porcelain-z]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden/gitignore/ext settings) and shows matches for `QUERY`. If `auto_index` is enabled and the index is missing/stale, it will refresh before searching. |
 | `vexor doctor` | Checks whether the `vexor` command is available on the current `PATH`. |
 | `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |
 | `vexor config --set-api-key/--clear-api-key` | Manage the stored API key (Gemini by default). |
-| `vexor config --set-model/--set-batch-size/--show` | Manage default model, batch size, and inspect current settings. |
+| `vexor config --set-model/--set-batch-size/--set-auto-index/--show` | Manage default model, batch size, auto-index behavior, and inspect current settings. |
 | `vexor config --set-provider/--set-base-url/--clear-base-url` | Switch embedding providers and optionally override the remote base URL. |
 | `vexor config --show-index-all/--clear-index-all` | Inspect or delete every cached index regardless of path/mode. |
 

@@ -23,7 +23,7 @@ from .config import (
     load_config,
 )
 from .modes import available_modes, get_strategy
-from .services.cache_service import load_index_metadata_safe
+from .services.cache_service import is_cache_current, load_index_metadata_safe
 from .services.config_service import apply_config_updates, get_config_snapshot
 from .services.index_service import IndexStatus, build_index, clear_index_entries
 from .services.search_service import SearchRequest, perform_search
@@ -79,6 +79,15 @@ def _validate_mode(mode: str) -> str:
             Messages.ERROR_MODE_INVALID.format(value=mode, allowed=allowed)
         ) from exc
     return mode
+
+
+def _parse_boolean(value: str) -> bool:
+    token = value.strip().lower()
+    if token in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if token in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    raise ValueError(Messages.ERROR_BOOLEAN_INVALID.format(value=value))
 
 
 def _format_extensions_display(values: Sequence[str] | None) -> str:
@@ -154,6 +163,7 @@ def search(
     provider = config.provider or DEFAULT_PROVIDER
     base_url = config.base_url
     api_key = config.api_key
+    auto_index = bool(config.auto_index)
 
     clean_query = query.strip()
     if not clean_query:
@@ -171,9 +181,37 @@ def search(
     if extensions and not normalized_exts:
         raise typer.BadParameter(Messages.ERROR_EXTENSIONS_EMPTY, param_name="ext")
     if output_format == SearchOutputFormat.rich:
-        console.print(
-            _styled(Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO)
-        )
+        should_index_first = False
+        if auto_index:
+            metadata = load_index_metadata_safe(
+                directory,
+                model_name,
+                include_hidden,
+                respect_gitignore,
+                mode_value,
+                recursive,
+                extensions=normalized_exts,
+            )
+            file_snapshot = metadata.get("files", []) if metadata else []
+            if metadata is None:
+                should_index_first = True
+            elif file_snapshot and not is_cache_current(
+                directory,
+                include_hidden,
+                respect_gitignore,
+                file_snapshot,
+                recursive=recursive,
+                extensions=normalized_exts,
+            ):
+                should_index_first = True
+        if should_index_first:
+            console.print(
+                _styled(Messages.INFO_INDEX_RUNNING.format(path=directory), Styles.INFO)
+            )
+        else:
+            console.print(
+                _styled(Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO)
+            )
     request = SearchRequest(
         query=clean_query,
         directory=directory,
@@ -188,6 +226,7 @@ def search(
         base_url=base_url,
         api_key=api_key,
         extensions=normalized_exts,
+        auto_index=auto_index,
     )
     try:
         response = perform_search(request)
@@ -433,6 +472,11 @@ def config(
         "--clear-base-url",
         help=Messages.HELP_CLEAR_BASE_URL,
     ),
+    set_auto_index_option: str | None = typer.Option(
+        None,
+        "--set-auto-index",
+        help=Messages.HELP_SET_AUTO_INDEX,
+    ),
     show: bool = typer.Option(
         False,
         "--show",
@@ -465,6 +509,13 @@ def config(
             )
         set_provider_option = normalized_provider
 
+    auto_index: bool | None = None
+    if set_auto_index_option is not None:
+        try:
+            auto_index = _parse_boolean(set_auto_index_option)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_name="set-auto-index") from exc
+
     updates = apply_config_updates(
         api_key=set_api_key_option,
         clear_api_key=clear_api_key,
@@ -473,6 +524,7 @@ def config(
         provider=set_provider_option,
         base_url=set_base_url_option,
         clear_base_url=clear_base_url,
+        auto_index=auto_index,
     )
 
     if updates.api_key_set:
@@ -497,6 +549,9 @@ def config(
         )
     if updates.base_url_cleared and clear_base_url:
         console.print(_styled(Messages.INFO_BASE_URL_CLEARED, Styles.SUCCESS))
+    if updates.auto_index_set and auto_index is not None:
+        state = "enabled" if auto_index else "disabled"
+        console.print(_styled(Messages.INFO_AUTO_INDEX_SET.format(value=state), Styles.SUCCESS))
 
     if clear_index_all:
         removed = clear_all_cache()
@@ -532,6 +587,7 @@ def config(
                     provider=cfg.provider or DEFAULT_PROVIDER,
                     model=cfg.model or DEFAULT_MODEL,
                     batch=cfg.batch_size if cfg.batch_size is not None else DEFAULT_BATCH_SIZE,
+                    auto_index="yes" if cfg.auto_index else "no",
                     base_url=cfg.base_url or "none",
                 ),
                 Styles.INFO,

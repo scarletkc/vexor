@@ -23,16 +23,19 @@ Use this skill when you need intent-based file discovery (not exact string match
 ## Checklist (do this in order)
 
 1. Ensure the CLI exists:
-   - Prefer `vexor doctor` or `python -m vexor --help`.
-   - If `vexor` is missing: `python -m pip install vexor` (or `pip install vexor` / `pipx install vexor`).
-2. Index the target root (required once per cache key):
-   - `vexor index --path <ROOT> [--mode <MODE>] [--ext .py,.md] [--include-hidden] [--no-recursive]`
-3. Search using the same cache key flags:
+   - Prefer `vexor --help`.
+   - If `vexor` is missing: `pip install --user vexor`.
+2. Search the target root (auto-indexes when needed by default):
    - `vexor search "<QUERY>" --path <ROOT> [--mode <MODE>] [--ext .py,.md] [--top 10]`
+3. Optional: pre-index (warm cache / CI) or refresh explicitly:
+   - `vexor index --path <ROOT> [--mode <MODE>] [--ext .py,.md] [--include-hidden] [--no-recursive]`
+   - Disable auto-index if you want the "search requires index" behavior:
+     - `vexor config --set-auto-index false`
 
-## Cache key (avoid "No cached index found…")
+## Cache key (reuse the same cached index)
 
-These flags must match between `index` and `search`:
+Vexor caches indexes by a key derived from these flags. Keep them consistent to reuse the same cache
+(otherwise Vexor will build a separate index for the new flag combination):
 
 - `--path`, `--mode` (defaults to `auto` when omitted)
 - `--include-hidden`, `--no-recursive`
@@ -57,6 +60,6 @@ These flags must match between `index` and `search`:
 
 ## Troubleshooting
 
-- If results look stale: rerun `vexor index` for the same cache key.
+- If results look stale: rerun `vexor index` for the same cache key (or leave auto-index enabled).
 - If you need ignored files: add `--no-respect-gitignore` to both commands.
 - If API/config issues: `vexor config --show` and let the user fix them.

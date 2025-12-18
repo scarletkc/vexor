@@ -24,6 +24,7 @@ class SearchRequest:
     base_url: str | None
     api_key: str | None
     extensions: tuple[str, ...]
+    auto_index: bool = True
 
 
 @dataclass(slots=True)
@@ -38,19 +39,53 @@ class SearchResponse:
 def perform_search(request: SearchRequest) -> SearchResponse:
     """Execute the semantic search flow and return ranked results."""
 
-    from sklearn.metrics.pairwise import cosine_similarity  # local import
     from ..cache import load_index_vectors  # local import
-    from ..search import SearchResult, VexorSearcher  # local import
+    from .index_service import IndexStatus, build_index  # local import
 
-    paths, file_vectors, metadata = load_index_vectors(
-        request.directory,
-        request.model_name,
-        request.include_hidden,
-        request.mode,
-        request.recursive,
-        request.extensions,
-        respect_gitignore=request.respect_gitignore,
-    )
+    try:
+        paths, file_vectors, metadata = load_index_vectors(
+            request.directory,
+            request.model_name,
+            request.include_hidden,
+            request.mode,
+            request.recursive,
+            request.extensions,
+            respect_gitignore=request.respect_gitignore,
+        )
+    except FileNotFoundError:
+        if not request.auto_index:
+            raise
+        result = build_index(
+            request.directory,
+            include_hidden=request.include_hidden,
+            respect_gitignore=request.respect_gitignore,
+            mode=request.mode,
+            recursive=request.recursive,
+            model_name=request.model_name,
+            batch_size=request.batch_size,
+            provider=request.provider,
+            base_url=request.base_url,
+            api_key=request.api_key,
+            extensions=request.extensions,
+        )
+        if result.status == IndexStatus.EMPTY:
+            return SearchResponse(
+                base_path=request.directory,
+                backend=None,
+                results=[],
+                is_stale=False,
+                index_empty=True,
+            )
+        paths, file_vectors, metadata = load_index_vectors(
+            request.directory,
+            request.model_name,
+            request.include_hidden,
+            request.mode,
+            request.recursive,
+            request.extensions,
+            respect_gitignore=request.respect_gitignore,
+        )
+
     file_snapshot = metadata.get("files", [])
     chunk_entries = metadata.get("chunks", [])
     stale = bool(file_snapshot) and not is_cache_current(
@@ -62,6 +97,48 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         extensions=request.extensions,
     )
 
+    if stale and request.auto_index:
+        result = build_index(
+            request.directory,
+            include_hidden=request.include_hidden,
+            respect_gitignore=request.respect_gitignore,
+            mode=request.mode,
+            recursive=request.recursive,
+            model_name=request.model_name,
+            batch_size=request.batch_size,
+            provider=request.provider,
+            base_url=request.base_url,
+            api_key=request.api_key,
+            extensions=request.extensions,
+        )
+        if result.status == IndexStatus.EMPTY:
+            return SearchResponse(
+                base_path=request.directory,
+                backend=None,
+                results=[],
+                is_stale=False,
+                index_empty=True,
+            )
+        paths, file_vectors, metadata = load_index_vectors(
+            request.directory,
+            request.model_name,
+            request.include_hidden,
+            request.mode,
+            request.recursive,
+            request.extensions,
+            respect_gitignore=request.respect_gitignore,
+        )
+        file_snapshot = metadata.get("files", [])
+        chunk_entries = metadata.get("chunks", [])
+        stale = bool(file_snapshot) and not is_cache_current(
+            request.directory,
+            request.include_hidden,
+            request.respect_gitignore,
+            file_snapshot,
+            recursive=request.recursive,
+            extensions=request.extensions,
+        )
+
     if not len(paths):
         return SearchResponse(
             base_path=request.directory,
@@ -71,6 +148,8 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             index_empty=True,
         )
 
+    from sklearn.metrics.pairwise import cosine_similarity  # local import
+    from ..search import SearchResult, VexorSearcher  # local import
     searcher = VexorSearcher(
         model_name=request.model_name,
         batch_size=request.batch_size,

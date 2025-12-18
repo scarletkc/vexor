@@ -18,6 +18,7 @@ def test_load_config_defaults(tmp_path, monkeypatch):
 
     assert cfg.provider == config_module.DEFAULT_PROVIDER
     assert cfg.base_url is None
+    assert cfg.auto_index is True
 
 
 def test_set_provider_and_base_url(tmp_path, monkeypatch):
@@ -29,10 +30,19 @@ def test_set_provider_and_base_url(tmp_path, monkeypatch):
     stored = json.loads(config_file.read_text())
     assert stored["provider"] == "gemini"
     assert stored["base_url"] == "https://proxy.example.com"
+    assert stored["auto_index"] is True
 
     config_module.set_base_url(None)
     cfg = config_module.load_config()
     assert cfg.base_url is None
+
+
+def test_save_and_load_auto_index(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+
+    config_module.save_config(config_module.Config(auto_index=False))
+    cfg = config_module.load_config()
+    assert cfg.auto_index is False
 
 
 def test_resolve_api_key_prefers_config(monkeypatch):

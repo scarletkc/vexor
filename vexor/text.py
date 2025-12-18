@@ -48,6 +48,7 @@ class Messages:
     HELP_SET_PROVIDER = "Set the default embedding provider (e.g., gemini or openai)."
     HELP_SET_BASE_URL = "Override the provider's base URL (leave unset for official endpoints)."
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
+    HELP_SET_AUTO_INDEX = "Enable/disable automatic indexing before search (default: enabled)."
     HELP_SHOW_CONFIG = "Show current configuration."
     HELP_SHOW_INDEX_ALL = "Show metadata for every cached index regardless of path."
     HELP_CLEAR_INDEX_ALL = "Delete all cached indexes stored under ~/.vexor."
@@ -71,6 +72,7 @@ class Messages:
     ERROR_PROVIDER_INVALID = "Unsupported provider '{value}'. Allowed values: {allowed}."
     ERROR_BASE_URL_CONFLICT = "Cannot set and clear the base URL in the same command."
     ERROR_EXTENSIONS_EMPTY = "Provide at least one valid file extension when using --ext."
+    ERROR_BOOLEAN_INVALID = "Unsupported boolean value '{value}'. Use true/false, yes/no, 1/0, on/off."
 
     INFO_NO_FILES = "No files found in the selected directory."
     INFO_NO_RESULTS = "No matching files found."
@@ -109,6 +111,7 @@ class Messages:
     INFO_PROVIDER_SET = "Default provider set to {value}."
     INFO_BASE_URL_SET = "Base URL override set to {value}."
     INFO_BASE_URL_CLEARED = "Base URL override cleared."
+    INFO_AUTO_INDEX_SET = "Auto index {value}."
     INFO_CONFIG_EDITING = "Opening config file in editor ({editor}): {path}"
     ERROR_CONFIG_EDITOR_NOT_FOUND = "Unable to determine a text editor. Set $VISUAL or $EDITOR, or install nano/vi."
     ERROR_CONFIG_EDITOR_FAILED = "Editor exited with status {code}."
@@ -118,6 +121,7 @@ class Messages:
         "Default provider: {provider}\n"
         "Default model: {model}\n"
         "Default batch size: {batch}\n"
+        "Auto index: {auto_index}\n"
         "Custom base URL: {base_url}"
     )
     INFO_SEARCH_RUNNING = "Searching cached index under {path}..."

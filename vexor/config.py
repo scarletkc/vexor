@@ -26,6 +26,7 @@ class Config:
     batch_size: int = DEFAULT_BATCH_SIZE
     provider: str = DEFAULT_PROVIDER
     base_url: str | None = None
+    auto_index: bool = True
 
 
 def load_config() -> Config:
@@ -38,6 +39,7 @@ def load_config() -> Config:
         batch_size=int(raw.get("batch_size", DEFAULT_BATCH_SIZE)),
         provider=raw.get("provider") or DEFAULT_PROVIDER,
         base_url=raw.get("base_url") or None,
+        auto_index=bool(raw.get("auto_index", True)),
     )
 
 
@@ -53,6 +55,7 @@ def save_config(config: Config) -> None:
         data["provider"] = config.provider
     if config.base_url:
         data["base_url"] = config.base_url
+    data["auto_index"] = bool(config.auto_index)
     CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -83,6 +86,12 @@ def set_provider(value: str) -> None:
 def set_base_url(value: str | None) -> None:
     config = load_config()
     config.base_url = value
+    save_config(config)
+
+
+def set_auto_index(value: bool) -> None:
+    config = load_config()
+    config.auto_index = bool(value)
     save_config(config)
 
 
