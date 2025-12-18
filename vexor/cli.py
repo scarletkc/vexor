@@ -127,9 +127,9 @@ def search(
         "-i",
         help=Messages.HELP_INCLUDE_HIDDEN,
     ),
-    respect_gitignore: bool = typer.Option(
-        True,
-        "--respect-gitignore/--no-respect-gitignore",
+    no_respect_gitignore: bool = typer.Option(
+        False,
+        "--no-respect-gitignore",
         help=Messages.HELP_RESPECT_GITIGNORE,
     ),
     mode: str = typer.Option(
@@ -156,7 +156,7 @@ def search(
         help=Messages.HELP_SEARCH_FORMAT,
     ),
 ) -> None:
-    """Run the semantic search using a cached index."""
+    """Run the semantic search."""
     config = load_config()
     model_name = config.model or DEFAULT_MODEL
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
@@ -164,6 +164,7 @@ def search(
     base_url = config.base_url
     api_key = config.api_key
     auto_index = bool(config.auto_index)
+    respect_gitignore = not no_respect_gitignore
 
     clean_query = query.strip()
     if not clean_query:
@@ -286,9 +287,9 @@ def index(
         "-i",
         help=Messages.HELP_INDEX_INCLUDE,
     ),
-    respect_gitignore: bool = typer.Option(
-        True,
-        "--respect-gitignore/--no-respect-gitignore",
+    no_respect_gitignore: bool = typer.Option(
+        False,
+        "--no-respect-gitignore",
         help=Messages.HELP_RESPECT_GITIGNORE,
     ),
     mode: str = typer.Option(
@@ -331,6 +332,7 @@ def index(
     directory = resolve_directory(path)
     mode_value = _validate_mode(mode)
     recursive = not no_recursive
+    respect_gitignore = not no_respect_gitignore
     normalized_exts = normalize_extensions(extensions)
     if extensions and not normalized_exts:
         raise typer.BadParameter(Messages.ERROR_EXTENSIONS_EMPTY, param_name="ext")

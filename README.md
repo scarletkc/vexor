@@ -45,17 +45,16 @@ vexor config --set-api-key "YOUR_KEY"
 ```
 Optional defaults:
 ```bash
-vexor config --set-model gemini-embedding-001
+vexor config --set-model text-embedding-3-small
 vexor config --set-batch-size 0   # 0 = single request
-vexor config --set-provider gemini
+vexor config --set-provider openai
 vexor config --set-base-url https://proxy.example.com  # optional proxy support for local LM Studio and similar tools; use --clear-base-url to reset
 vexor config --set-auto-index true  # default true; set false to require manual `vexor index`
 ```
-Provider defaults to `gemini`, so you only need to override it when switching to other backends (e.g., `openai`). Base URLs are optional and let you route requests through a custom proxy; run `vexor config --clear-base-url` to return to the official endpoint.
+Provider defaults to `openai`, so you only need to override it when switching to other backends (e.g., `gemini`). Base URLs are optional and let you route requests through a custom proxy; run `vexor config --clear-base-url` to return to the official endpoint.
 
-Environment/API keys can be supplied via `vexor config --set-api-key`, `VEXOR_API_KEY`, or provider-specific variables (`GOOGLE_GENAI_API_KEY`, `OPENAI_API_KEY`). Example OpenAI setup:
+Environment/API keys can be supplied via `vexor config --set-api-key`, `VEXOR_API_KEY`, or provider-specific variables (`GOOGLE_GENAI_API_KEY`, `OPENAI_API_KEY`). Example OpenAI setup (default provider):
 ```bash
-vexor config --set-provider openai
 vexor config --set-model text-embedding-3-small
 export OPENAI_API_KEY="sk-..."   # or use vexor config --set-api-key
 ```

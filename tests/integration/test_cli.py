@@ -80,6 +80,41 @@ def test_search_outputs_table(tmp_path, monkeypatch):
     assert captured["mode"] == "auto"
 
 
+def test_search_no_respect_gitignore_flag_sets_false(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.txt"
+    sample_file.write_text("data")
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["respect_gitignore"] = request.respect_gitignore
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[SearchResult(path=sample_file, score=0.99)],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "alpha",
+            "--path",
+            str(tmp_path),
+            "--no-respect-gitignore",
+            "--format",
+            "porcelain",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["respect_gitignore"] is False
+
+
 def test_search_prints_index_message_when_auto_index_missing(tmp_path, monkeypatch):
     runner = CliRunner()
     sample_file = tmp_path / "alpha.txt"
@@ -995,6 +1030,32 @@ def test_head_mode_end_to_end(tmp_path, monkeypatch):
     assert search_result.exit_code == 0
     assert "Preview" in search_result.stdout
     assert "Intro line" in search_result.stdout
+
+
+def test_index_no_respect_gitignore_flag_sets_false(tmp_path, monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    def fake_build_index(directory, **kwargs):
+        captured["respect_gitignore"] = kwargs.get("respect_gitignore")
+        return IndexResult(status=IndexStatus.UP_TO_DATE, files_indexed=0)
+
+    monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
+
+    result = runner.invoke(
+        app,
+        [
+            "index",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+            "--no-respect-gitignore",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["respect_gitignore"] is False
 
 
 def test_full_mode_chunked_previews(tmp_path, monkeypatch):

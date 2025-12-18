@@ -81,3 +81,21 @@ def test_search_rejects_empty_query(tmp_path):
         ],
     )
     assert result.exit_code == 1
+
+
+def test_search_rejects_respect_gitignore_flag(tmp_path):
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "hello",
+            "--path",
+            str(tmp_path),
+            "--respect-gitignore",
+            "--format",
+            "porcelain",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "no such option" in result.output.lower()

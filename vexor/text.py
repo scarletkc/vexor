@@ -14,7 +14,7 @@ class Styles:
 class Messages:
     APP_HELP = "Vexor – A vector-powered CLI for semantic search over filenames."
     HELP_QUERY = "Text used to semantically match file names."
-    HELP_SEARCH_PATH = "Root directory whose cached index will be used."
+    HELP_SEARCH_PATH = "Root directory whose search will be performed."
     HELP_SEARCH_TOP = "Number of results to display."
     HELP_SEARCH_FORMAT = (
         "Output format (rich=table, porcelain=tab-separated for scripts, porcelain-z=NUL-delimited)."

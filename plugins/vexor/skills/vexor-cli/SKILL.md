@@ -39,7 +39,7 @@ Vexor caches indexes by a key derived from these flags. Keep them consistent to 
 
 - `--path`, `--mode` (defaults to `auto` when omitted)
 - `--include-hidden`, `--no-recursive`
-- `--respect-gitignore/--no-respect-gitignore` (default: respect, including nested `.gitignore`)
+- `--no-respect-gitignore` (omit to respect `.gitignore`, including nested `.gitignore`)
 - `--ext` (repeatable; each value may be a comma/space-separated list like `--ext .py,.md` or `--ext '.py .md'`)
 
 ## Mode guidance (pick the least expensive that works)
