@@ -222,11 +222,43 @@ jobs:
       actions: read
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           path: release
           merge-multiple: true
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ needs.prepare_release.outputs.version }}"
+          CURRENT_TAG="v${VERSION}"
+
+          PREV_TAG="$(git tag --list 'v*' --sort=-version:refname | grep -Fvx "${CURRENT_TAG}" | head -n1 || true)"
+
+          {
+            echo "Automated release for Vexor ${CURRENT_TAG}."
+            echo
+            echo "## Changelog"
+            echo
+            if [ -n "${PREV_TAG}" ]; then
+              echo "Changes since ${PREV_TAG}:"
+              echo
+              git log "${PREV_TAG}..HEAD" --pretty=format:'- %s (%h)' --reverse
+              echo
+              echo
+              echo "[Full diff](https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${CURRENT_TAG})"
+            else
+              git log HEAD --pretty=format:'- %s (%h)' --reverse
+            fi
+          } > release_notes.md
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v1
@@ -236,8 +268,7 @@ jobs:
           draft: false
           prerelease: ${{ contains(needs.prepare_release.outputs.version, 'a') || contains(needs.prepare_release.outputs.version, 'b') || contains(needs.prepare_release.outputs.version, 'rc') }}
           files: release/*
-          body: |
-            Automated release for Vexor v${{ needs.prepare_release.outputs.version }}.
+          body_path: release_notes.md
 
   publish_pypi:
     name: Publish to PyPI

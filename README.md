@@ -14,116 +14,136 @@
 
 ---
 
-Vexor is a vector-powered CLI for semantic file search. It supports configurable remote embedding models and ranks results by cosine similarity.
+**Vexor** is a vector-powered CLI for semantic file search. It uses configurable embedding models and ranks results by cosine similarity.
 
-## Usage
-Vexor is designed to work seamlessly with both humans and AI coding assistants through the terminal, enabling semantic file search in autonomous agent workflows.
+## Why Vexor?
 
-When you remember what a file does but forget its name or location, Vexor's semantic search finds it instantly—no grep patterns or directory traversal needed.
+When you remember what a file *does* but forget its name or location, Vexor finds it instantly—no grep patterns or directory traversal needed.
 
-## Skill
-This repo includes a skill that guides an AI agent to use Vexor effectively:
-[`plugins/vexor/skills/vexor-cli`](https://github.com/scarletkc/vexor/raw/refs/heads/main/plugins/vexor/skills/vexor-cli/SKILL.md).
-
-Install it into Claude Code / Codex skill folders:
-```bash
-vexor install --skills claude
-vexor install --skills codex
-```
+Designed for both humans and AI coding assistants, enabling semantic file discovery in autonomous agent workflows.
 
 ## Install
-Download from [releases](https://github.com/scarletkc/vexor/releases) without python, or with:
-```bash
-pip install vexor # or use pipx, uv
-```
-The CLI entry point is `vexor`.
 
-## Configure
-Set the API key once and reuse it everywhere:
+Download standalone binary from [releases](https://github.com/scarletkc/vexor/releases) (no Python required), or:
+```bash
+pip install vexor  # also works with pipx, uv
+```
+
+## Quick Start
+
+### 1. Configure API Key
 ```bash
 vexor config --set-api-key "YOUR_KEY"
 ```
-Optional defaults:
+Or via environment: `VEXOR_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENAI_API_KEY`.
+
+### 2. Search
 ```bash
+vexor search "api client config" --path ~/projects/demo --top 5
+```
+
+Vexor auto-indexes on first search. Example output:
+```
+Vexor semantic file search results
+──────────────────────────────────
+#   Similarity   File path                       Lines   Preview
+1   0.923        ./src/config_loader.py          -       config loader entrypoint
+2   0.871        ./src/utils/config_parse.py     -       parse config helpers
+3   0.809        ./tests/test_config_loader.py   -       tests for config loader
+```
+
+### 3. Explicit Index (Optional)
+```bash
+vexor index --path ~/projects/demo --mode code
+```
+Useful for CI warmup or when `auto_index` is disabled.
+
+## Configuration
+
+```bash
+vexor config --set-provider openai          # default; also supports gemini
 vexor config --set-model text-embedding-3-small
-vexor config --set-batch-size 0   # 0 = single request
-vexor config --set-provider openai
-vexor config --set-base-url https://proxy.example.com  # optional proxy support for local LM Studio and similar tools; use --clear-base-url to reset
-vexor config --set-auto-index true  # default true; set false to require manual `vexor index`
+vexor config --set-batch-size 0             # 0 = single request
+vexor config --set-auto-index true          # auto-index before search (default)
+vexor config --set-base-url https://proxy.example.com  # optional proxy
+vexor config --clear-base-url               # reset to official endpoint
+vexor config --show                         # view current settings
 ```
-Provider defaults to `openai`, so you only need to override it when switching to other backends (e.g., `gemini`). Base URLs are optional and let you route requests through a custom proxy; run `vexor config --clear-base-url` to return to the official endpoint.
 
-Environment/API keys can be supplied via `vexor config --set-api-key`, `VEXOR_API_KEY`, or provider-specific variables (`GOOGLE_GENAI_API_KEY`, `OPENAI_API_KEY`). Example OpenAI setup (default provider):
+Config stored in `~/.vexor/config.json`.
+
+## Index Modes
+
+Control embedding granularity with `--mode`:
+
+| Mode | Description |
+|------|-------------|
+| `auto` | **Default.** Smart routing: Python → `code`, Markdown → `outline`, small files → `full`, large files → `head` |
+| `name` | Embed filename only (fastest, zero content reads) |
+| `head` | Extract first snippet for lightweight semantic context |
+| `brief` | Extract high-frequency keywords from PRDs/requirements docs |
+| `full` | Chunk entire content; long documents searchable end-to-end |
+| `code` | AST-aware chunking by Python module/class/function boundaries; non-`.py` falls back to `full` |
+| `outline` | Chunk Markdown by heading hierarchy with breadcrumbs; non-`.md` falls back to `full` |
+
+## Cache Behavior
+
+Index cache keys derive from: `--path`, `--mode`, `--include-hidden`, `--no-recursive`, `--no-respect-gitignore`, `--ext`.
+
+Keep flags consistent to reuse cache; changing flags creates a separate index.
+
 ```bash
-vexor config --set-model text-embedding-3-small
-export OPENAI_API_KEY="sk-..."   # or use vexor config --set-api-key
-```
-Configuration is stored in `~/.vexor/config.json`.
-
-Inspect or reset every cached index:
-```bash
-vexor config --show-index-all
-vexor config --clear-index-all
+vexor config --show-index-all    # list all cached indexes
+vexor config --clear-index-all   # clear all cached indexes
+vexor index --path . --clear     # clear index for specific path
 ```
 
-## Workflow
-1. **Search** from anywhere, pointing to a project root:
-   ```bash
-   vexor search "api client config" --path ~/projects/demo --mode name --top 5
-   ```
-   If the index is missing or stale, Vexor auto-builds/refreshes it before searching (default behavior).
+Re-running `vexor index` only re-embeds changed files; >50% changes trigger full rebuild.
 
-2. **(Optional) Index** explicitly (useful for warmup/CI, or when `auto_index` is disabled):
-   ```bash
-   vexor index --path ~/projects/demo --mode name --include-hidden
-   ```
-   For script/agent-friendly output, add `--format porcelain` (TSV) or `--format porcelain-z` (NUL-delimited), default format `rich` (table).
-   Porcelain formats emit: `rank`, `similarity`, `path`, `chunk_index`, `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
-   Output example:
-   ```
-   Vexor semantic file search results
-   ──────────────────────────────────
-   #   Similarity   File path                      Lines   Preview
-   1   0.923        ./src/config_loader.py        -       config loader entrypoint
-   2   0.871        ./src/utils/config_parse.py   -       parse config helpers
-   3   0.809        ./tests/test_config_loader.py -       tests for config loader
-   ```
+## Command Reference
 
-**Tips:**
-- Cache keys are derived from `--path`, `--mode`, recursion, hidden, gitignore, and `--ext`. Keep flags consistent to reuse the same cached index (otherwise Vexor will build a separate one).
-- Toggle `--no-recursive` (or `-n`) when you only care about the current directory; recursive and non-recursive caches are stored separately.
-- Hidden files are included only when using `--include-hidden` (or `-i`) for that cache key.
-- By default, Vexor respects `.gitignore` (including nested `.gitignore` files and `.git/info/exclude`) while scanning. Use `--no-respect-gitignore` to include ignored files.
-- Use `--ext`/`-e` to limit indexing/searching to specific extensions. It is repeatable, and each value can also be a comma/space-separated list (e.g. `--ext .py,.md` or `--ext '.py .md'`).
-- Re-running `vexor index` only re-embeds files whose names/contents changed (or were added/removed); if more than half the files differ, it automatically falls back to a full rebuild for consistency.
-- Specify the indexing mode with `--mode`:
-  - `auto`: smart default routing (Python → `code`, Markdown → `outline`, small files → `full`, large files → `head`/`name`).
-  - `name`: embed only the file name (fastest, zero content reads).
-  - `head`: grab the first snippet of supported text/code/PDF/DOCX/PPTX files for lightweight semantic context.
-  - `brief`: summarize PRDs/high-frequency keywords (English/Chinese) in requirements documents enable quick location of key requirements.
-  - `full`: chunk the entire contents of supported text/code/PDF/DOCX/PPTX files into windows so long documents stay searchable end-to-end.
-  - `code`: chunk Python `.py` files by module globals + class/function/method boundaries (AST-aware); other files fall back to `full`.
-  - `outline`: chunk Markdown files by heading outline and embed heading breadcrumbs + a snippet from each section; other files fall back to `full`.
-- Switch embedding providers (Gemini by default, OpenAI format supported) via `vexor config --set-provider PROVIDER` and pick a matching embedding model.
-
-## Commands
 | Command | Description |
-| ------- | ----------- |
-| `vexor index --path PATH [--mode MODE] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--clear/--show]` | Scans `PATH` (recursively by default), respects `.gitignore` by default, embeds content according to `MODE` (defaults to `auto`), and writes a cache under `~/.vexor`. |
-| `vexor search QUERY --path PATH [--mode MODE] [--top K] [--include-hidden] [--no-recursive] [--no-respect-gitignore] [--ext EXT ...] [--format rich/porcelain/porcelain-z]` | Loads the cached embeddings for `PATH` (matching the chosen mode/recursion/hidden/gitignore/ext settings) and shows matches for `QUERY`. If `auto_index` is enabled and the index is missing/stale, it will refresh before searching. |
-| `vexor doctor` | Checks whether the `vexor` command is available on the current `PATH`. |
-| `vexor update` | Fetches the latest release version and shows links to update via GitHub or PyPI. |
-| `vexor config --set-api-key/--clear-api-key` | Manage the stored API key (Gemini by default). |
-| `vexor config --set-model/--set-batch-size/--set-auto-index/--show` | Manage default model, batch size, auto-index behavior, and inspect current settings. |
-| `vexor config --set-provider/--set-base-url/--clear-base-url` | Switch embedding providers and optionally override the remote base URL. |
-| `vexor config --show-index-all/--clear-index-all` | Inspect or delete every cached index regardless of path/mode. |
+|---------|-------------|
+| `vexor search QUERY --path PATH` | Semantic search (auto-indexes if needed) |
+| `vexor index --path PATH` | Build/refresh index manually |
+| `vexor config --show` | Display current configuration |
+| `vexor install --skills claude` | Install Agent Skill for Claude Code |
+| `vexor install --skills codex` | Install Agent Skill for Codex |
+| `vexor doctor` | Check if vexor is on PATH |
+| `vexor update` | Check for new version |
+
+### Common Flags
+
+| Flag | Description |
+|------|-------------|
+| `--mode MODE` | Index mode (`auto`/`name`/`head`/`brief`/`full`/`code`/`outline`) |
+| `--top K` / `-k` | Number of results (default: 5) |
+| `--ext .py,.md` / `-e` | Filter by extension (repeatable) |
+| `--include-hidden` / `-i` | Include hidden files |
+| `--no-recursive` / `-n` | Don't recurse into subdirectories |
+| `--no-respect-gitignore` | Include gitignored files |
+| `--format porcelain` | Script-friendly TSV output |
+| `--format porcelain-z` | NUL-delimited output |
+
+Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`, `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
+
+## AI Agent Skill
+
+This repo includes a skill for AI agents to use Vexor effectively:
+
+```bash
+vexor install --skills claude  # Claude Code
+vexor install --skills codex   # Codex
+```
+
+Skill source: [`plugins/vexor/skills/vexor-cli`](https://github.com/scarletkc/vexor/raw/refs/heads/main/plugins/vexor/skills/vexor-cli/SKILL.md)
 
 ## Documentation
-See the [docs](https://github.com/scarletkc/vexor/tree/main/docs) for more details.
 
-Contributions, issues, and PRs are all welcome!
+See [docs](https://github.com/scarletkc/vexor/tree/main/docs) for more details.
 
-Star this repo if you find it helpful!
+Contributions, issues, and PRs welcome! Star ⭐ if you find it helpful.
 
 ## License
-This project is licensed under the [MIT](http://github.com/scarletkc/vexor/blob/main/LICENSE) License.
+
+[MIT](http://github.com/scarletkc/vexor/blob/main/LICENSE)

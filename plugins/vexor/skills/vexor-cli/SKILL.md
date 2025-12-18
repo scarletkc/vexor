@@ -4,62 +4,102 @@ description: Semantic file discovery via `vexor` (use when you need intent-based
 license: MIT
 ---
 
-# Vexor CLI
+# Vexor CLI Skill
 
-## Purpose (for the agent)
+## Purpose
 
-Use Vexor as a fast "semantic grep": build (or refresh) an index for a directory, then query it to find the
-most relevant files/sections for the current task.
+Vexor is a **semantic grep** for codebases. Use it to find files by *what they do*, not by exact string matches.
 
-## When to use
+## When to Use
 
-Use this skill when you need intent-based file discovery (not exact string match), e.g.:
+Invoke Vexor when you need **intent-based file discovery**:
 
-- "Where is config loaded / validated?"
+- "Where is config loaded/validated?"
 - "Which file defines the provider backends?"
 - "Find the CLI command that prints this output"
-- "Locate the code that chunks/embeds Python by function"
+- "Locate the code that handles user authentication"
 
-## Checklist (do this in order)
+**Do NOT use** for exact string matching—use `grep`/`ripgrep` instead.
 
-1. Ensure the CLI exists:
-   - Prefer `vexor --help`.
-   - If `vexor` is missing: `pip install --user vexor`.
-2. Search the target root (auto-indexes when needed by default):
-   - `vexor search "<QUERY>" --path <ROOT> [--mode <MODE>] [--ext .py,.md] [--top 10]`
-3. Optional: pre-index (warm cache / CI) or refresh explicitly:
-   - `vexor index --path <ROOT> [--mode <MODE>] [--ext .py,.md] [--include-hidden] [--no-recursive]`
-   - Disable auto-index if you want the "search requires index" behavior:
-     - `vexor config --set-auto-index false`
+## Quick Reference
 
-## Cache key (reuse the same cached index)
+```bash
+# Search (auto-indexes if needed)
+vexor search "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--top 10]
 
-Vexor caches indexes by a key derived from these flags. Keep them consistent to reuse the same cache
-(otherwise Vexor will build a separate index for the new flag combination):
+# Pre-index (optional, for warmup/CI)
+vexor index --path <ROOT> [--mode <MODE>] [--ext .py,.md]
 
-- `--path`, `--mode` (defaults to `auto` when omitted)
-- `--include-hidden`, `--no-recursive`
-- `--no-respect-gitignore` (omit to respect `.gitignore`, including nested `.gitignore`)
-- `--ext` (repeatable; each value may be a comma/space-separated list like `--ext .py,.md` or `--ext '.py .md'`)
+# Check installation
+vexor --help
+```
 
-## Mode guidance (pick the least expensive that works)
+If `vexor` is missing: `pip install --user vexor`
 
-- Default: `auto` (Python → `code`, Markdown → `outline`, small → `full`, large → `head`)
-- If you only need filenames: `name`
-- If you need a quick content hint: `head`
-- If you need structure in Markdown docs: `outline`
-- If you need Python symbols (functions/classes/methods): `code`
-- If recall is still low: `full` (more expensive; many chunks per file)
+## Mode Selection Guide
 
-## Output parsing
+Choose the **least expensive mode** that works:
 
-- Default output is a rich table. It includes a `Lines` column when available.
-- `--format porcelain` / `porcelain-z` emits:
-  `rank similarity path chunk_index start_line end_line preview`
-  (line fields may be `-` if unavailable).
+| Mode | Use When | Cost |
+|------|----------|------|
+| `auto` | Default choice (smart routing) | varies |
+| `name` | Only need filename matches | lowest |
+| `head` | Need quick content hint | low |
+| `code` | Need Python symbols (functions/classes) | medium |
+| `outline` | Need Markdown structure | medium |
+| `brief` | Need PRD/requirements keywords | medium |
+| `full` | Need deep content search | highest |
+
+**Auto mode routing:** Python → `code`, Markdown → `outline`, small files → `full`, large files → `head`
+
+## Cache Key Rules
+
+The same flags produce the same cached index. Different flags = different cache.
+
+**Cache key components:**
+- `--path` (required)
+- `--mode` (default: `auto`)
+- `--include-hidden` / `-i` (default: off)
+- `--no-recursive` / `-n` (default: recursive)
+- `--no-respect-gitignore` (default: respects gitignore)
+- `--ext` (default: all extensions)
+
+**Tip:** Keep flags consistent between `index` and `search` to reuse cache.
+
+## Output Formats
+
+| Format | Use Case |
+|--------|----------|
+| `--format rich` | Default table (human-readable) |
+| `--format porcelain` | Tab-separated (scriptable) |
+| `--format porcelain-z` | NUL-delimited (safe for filenames with spaces) |
+
+Porcelain fields: `rank`, `similarity`, `path`, `chunk_index`, `start_line`, `end_line`, `preview`
+
+Line fields are `-` when unavailable.
 
 ## Troubleshooting
 
-- If results look stale: rerun `vexor index` for the same cache key (or leave auto-index enabled).
-- If you need ignored files: add `--no-respect-gitignore` to both commands.
-- If API/config issues: `vexor config --show` and let the user fix them.
+| Issue | Solution |
+|-------|----------|
+| Stale results | Re-run `vexor index` with same flags |
+| Need ignored files | Add `--no-respect-gitignore` |
+| Low recall | Try `--mode full` (more expensive) |
+| API errors | Run `vexor config --show` to check settings and let the user configure |
+| Missing command | `pip install --user vexor` |
+
+## Examples
+
+```bash
+# Find config-related files in Python project
+vexor search "config loader" --path . --mode code --ext .py
+
+# Search documentation
+vexor search "API authentication" --path ./docs --mode outline --ext .md
+
+# Fast filename-only search
+vexor search "test utils" --path . --mode name --top 10
+
+# Include hidden and ignored files
+vexor search "env secrets" --path . --include-hidden --no-respect-gitignore
+```
