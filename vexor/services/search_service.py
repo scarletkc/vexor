@@ -39,7 +39,12 @@ class SearchResponse:
 def perform_search(request: SearchRequest) -> SearchResponse:
     """Execute the semantic search flow and return ranked results."""
 
-    from ..cache import load_index_vectors  # local import
+    from ..cache import (  # local import
+        load_index_vectors,
+        load_query_vector,
+        query_cache_key,
+        store_query_vector,
+    )
     from .index_service import IndexStatus, build_index  # local import
 
     try:
@@ -157,7 +162,26 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         base_url=request.base_url,
         api_key=request.api_key,
     )
-    query_vector = searcher.embed_texts([request.query])[0]
+    query_vector = None
+    query_hash = None
+    index_id = metadata.get("index_id")
+    if index_id is not None:
+        query_hash = query_cache_key(request.query, request.model_name)
+        try:
+            query_vector = load_query_vector(int(index_id), query_hash)
+        except Exception:  # pragma: no cover - best-effort cache lookup
+            query_vector = None
+
+        if query_vector is not None and query_vector.size != file_vectors.shape[1]:
+            query_vector = None
+
+    if query_vector is None:
+        query_vector = searcher.embed_texts([request.query])[0]
+        if index_id is not None and query_hash is not None:
+            try:
+                store_query_vector(int(index_id), query_hash, request.query, query_vector)
+            except Exception:  # pragma: no cover - best-effort cache storage
+                pass
     similarities = cosine_similarity(
         query_vector.reshape(1, -1),
         file_vectors,

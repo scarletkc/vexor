@@ -51,6 +51,24 @@ def _cache_key(
     return digest
 
 
+def _normalize_model_for_query_cache(model: str) -> str:
+    normalized = (model or "").strip()
+    lowered = normalized.lower()
+    for prefix in ("openai/", "gemini/"):
+        if lowered.startswith(prefix):
+            return normalized.split("/", 1)[1]
+    return normalized
+
+
+def query_cache_key(query: str, model: str) -> str:
+    """Return the stable cache hash for a semantic query embedding."""
+
+    clean_query = (query or "").strip()
+    clean_model = _normalize_model_for_query_cache(model)
+    base = f"{clean_query}|model={clean_model}"
+    return hashlib.sha1(base.encode("utf-8")).hexdigest()
+
+
 def _serialize_extensions(extensions: Sequence[str] | None) -> str:
     if not extensions:
         return ""
@@ -127,8 +145,21 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             vector_blob BLOB NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS query_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            index_id INTEGER NOT NULL REFERENCES index_metadata(id) ON DELETE CASCADE,
+            query_hash TEXT NOT NULL,
+            query_text TEXT NOT NULL,
+            query_vector BLOB NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(index_id, query_hash)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_indexed_file_order
             ON indexed_file(index_id, position);
+
+        CREATE INDEX IF NOT EXISTS idx_query_cache_lookup
+            ON query_cache(index_id, query_hash);
         """
     )
     try:
@@ -710,6 +741,7 @@ def load_index_vectors(
         if chunk_total == 0 or dimension == 0:
             empty = np.empty((0, dimension), dtype=np.float32)
             metadata = {
+                "index_id": int(index_id),
                 "version": meta["version"],
                 "generated_at": meta["generated_at"],
                 "root": meta["root_path"],
@@ -772,6 +804,7 @@ def load_index_vectors(
                 }
 
         metadata = {
+            "index_id": int(index_id),
             "version": meta["version"],
             "generated_at": meta["generated_at"],
             "root": meta["root_path"],
@@ -788,6 +821,74 @@ def load_index_vectors(
         return paths, embeddings, metadata
     finally:
         conn.close()
+
+
+def load_query_vector(
+    index_id: int,
+    query_hash: str,
+    conn: sqlite3.Connection | None = None,
+) -> np.ndarray | None:
+    """Load a cached query embedding vector for *index_id*."""
+
+    db_path = cache_db_path()
+    owns_connection = conn is None
+    connection = conn or _connect(db_path)
+    try:
+        _ensure_schema(connection)
+        row = connection.execute(
+            """
+            SELECT query_vector
+            FROM query_cache
+            WHERE index_id = ? AND query_hash = ?
+            """,
+            (int(index_id), query_hash),
+        ).fetchone()
+        if row is None:
+            return None
+        blob = row["query_vector"]
+        if not blob:
+            return None
+        vector = np.frombuffer(blob, dtype=np.float32)
+        if vector.size == 0:
+            return None
+        return vector
+    finally:
+        if owns_connection:
+            connection.close()
+
+
+def store_query_vector(
+    index_id: int,
+    query_hash: str,
+    query_text: str,
+    query_vector: np.ndarray,
+    conn: sqlite3.Connection | None = None,
+) -> None:
+    """Store *query_vector* for *query_text* under *index_id*."""
+
+    db_path = cache_db_path()
+    owns_connection = conn is None
+    connection = conn or _connect(db_path)
+    try:
+        _ensure_schema(connection)
+        created_at = datetime.now(timezone.utc).isoformat()
+        vector_blob = np.asarray(query_vector, dtype=np.float32).tobytes()
+        with connection:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO query_cache (
+                    index_id,
+                    query_hash,
+                    query_text,
+                    query_vector,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (int(index_id), query_hash, query_text, vector_blob, created_at),
+            )
+    finally:
+        if owns_connection:
+            connection.close()
 
 
 def clear_index(

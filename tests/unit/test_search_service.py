@@ -159,3 +159,76 @@ def test_perform_search_auto_indexes_when_stale(monkeypatch, tmp_path: Path) -> 
     assert calls["load"] == 2
     assert response.results[0].path.name == "b.txt"
 
+
+def test_perform_search_uses_cached_query_vector(monkeypatch, tmp_path: Path) -> None:
+    import vexor.cache as cache
+
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "a.txt").write_text("data")
+    (root / "b.txt").write_text("data")
+
+    entries = [
+        cache.IndexedChunk(
+            path=root / "a.txt",
+            rel_path="a.txt",
+            chunk_index=0,
+            preview="a",
+            embedding=[1.0, 0.0],
+        ),
+        cache.IndexedChunk(
+            path=root / "b.txt",
+            rel_path="b.txt",
+            chunk_index=0,
+            preview="b",
+            embedding=[0.0, 1.0],
+        ),
+    ]
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        entries=entries,
+    )
+
+    calls = {"embeds": 0}
+
+    class CountingSearcher:
+        device = "dummy-backend"
+
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def embed_texts(self, texts):
+            calls["embeds"] += 1
+            return np.array([[1.0, 0.0]], dtype=np.float32)
+
+    monkeypatch.setattr("vexor.search.VexorSearcher", CountingSearcher)
+    monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
+
+    request = SearchRequest(
+        query="alpha",
+        directory=root,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=True,
+        top_k=2,
+        model_name="model",
+        batch_size=0,
+        provider="openai",
+        base_url=None,
+        api_key="k",
+        extensions=(),
+        auto_index=False,
+    )
+
+    response1 = perform_search(request)
+    response2 = perform_search(request)
+
+    assert response1.index_empty is False
+    assert response2.index_empty is False
+    assert calls["embeds"] == 1
