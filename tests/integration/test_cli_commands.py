@@ -118,7 +118,6 @@ def test_search_rejects_respect_gitignore_flag(tmp_path):
     )
     assert result.exit_code == 2
     assert "no such option" in result.output.lower()
-
 def test_star_uses_gh_cli_when_available(monkeypatch):
     runner = CliRunner()
 
