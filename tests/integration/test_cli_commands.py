@@ -125,8 +125,6 @@ def test_star_uses_gh_cli_when_available(monkeypatch):
     monkeypatch.setattr("vexor.cli.find_command_on_path", lambda cmd: "/usr/bin/gh" if cmd == "gh" else None)
 
     # Mock successful subprocess run for gh CLI
-    import subprocess
-
     class MockCompletedProcess:
         returncode = 0
         stdout = ""

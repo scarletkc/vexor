@@ -804,8 +804,9 @@ def star() -> None:
                 console.print(_styled(Messages.INFO_STAR_SUCCESS, Styles.SUCCESS))
                 return
             # gh CLI failed, fall back to browser
-        except OSError:
-            pass  # Fall back to browser
+        except FileNotFoundError:
+            # gh binary was found but cannot be executed (e.g., removed between check and run)
+            pass
 
     # Fall back to opening the browser
     console.print(_styled(Messages.INFO_STAR_BROWSER.format(url=PROJECT_URL), Styles.INFO))
