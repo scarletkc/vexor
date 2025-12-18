@@ -10,7 +10,7 @@ from typing import Any, Dict
 
 CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-DEFAULT_MODEL = "gemini-embedding-001"
+DEFAULT_MODEL = "text-embedding-3-small"
 DEFAULT_BATCH_SIZE = 0
 DEFAULT_PROVIDER = "openai"
 SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER, "gemini")

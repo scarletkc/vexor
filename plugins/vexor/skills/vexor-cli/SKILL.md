@@ -57,7 +57,7 @@ Choose the **least expensive mode** that works:
 The same flags produce the same cached index. Different flags = different cache.
 
 **Cache key components:**
-- `--path` (required)
+- `--path` (required, default: current directory)
 - `--mode` (default: `auto`)
 - `--include-hidden` / `-i` (default: off)
 - `--no-recursive` / `-n` (default: recursive)

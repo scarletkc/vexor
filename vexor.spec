@@ -114,6 +114,16 @@ hiddenimports = []
 hiddenimports += collect_submodules("google.genai")
 hiddenimports += collect_submodules("sklearn")
 
+datas = []
+bundled_skills_source = ROOT_DIR / "plugins" / "vexor" / "skills"
+if bundled_skills_source.exists():
+    bundled_skills_dest = Path("vexor") / "_bundled_skills"
+    for skill_file in bundled_skills_source.rglob("*"):
+        if not skill_file.is_file():
+            continue
+        relative_parent = skill_file.parent.relative_to(bundled_skills_source)
+        datas.append((str(skill_file), str(bundled_skills_dest / relative_parent)))
+
 icon_candidate = ROOT_DIR / "assets" / "vexor.ico"
 ICON_PATH = str(icon_candidate) if IS_WINDOWS and icon_candidate.exists() else None
 
@@ -122,7 +132,7 @@ a = Analysis(
     [MAIN_SCRIPT],
     pathex=[str(ROOT_DIR)],
     binaries=[],
-    datas=[],
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

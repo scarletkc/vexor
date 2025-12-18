@@ -39,6 +39,8 @@ Or via environment: `VEXOR_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENAI_API_KEY`
 
 ### 2. Search
 ```bash
+vexor search "api client config"  # searches current directory
+# or explicit path:
 vexor search "api client config" --path ~/projects/demo --top 5
 ```
 
@@ -54,6 +56,8 @@ Vexor semantic file search results
 
 ### 3. Explicit Index (Optional)
 ```bash
+vexor index  # indexes current directory
+# or explicit path:
 vexor index --path ~/projects/demo --mode code
 ```
 Useful for CI warmup or when `auto_index` is disabled.
@@ -116,6 +120,7 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 
 | Flag | Description |
 |------|-------------|
+| `--path PATH` | Target directory (default: current working directory) |
 | `--mode MODE` | Index mode (`auto`/`name`/`head`/`brief`/`full`/`code`/`outline`) |
 | `--top K` / `-k` | Number of results (default: 5) |
 | `--ext .py,.md` / `-e` | Filter by extension (repeatable) |
