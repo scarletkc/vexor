@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from typer.testing import CliRunner
 
@@ -116,3 +118,53 @@ def test_search_rejects_respect_gitignore_flag(tmp_path):
     )
     assert result.exit_code == 2
     assert "no such option" in result.output.lower()
+
+
+def test_feedback_opens_browser_when_gh_missing(monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda *_a, **_k: None)
+    monkeypatch.setattr("vexor.cli.typer.launch", lambda url: captured.setdefault("url", url))
+
+    result = runner.invoke(app, ["feedback"])
+
+    assert result.exit_code == 0
+    assert captured["url"].endswith("/issues/new")
+
+
+def test_feedback_uses_gh_when_available(monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda *_a, **_k: "/usr/bin/gh")
+
+    def fake_run(args, check=False):
+        captured["args"] = args
+        return SimpleNamespace(returncode=0)
+
+    def should_not_launch(_url: str):
+        raise AssertionError("Browser launch should not be used when gh succeeds")
+
+    monkeypatch.setattr("vexor.cli.subprocess.run", fake_run)
+    monkeypatch.setattr("vexor.cli.typer.launch", should_not_launch)
+
+    result = runner.invoke(app, ["feedback"])
+
+    assert result.exit_code == 0
+    assert captured["args"][:3] == ["/usr/bin/gh", "issue", "create"]
+    assert "--web" in captured["args"]
+
+
+def test_feedback_falls_back_to_browser_when_gh_fails(monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    monkeypatch.setattr("vexor.cli.find_command_on_path", lambda *_a, **_k: "/usr/bin/gh")
+    monkeypatch.setattr("vexor.cli.subprocess.run", lambda *_a, **_k: SimpleNamespace(returncode=1))
+    monkeypatch.setattr("vexor.cli.typer.launch", lambda url: captured.setdefault("url", url))
+
+    result = runner.invoke(app, ["feedback"])
+
+    assert result.exit_code == 0
+    assert captured["url"].endswith("/issues/new")

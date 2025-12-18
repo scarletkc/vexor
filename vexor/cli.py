@@ -868,6 +868,48 @@ def update(
     )
 
 
+@app.command()
+def feedback() -> None:
+    """Open the GitHub issue form for feedback."""
+
+    url = f"{PROJECT_URL}/issues/new"
+    gh = find_command_on_path("gh")
+    if gh:
+        console.print(_styled(Messages.INFO_FEEDBACK_GH, Styles.INFO))
+        try:
+            completed = subprocess.run(
+                [gh, "issue", "create", "--repo", "scarletkc/vexor", "--web"],
+                check=False,
+            )
+        except Exception as exc:  # pragma: no cover - OS specific
+            console.print(
+                _styled(
+                    Messages.WARNING_FEEDBACK_GH_FAILED.format(reason=str(exc)),
+                    Styles.WARNING,
+                )
+            )
+        else:
+            if completed.returncode == 0:
+                return
+            console.print(
+                _styled(
+                    Messages.WARNING_FEEDBACK_GH_FAILED.format(
+                        reason=f"exit code {completed.returncode}"
+                    ),
+                    Styles.WARNING,
+                )
+            )
+
+    console.print(_styled(Messages.INFO_FEEDBACK_OPENING.format(url=url), Styles.INFO))
+    try:
+        typer.launch(url)
+    except Exception as exc:  # pragma: no cover - depends on system setup
+        console.print(
+            _styled(Messages.ERROR_FEEDBACK_LAUNCH.format(url=url, reason=str(exc)), Styles.ERROR)
+        )
+        raise typer.Exit(code=1) from exc
+
+
 def _render_results(results: Sequence["SearchResult"], base: Path, backend: str | None) -> None:
     console.print(_styled(Messages.TABLE_TITLE, Styles.TITLE))
     if backend:

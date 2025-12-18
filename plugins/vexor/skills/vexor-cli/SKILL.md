@@ -28,7 +28,7 @@ Invoke Vexor when you need **intent-based file discovery**:
 vexor search "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--top 10]
 
 # Pre-index (optional, for warmup/CI)
-vexor index --path <ROOT> [--mode <MODE>] [--ext .py,.md]
+vexor index [--path <ROOT>] [--mode <MODE>] [--ext .py,.md]
 
 # Check installation
 vexor --help

@@ -43,6 +43,7 @@ class Messages:
     HELP_UPDATE = "Check if a newer Vexor release is available online."
     HELP_UPDATE_UPGRADE = "Upgrade Vexor automatically when a newer version is available."
     HELP_UPDATE_PRE = "Include pre-release versions when checking/upgrading."
+    HELP_FEEDBACK = "Open the GitHub issue form (or use `gh` if available) to send feedback."
     HELP_SET_API_KEY = "Persist an API key in ~/.vexor/config.json."
     HELP_CLEAR_API_KEY = "Remove the stored API key."
     HELP_SET_MODEL = "Set the default embedding model."
@@ -176,6 +177,10 @@ class Messages:
     INFO_UPDATE_UPGRADING = "Upgrading Vexor..."
     INFO_UPDATE_UPGRADE_DONE = "Upgrade finished. Re-run `vexor --version` to confirm."
     ERROR_UPDATE_UPGRADE_FAILED = "Upgrade failed (exit code {code})."
+    INFO_FEEDBACK_OPENING = "Opening feedback form: {url}"
+    INFO_FEEDBACK_GH = "Creating GitHub issue via `gh`..."
+    WARNING_FEEDBACK_GH_FAILED = "Unable to run `gh issue create` ({reason}); opening browser instead."
+    ERROR_FEEDBACK_LAUNCH = "Unable to open browser for {url} ({reason})."
     ERROR_INSTALL_SKILL_SOURCE = "Unable to locate the bundled skill files ({reason})."
     ERROR_INSTALL_SKILL_EXISTS = (
         "Skill destination already exists: {path}. Use --force to overwrite."
