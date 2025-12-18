@@ -956,6 +956,27 @@ def test_doctor_reports_failure(monkeypatch):
     assert "failed" in result.stdout.lower()
 
 
+def test_doctor_handles_malformed_config(monkeypatch, temp_config_home):
+    runner = CliRunner()
+    temp_config_home.parent.mkdir(parents=True, exist_ok=True)
+    temp_config_home.write_text("{invalid", encoding="utf-8")
+
+    from vexor.services.system_service import DoctorCheckResult
+
+    mock_results = [
+        DoctorCheckResult(name="Command", passed=True, message="`vexor` found at /usr/local/bin/vexor"),
+        DoctorCheckResult(name="Config", passed=True, message="Config exists"),
+        DoctorCheckResult(name="Cache Dir", passed=True, message="Cache writable"),
+        DoctorCheckResult(name="API Key", passed=True, message="API key configured"),
+    ]
+    monkeypatch.setattr("vexor.cli.run_all_doctor_checks", lambda **kw: mock_results)
+
+    result = runner.invoke(app, ["doctor", "--skip-api-test"])
+
+    assert result.exit_code == 1
+    assert "invalid json" in result.stdout.lower()
+
+
 def test_update_detects_newer_version(monkeypatch):
     runner = CliRunner()
     monkeypatch.setattr("vexor.cli.fetch_remote_version", lambda url: "9.9.9")

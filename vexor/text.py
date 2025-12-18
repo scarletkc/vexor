@@ -137,6 +137,7 @@ class Messages:
     DOCTOR_CMD_MISSING_DETAIL = "Install with pip or add the script directory to PATH."
     DOCTOR_CONFIG_EXISTS = "Config file exists at {path}"
     DOCTOR_CONFIG_DEFAULT = "No config file (using defaults)"
+    DOCTOR_CONFIG_INVALID = "Config file is invalid JSON at {path}"
     DOCTOR_CACHE_CREATED = "Created cache directory at {path}"
     DOCTOR_CACHE_WRITABLE = "Cache directory writable at {path}"
     DOCTOR_CACHE_NOT_WRITABLE = "Cache directory not writable at {path}"

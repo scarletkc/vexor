@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shlex
 import subprocess
 import sys
@@ -28,6 +29,7 @@ from .services.config_service import apply_config_updates, get_config_snapshot
 from .services.index_service import IndexStatus, build_index, clear_index_entries
 from .services.search_service import SearchRequest, perform_search
 from .services.system_service import (
+    DoctorCheckResult,
     fetch_remote_version,
     find_command_on_path,
     resolve_editor_command,
@@ -706,16 +708,33 @@ def doctor(
     console.print(_styled(Messages.DOCTOR_TITLE.format(version=__version__), Styles.TITLE))
     console.print()
 
-    config = load_config()
+    config_load_error: DoctorCheckResult | None = None
+    try:
+        config = load_config()
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        config = config_module.Config()
+        config_load_error = DoctorCheckResult(
+            name="Config JSON",
+            passed=False,
+            message=Messages.DOCTOR_CONFIG_INVALID.format(path=config_module.CONFIG_FILE),
+            detail=str(exc),
+        )
+
     provider = config.provider or DEFAULT_PROVIDER
     model = config.model or DEFAULT_MODEL
 
-    results = run_all_doctor_checks(
+    results: list[DoctorCheckResult] = []
+    if config_load_error is not None:
+        results.append(config_load_error)
+
+    results.extend(
+        run_all_doctor_checks(
         provider=provider,
         model=model,
         api_key=config.api_key,
         base_url=config.base_url,
         skip_api_test=skip_api_test,
+    )
     )
 
     has_failure = False
