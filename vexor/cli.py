@@ -890,7 +890,16 @@ def star() -> None:
 
     # Fall back to opening the browser
     console.print(_styled(Messages.INFO_STAR_BROWSER.format(url=PROJECT_URL), Styles.INFO))
-    webbrowser.open(PROJECT_URL)
+    try:
+        typer.launch(PROJECT_URL)
+    except Exception as exc:  # pragma: no cover - depends on system setup
+        console.print(
+            _styled(
+                f"Failed to open your browser for {PROJECT_URL}: {exc}",
+                Styles.ERROR,
+            )
+        )
+        raise typer.Exit(code=1) from exc
 
 
 @app.command()
