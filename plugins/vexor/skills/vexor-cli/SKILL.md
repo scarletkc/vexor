@@ -49,7 +49,7 @@ If `vexor` is missing: `pip install vexor`.
 - Need ignored or hidden files: add `--include-hidden` and/or `--no-respect-gitignore`.
 - Scriptable output: use `--format porcelain` (TSV) or `--format porcelain-z` (NUL-delimited).
 - Get detailed help: `vexor --help` or `vexor search --help`.
-- Config issues: `vexor doctor` diagnoses API, cache, and connectivity (tell the user to set up).
+- Config issues: `vexor doctor` or `vexor config --show` diagnoses API, cache, and connectivity (tell the user to set up)..
 
 ## Examples
 
