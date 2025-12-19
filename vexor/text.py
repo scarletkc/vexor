@@ -134,7 +134,7 @@ class Messages:
     INFO_BASE_URL_CLEARED = "Base URL override cleared."
     INFO_AUTO_INDEX_SET = "Auto index {value}."
     INFO_LOCAL_SETUP_START = "Preparing local model {model}..."
-    INFO_LOCAL_SETUP_HINT = "Use `vexor local --setup` to configure a local embedding model."
+    INFO_LOCAL_SETUP_HINT = "Use `vexor local --help` to configure a local embedding model."
     INFO_LOCAL_CACHE_DIR = "Local model cache: {path}"
     INFO_LOCAL_CACHE_EMPTY = "Local model cache already empty at {path}"
     INFO_LOCAL_CACHE_CLEARED = "Local model cache removed at {path}"
