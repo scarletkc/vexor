@@ -120,6 +120,19 @@ class VexorSearcher:
                 chunk_size=self.batch_size,
                 cuda=self.local_cuda,
             )
+        if self.provider == "custom":
+            base_url = (self.base_url or "").strip()
+            if not base_url:
+                raise RuntimeError(Messages.ERROR_CUSTOM_BASE_URL_REQUIRED)
+            if not self.model_name or not self.model_name.strip():
+                raise RuntimeError(Messages.ERROR_CUSTOM_MODEL_REQUIRED)
+            self._device = f"{self.model_name} via OpenAI-compatible API"
+            return OpenAIEmbeddingBackend(
+                model_name=self.model_name,
+                chunk_size=self.batch_size,
+                base_url=base_url,
+                api_key=self.api_key,
+            )
         if self.provider == "openai":
             self._device = f"{self.model_name} via OpenAI API"
             return OpenAIEmbeddingBackend(

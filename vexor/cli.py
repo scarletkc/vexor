@@ -19,11 +19,13 @@ from . import __version__, config as config_module
 from .cache import clear_all_cache, list_cache_entries
 from .config import (
     DEFAULT_BATCH_SIZE,
+    DEFAULT_GEMINI_MODEL,
     DEFAULT_LOCAL_MODEL,
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
     SUPPORTED_PROVIDERS,
     load_config,
+    resolve_default_model,
 )
 from .modes import available_modes, get_strategy
 from .services.cache_service import is_cache_current, load_index_metadata_safe
@@ -172,9 +174,9 @@ def search(
 ) -> None:
     """Run the semantic search."""
     config = load_config()
-    model_name = config.model or DEFAULT_MODEL
+    provider = (config.provider or DEFAULT_PROVIDER).lower()
+    model_name = resolve_default_model(provider, config.model)
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
-    provider = config.provider or DEFAULT_PROVIDER
     base_url = config.base_url
     api_key = config.api_key
     auto_index = bool(config.auto_index)
@@ -187,14 +189,14 @@ def search(
     try:
         ensure_positive(top, "top")
     except ValueError as exc:  # pragma: no cover - validated by Typer
-        raise typer.BadParameter(str(exc), param_name="top") from exc
+        raise typer.BadParameter(str(exc)) from exc
 
     directory = resolve_directory(path)
     mode_value = _validate_mode(mode)
     recursive = not no_recursive
     normalized_exts = normalize_extensions(extensions)
     if extensions and not normalized_exts:
-        raise typer.BadParameter(Messages.ERROR_EXTENSIONS_EMPTY, param_name="ext")
+        raise typer.BadParameter(Messages.ERROR_EXTENSIONS_EMPTY)
     if output_format == SearchOutputFormat.rich:
         should_index_first = False
         if auto_index:
@@ -338,9 +340,9 @@ def index(
 ) -> None:
     """Create or refresh the cached index for the given directory."""
     config = load_config()
-    model_name = config.model or DEFAULT_MODEL
+    provider = (config.provider or DEFAULT_PROVIDER).lower()
+    model_name = resolve_default_model(provider, config.model)
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
-    provider = config.provider or DEFAULT_PROVIDER
     base_url = config.base_url
     api_key = config.api_key
 
@@ -350,7 +352,7 @@ def index(
     respect_gitignore = not no_respect_gitignore
     normalized_exts = normalize_extensions(extensions)
     if extensions and not normalized_exts:
-        raise typer.BadParameter(Messages.ERROR_EXTENSIONS_EMPTY, param_name="ext")
+        raise typer.BadParameter(Messages.ERROR_EXTENSIONS_EMPTY)
     if clear and show_cache:
         raise typer.BadParameter(Messages.ERROR_INDEX_SHOW_CONFLICT)
 
@@ -527,12 +529,43 @@ def config(
             )
         set_provider_option = normalized_provider
 
+    config_snapshot = load_config()
+    current_provider = (config_snapshot.provider or DEFAULT_PROVIDER).lower()
+    pending_provider = set_provider_option or current_provider
+    pending_model = set_model_option if set_model_option is not None else config_snapshot.model
+    if set_provider_option == "gemini" and set_model_option is None:
+        if (pending_model or "").strip() == DEFAULT_MODEL:
+            set_model_option = DEFAULT_GEMINI_MODEL
+            pending_model = set_model_option
+    pending_base_url = None
+    if not clear_base_url:
+        pending_base_url = (
+            set_base_url_option
+            if set_base_url_option is not None
+            else config_snapshot.base_url
+        )
+    provider_mutation = any(
+        (
+            set_provider_option is not None,
+            set_model_option is not None,
+            set_base_url_option is not None,
+            clear_base_url,
+        )
+    )
+    if pending_provider == "custom" and provider_mutation:
+        if set_provider_option == "custom" and set_model_option is None:
+            raise typer.BadParameter(Messages.ERROR_CUSTOM_MODEL_REQUIRED)
+        if not (pending_model and pending_model.strip()):
+            raise typer.BadParameter(Messages.ERROR_CUSTOM_MODEL_REQUIRED)
+        if not (pending_base_url and pending_base_url.strip()):
+            raise typer.BadParameter(Messages.ERROR_CUSTOM_BASE_URL_REQUIRED)
+
     auto_index: bool | None = None
     if set_auto_index_option is not None:
         try:
             auto_index = _parse_boolean(set_auto_index_option)
         except ValueError as exc:
-            raise typer.BadParameter(str(exc), param_name="set-auto-index") from exc
+            raise typer.BadParameter(str(exc)) from exc
 
     updates = apply_config_updates(
         api_key=set_api_key_option,
@@ -598,12 +631,13 @@ def config(
 
     if show:
         cfg = get_config_snapshot()
+        provider = (cfg.provider or DEFAULT_PROVIDER).lower()
         console.print(
             _styled(
                 Messages.INFO_CONFIG_SUMMARY.format(
                     api="yes" if cfg.api_key else "no",
-                    provider=cfg.provider or DEFAULT_PROVIDER,
-                    model=cfg.model or DEFAULT_MODEL,
+                    provider=provider,
+                    model=resolve_default_model(provider, cfg.model),
                     batch=cfg.batch_size if cfg.batch_size is not None else DEFAULT_BATCH_SIZE,
                     auto_index="yes" if cfg.auto_index else "no",
                     local_cuda="yes" if cfg.local_cuda else "no",
@@ -722,7 +756,7 @@ def local(
 
     clean_model = model.strip()
     if not clean_model:
-        raise typer.BadParameter(Messages.ERROR_LOCAL_MODEL_EMPTY, param_name="model")
+        raise typer.BadParameter(Messages.ERROR_LOCAL_MODEL_EMPTY)
 
     console.print(_styled(Messages.INFO_LOCAL_SETUP_START.format(model=clean_model), Styles.INFO))
     if local_cuda is None:
@@ -886,8 +920,8 @@ def doctor(
             detail=str(exc),
         )
 
-    provider = config.provider or DEFAULT_PROVIDER
-    model = config.model or DEFAULT_MODEL
+    provider = (config.provider or DEFAULT_PROVIDER).lower()
+    model = resolve_default_model(provider, config.model)
 
     results: list[DoctorCheckResult] = []
     if config_load_error is not None:

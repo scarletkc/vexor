@@ -11,10 +11,11 @@ from typing import Any, Dict
 CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_MODEL = "text-embedding-3-small"
+DEFAULT_GEMINI_MODEL = "gemini-embedding-001"
 DEFAULT_LOCAL_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_BATCH_SIZE = 0
 DEFAULT_PROVIDER = "openai"
-SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER, "gemini", "local")
+SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER, "gemini", "custom", "local")
 ENV_API_KEY = "VEXOR_API_KEY"
 LEGACY_GEMINI_ENV = "GOOGLE_GENAI_API_KEY"
 OPENAI_ENV = "OPENAI_API_KEY"
@@ -109,6 +110,17 @@ def set_local_cuda(value: bool) -> None:
     save_config(config)
 
 
+def resolve_default_model(provider: str | None, model: str | None) -> str:
+    """Return the effective model name for the selected provider."""
+    clean_model = (model or "").strip()
+    normalized = (provider or DEFAULT_PROVIDER).lower()
+    if normalized == "gemini" and (not clean_model or clean_model == DEFAULT_MODEL):
+        return DEFAULT_GEMINI_MODEL
+    if clean_model:
+        return clean_model
+    return DEFAULT_MODEL
+
+
 def resolve_api_key(configured: str | None, provider: str) -> str | None:
     """Return the first available API key from config or environment."""
 
@@ -124,7 +136,7 @@ def resolve_api_key(configured: str | None, provider: str) -> str | None:
         legacy = os.getenv(LEGACY_GEMINI_ENV)
         if legacy:
             return legacy
-    if normalized == "openai":
+    if normalized in {"openai", "custom"}:
         openai_key = os.getenv(OPENAI_ENV)
         if openai_key:
             return openai_key

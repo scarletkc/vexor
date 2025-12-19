@@ -49,7 +49,7 @@ class Messages:
     HELP_CLEAR_API_KEY = "Remove the stored API key."
     HELP_SET_MODEL = "Set the default embedding model."
     HELP_SET_BATCH = "Set the default batch size (0 = single request)."
-    HELP_SET_PROVIDER = "Set the default embedding provider (e.g., gemini, openai, or local)."
+    HELP_SET_PROVIDER = "Set the default embedding provider (e.g., gemini, openai, custom, or local)."
     HELP_SET_BASE_URL = "Override the provider's base URL (leave unset for official endpoints)."
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
     HELP_SET_AUTO_INDEX = "Enable/disable automatic indexing before search (default: enabled)."
@@ -87,6 +87,12 @@ class Messages:
     ERROR_LOCAL_OPTIONS_CONFLICT = "Use --clean-up without combining it with other options."
     ERROR_LOCAL_CACHE_CLEANUP = "Failed to remove local model cache at {path} ({reason})."
     ERROR_LOCAL_CUDA_CONFLICT = "Use only one of --cuda or --cpu."
+    ERROR_CUSTOM_BASE_URL_REQUIRED = (
+        "Custom provider requires a base URL. Set it with `vexor config --set-base-url <URL>`."
+    )
+    ERROR_CUSTOM_MODEL_REQUIRED = (
+        "Custom provider requires a model name. Set it with `vexor config --set-model <NAME>`."
+    )
     ERROR_EMPTY_QUERY = "Query text must not be empty."
     ERROR_BATCH_NEGATIVE = "Batch size must be >= 0"
     ERROR_MODE_INVALID = "Unsupported mode '{value}'. Allowed values: {allowed}."

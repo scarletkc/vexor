@@ -785,6 +785,40 @@ def test_config_set_and_show(tmp_path):
     assert "custom-model" in result_show.stdout
 
 
+def test_config_custom_requires_model_and_base_url(tmp_path):
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["config", "--set-provider", "custom"])
+    assert result.exit_code != 0
+    assert "model name" in result.stderr
+
+    result = runner.invoke(
+        app,
+        ["config", "--set-provider", "custom", "--set-model", "embed-model"],
+    )
+    assert result.exit_code != 0
+    assert "base URL" in result.stderr
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "--set-provider",
+            "custom",
+            "--set-model",
+            "embed-model",
+            "--set-base-url",
+            "https://example.com",
+        ],
+    )
+    assert result.exit_code == 0
+    config_path = tmp_path / "config" / "config.json"
+    data = json.loads(config_path.read_text())
+    assert data["provider"] == "custom"
+    assert data["model"] == "embed-model"
+    assert data["base_url"] == "https://example.com"
+
+
 def test_local_setup_updates_config(tmp_path, monkeypatch):
     runner = CliRunner()
 

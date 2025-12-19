@@ -84,6 +84,13 @@ def test_query_cache_key_strips_local_prefix() -> None:
     )
 
 
+def test_query_cache_key_strips_custom_prefix() -> None:
+    assert cache.query_cache_key("hello", "custom/my-model") == cache.query_cache_key(
+        "hello",
+        "my-model",
+    )
+
+
 def test_cascade_delete_on_index_rebuild(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
     root = tmp_path / "project"

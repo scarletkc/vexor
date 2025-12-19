@@ -10,7 +10,7 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
-from ..config import DEFAULT_MODEL
+from ..config import DEFAULT_GEMINI_MODEL
 from ..text import Messages
 
 
@@ -20,7 +20,7 @@ class GeminiEmbeddingBackend:
     def __init__(
         self,
         *,
-        model_name: str = DEFAULT_MODEL,
+        model_name: str = DEFAULT_GEMINI_MODEL,
         api_key: str | None = None,
         chunk_size: int | None = None,
         base_url: str | None = None,

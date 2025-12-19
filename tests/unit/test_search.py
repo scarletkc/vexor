@@ -96,6 +96,27 @@ def test_vexor_searcher_creates_openai_backend(monkeypatch):
     assert created["model_name"] == "m"
 
 
+def test_vexor_searcher_creates_custom_backend(monkeypatch):
+    created = {}
+
+    class DummyOpenAIBackend:
+        def __init__(self, **kwargs) -> None:
+            created.update(kwargs)
+
+        def embed(self, texts):
+            return np.zeros((len(texts), 2), dtype=np.float32)
+
+    monkeypatch.setattr("vexor.search.OpenAIEmbeddingBackend", DummyOpenAIBackend)
+    searcher = VexorSearcher(
+        model_name="m",
+        provider="custom",
+        api_key="k",
+        base_url="https://example.com",
+    )
+    assert "OpenAI-compatible" in searcher.device
+    assert created["base_url"] == "https://example.com"
+
+
 def test_vexor_searcher_creates_local_backend(monkeypatch):
     created = {}
 
@@ -110,3 +131,8 @@ def test_vexor_searcher_creates_local_backend(monkeypatch):
     searcher = VexorSearcher(model_name="m", provider="local")
     assert "local" in searcher.device.lower()
     assert created["model_name"] == "m"
+
+
+def test_vexor_searcher_custom_requires_base_url():
+    with pytest.raises(RuntimeError, match="base URL"):
+        VexorSearcher(model_name="m", provider="custom", api_key="k")

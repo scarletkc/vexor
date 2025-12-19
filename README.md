@@ -65,7 +65,7 @@ Useful for CI warmup or when `auto_index` is disabled.
 ## Configuration
 
 ```bash
-vexor config --set-provider openai          # default; also supports gemini/local
+vexor config --set-provider openai          # default; also supports gemini/custom/local
 vexor config --set-model text-embedding-3-small
 vexor config --set-batch-size 0             # 0 = single request
 vexor config --set-auto-index true          # auto-index before search (default)
@@ -78,8 +78,9 @@ Config stored in `~/.vexor/config.json`.
 
 ### Providers: Remote vs Local
 
-Vexor supports both remote API providers (`openai`, `gemini`) and a local provider (`local`):
+Vexor supports both remote API providers (`openai`, `gemini`, `custom`) and a local provider (`local`):
 - Remote providers use `api_key` and optional `base_url`.
+- `custom` is OpenAI-compatible and requires both `model` and `base_url`.
 - Local provider ignores `api_key/base_url` and only uses `model` plus `local_cuda` (CPU/GPU switch).
 
 ### Local Model (Offline)

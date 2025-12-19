@@ -103,7 +103,8 @@ def check_api_connectivity(
     """Test API connectivity with a minimal embedding request."""
     from ..config import resolve_api_key
 
-    if (provider or "").lower() == "local":
+    normalized = (provider or "").lower()
+    if normalized == "local":
         try:
             from ..providers.local import LocalEmbeddingBackend
 
@@ -157,7 +158,21 @@ def check_api_connectivity(
                 detail=str(exc),
             )
 
-    resolved_key = resolve_api_key(api_key, provider)
+    if normalized == "custom":
+        if not (base_url and base_url.strip()):
+            return DoctorCheckResult(
+                name="API Test",
+                passed=False,
+                message=Messages.ERROR_CUSTOM_BASE_URL_REQUIRED,
+            )
+        if not (model and model.strip()):
+            return DoctorCheckResult(
+                name="API Test",
+                passed=False,
+                message=Messages.ERROR_CUSTOM_MODEL_REQUIRED,
+            )
+
+    resolved_key = resolve_api_key(api_key, normalized)
     if not resolved_key:
         return DoctorCheckResult(
             name="API Test",
@@ -166,7 +181,7 @@ def check_api_connectivity(
         )
 
     try:
-        if provider == "gemini":
+        if normalized == "gemini":
             from ..providers.gemini import GeminiEmbeddingBackend
 
             backend = GeminiEmbeddingBackend(
