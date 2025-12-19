@@ -76,6 +76,12 @@ vexor config --show                         # view current settings
 
 Config stored in `~/.vexor/config.json`.
 
+### Providers: Remote vs Local
+
+Vexor supports both remote API providers (`openai`, `gemini`) and a local provider (`local`):
+- Remote providers use `api_key` and optional `base_url`.
+- Local provider ignores `api_key/base_url` and only uses `model` plus `local_cuda` (CPU/GPU switch).
+
 ### Local Model (Offline)
 
 Install the lightweight local backend:
