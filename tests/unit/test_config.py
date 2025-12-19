@@ -65,3 +65,8 @@ def test_resolve_api_key_legacy_gemini_env(monkeypatch):
     monkeypatch.delenv(config_module.OPENAI_ENV, raising=False)
     monkeypatch.setenv(config_module.LEGACY_GEMINI_ENV, "legacy-gemini")
     assert config_module.resolve_api_key(None, "gemini") == "legacy-gemini"
+
+
+def test_resolve_api_key_local_ignores_keys(monkeypatch):
+    monkeypatch.setenv(config_module.ENV_API_KEY, "shared-key")
+    assert config_module.resolve_api_key("cfg-key", "local") is None

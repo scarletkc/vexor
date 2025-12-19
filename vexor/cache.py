@@ -54,7 +54,7 @@ def _cache_key(
 def _normalize_model_for_query_cache(model: str) -> str:
     normalized = (model or "").strip()
     lowered = normalized.lower()
-    for prefix in ("openai/", "gemini/"):
+    for prefix in ("openai/", "gemini/", "local/"):
         if lowered.startswith(prefix):
             return normalized.split("/", 1)[1]
     return normalized

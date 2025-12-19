@@ -11,6 +11,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from .config import DEFAULT_MODEL, DEFAULT_PROVIDER, SUPPORTED_PROVIDERS, resolve_api_key
 from .providers.gemini import GeminiEmbeddingBackend
+from .providers.local import LocalEmbeddingBackend
 from .providers.openai import OpenAIEmbeddingBackend
 from .text import Messages
 
@@ -109,6 +110,12 @@ class VexorSearcher:
                 chunk_size=self.batch_size,
                 base_url=self.base_url,
                 api_key=self.api_key,
+            )
+        if self.provider == "local":
+            self._device = f"{self.model_name} via local model"
+            return LocalEmbeddingBackend(
+                model_name=self.model_name,
+                chunk_size=self.batch_size,
             )
         if self.provider == "openai":
             self._device = f"{self.model_name} via OpenAI API"

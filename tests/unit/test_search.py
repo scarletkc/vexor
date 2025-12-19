@@ -94,3 +94,19 @@ def test_vexor_searcher_creates_openai_backend(monkeypatch):
     searcher = VexorSearcher(model_name="m", provider="openai", api_key="k")
     assert "OpenAI" in searcher.device
     assert created["model_name"] == "m"
+
+
+def test_vexor_searcher_creates_local_backend(monkeypatch):
+    created = {}
+
+    class DummyLocalBackend:
+        def __init__(self, **kwargs) -> None:
+            created.update(kwargs)
+
+        def embed(self, texts):
+            return np.zeros((len(texts), 2), dtype=np.float32)
+
+    monkeypatch.setattr("vexor.search.LocalEmbeddingBackend", DummyLocalBackend)
+    searcher = VexorSearcher(model_name="m", provider="local")
+    assert "local" in searcher.device.lower()
+    assert created["model_name"] == "m"

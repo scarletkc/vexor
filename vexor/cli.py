@@ -18,6 +18,7 @@ from . import __version__, config as config_module
 from .cache import clear_all_cache, list_cache_entries
 from .config import (
     DEFAULT_BATCH_SIZE,
+    DEFAULT_LOCAL_MODEL,
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
     SUPPORTED_PROVIDERS,
@@ -49,6 +50,7 @@ from .services.skill_service import (
     install_bundled_skill,
     resolve_skill_roots,
 )
+from .providers.local import LocalEmbeddingBackend, resolve_fastembed_cache_dir
 from .text import Messages, Styles
 from .utils import resolve_directory, format_path, ensure_positive, normalize_extensions
 
@@ -636,6 +638,50 @@ def config(
                     str(entry["generated_at"]),
                 )
             console.print(table)
+
+
+@app.command("local", help=Messages.HELP_LOCAL)
+def local(
+    setup: bool = typer.Option(
+        False,
+        "--setup",
+        help=Messages.HELP_SETUP_LOCAL,
+    ),
+    model: str = typer.Option(
+        DEFAULT_LOCAL_MODEL,
+        "--model",
+        "-m",
+        help=Messages.HELP_SETUP_LOCAL_MODEL,
+    ),
+) -> None:
+    """Manage local embedding models."""
+    if not setup:
+        console.print(_styled(Messages.INFO_LOCAL_SETUP_HINT, Styles.INFO))
+        raise typer.Exit(code=0)
+
+    clean_model = model.strip()
+    if not clean_model:
+        raise typer.BadParameter(Messages.ERROR_LOCAL_MODEL_EMPTY, param_name="model")
+
+    console.print(_styled(Messages.INFO_LOCAL_SETUP_START.format(model=clean_model), Styles.INFO))
+    try:
+        backend = LocalEmbeddingBackend(model_name=clean_model)
+        vectors = backend.embed(["test"])
+    except RuntimeError as exc:
+        console.print(_styled(str(exc), Styles.ERROR))
+        raise typer.Exit(code=1)
+
+    if vectors.size == 0:
+        console.print(_styled(Messages.ERROR_NO_EMBEDDINGS, Styles.ERROR))
+        raise typer.Exit(code=1)
+
+    apply_config_updates(
+        provider="local",
+        model=clean_model,
+    )
+    cache_dir = resolve_fastembed_cache_dir()
+    console.print(_styled(Messages.INFO_LOCAL_CACHE_DIR.format(path=cache_dir), Styles.INFO))
+    console.print(_styled(Messages.INFO_LOCAL_SETUP_DONE.format(model=clean_model), Styles.SUCCESS))
 
 
 @app.command()

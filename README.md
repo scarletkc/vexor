@@ -65,7 +65,7 @@ Useful for CI warmup or when `auto_index` is disabled.
 ## Configuration
 
 ```bash
-vexor config --set-provider openai          # default; also supports gemini
+vexor config --set-provider openai          # default; also supports gemini/local
 vexor config --set-model text-embedding-3-small
 vexor config --set-batch-size 0             # 0 = single request
 vexor config --set-auto-index true          # auto-index before search (default)
@@ -75,6 +75,20 @@ vexor config --show                         # view current settings
 ```
 
 Config stored in `~/.vexor/config.json`.
+
+### Local Model (Offline)
+
+Install the lightweight local backend:
+```bash
+pip install "vexor[local]"
+```
+
+Download a local embedding model and auto-configure Vexor:
+```bash
+vexor local --setup --model intfloat/multilingual-e5-small
+```
+
+Then use `vexor search` / `vexor index` as usual.
 
 ## Index Modes
 
@@ -111,6 +125,7 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 | `vexor search QUERY --path PATH` | Semantic search (auto-indexes if needed) |
 | `vexor index --path PATH` | Build/refresh index manually |
 | `vexor config --show` | Display current configuration |
+| `vexor local --setup [--model MODEL]` | Download a local model and set provider to `local` |
 | `vexor install --skills claude` | Install Agent Skill for Claude Code |
 | `vexor install --skills codex` | Install Agent Skill for Codex |
 | `vexor doctor` | Run diagnostic checks (command, config, cache, API key, API connectivity) |

@@ -784,6 +784,27 @@ def test_config_set_and_show(tmp_path):
     assert "custom-model" in result_show.stdout
 
 
+def test_local_setup_updates_config(tmp_path, monkeypatch):
+    runner = CliRunner()
+
+    class DummyLocalBackend:
+        def __init__(self, model_name: str) -> None:
+            self.model_name = model_name
+
+        def embed(self, texts):
+            return np.zeros((len(texts), 2), dtype=np.float32)
+
+    monkeypatch.setattr("vexor.cli.LocalEmbeddingBackend", DummyLocalBackend)
+
+    result = runner.invoke(app, ["local", "--setup", "--model", "local-model"])
+
+    assert result.exit_code == 0
+    config_path = tmp_path / "config" / "config.json"
+    data = json.loads(config_path.read_text())
+    assert data["provider"] == "local"
+    assert data["model"] == "local-model"
+
+
 def test_config_set_auto_index(tmp_path):
     runner = CliRunner()
 

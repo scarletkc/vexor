@@ -71,6 +71,12 @@ def check_api_key_configured(provider: str, api_key: str | None) -> DoctorCheckR
     """Check if API key is configured."""
     from ..config import resolve_api_key
 
+    if (provider or "").lower() == "local":
+        return DoctorCheckResult(
+            name="API Key",
+            passed=True,
+            message=Messages.DOCTOR_API_KEY_NOT_REQUIRED,
+        )
     resolved = resolve_api_key(api_key, provider)
     if resolved:
         masked = resolved[:4] + "..." + resolved[-4:] if len(resolved) > 12 else "****"
@@ -95,6 +101,31 @@ def check_api_connectivity(
 ) -> DoctorCheckResult:
     """Test API connectivity with a minimal embedding request."""
     from ..config import resolve_api_key
+
+    if (provider or "").lower() == "local":
+        try:
+            from ..providers.local import LocalEmbeddingBackend
+
+            backend = LocalEmbeddingBackend(model_name=model)
+            result = backend.embed(["test"])
+            if result.shape[0] == 1 and result.shape[1] > 0:
+                return DoctorCheckResult(
+                    name="Local Model",
+                    passed=True,
+                    message=Messages.DOCTOR_LOCAL_READY.format(model=model, dim=result.shape[1]),
+                )
+            return DoctorCheckResult(
+                name="Local Model",
+                passed=False,
+                message=Messages.DOCTOR_LOCAL_UNEXPECTED,
+            )
+        except Exception as exc:
+            return DoctorCheckResult(
+                name="Local Model",
+                passed=False,
+                message=Messages.DOCTOR_LOCAL_FAILED,
+                detail=str(exc),
+            )
 
     resolved_key = resolve_api_key(api_key, provider)
     if not resolved_key:

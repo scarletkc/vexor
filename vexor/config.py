@@ -11,9 +11,10 @@ from typing import Any, Dict
 CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_MODEL = "text-embedding-3-small"
+DEFAULT_LOCAL_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_BATCH_SIZE = 0
 DEFAULT_PROVIDER = "openai"
-SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER, "gemini")
+SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER, "gemini", "local")
 ENV_API_KEY = "VEXOR_API_KEY"
 LEGACY_GEMINI_ENV = "GOOGLE_GENAI_API_KEY"
 OPENAI_ENV = "OPENAI_API_KEY"
@@ -98,12 +99,14 @@ def set_auto_index(value: bool) -> None:
 def resolve_api_key(configured: str | None, provider: str) -> str | None:
     """Return the first available API key from config or environment."""
 
+    normalized = (provider or DEFAULT_PROVIDER).lower()
+    if normalized == "local":
+        return None
     if configured:
         return configured
     general = os.getenv(ENV_API_KEY)
     if general:
         return general
-    normalized = (provider or DEFAULT_PROVIDER).lower()
     if normalized == "gemini":
         legacy = os.getenv(LEGACY_GEMINI_ENV)
         if legacy:

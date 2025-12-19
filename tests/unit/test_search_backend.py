@@ -5,6 +5,7 @@ import pytest
 
 from vexor import search
 from vexor.providers import gemini as gemini_backend
+from vexor.providers import local as local_backend
 from vexor.providers import openai as openai_backend
 
 
@@ -276,6 +277,35 @@ def test_format_openai_error_prefers_message_attr():
 
     msg = openai_backend._format_openai_error(FakeError("boom"))
     assert "boom" in msg
+
+
+def test_local_backend_chunks_requests(monkeypatch):
+    class FakeEmbeddingModel:
+        def __init__(self, model_name: str) -> None:
+            self.model_name = model_name
+            self.calls = []
+
+        def embed(self, texts):
+            self.calls.append(list(texts))
+            for _ in texts:
+                yield np.array([1.0, 0.0], dtype=np.float32)
+
+    monkeypatch.setattr(local_backend, "_load_fastembed", lambda: FakeEmbeddingModel)
+
+    backend = local_backend.LocalEmbeddingBackend(model_name="demo", chunk_size=2)
+    vectors = backend.embed(["a", "bb", "ccc"])
+
+    assert vectors.shape == (3, 2)
+    assert backend._model.calls == [["a", "bb"], ["ccc"]]
+
+
+def test_local_backend_requires_dependency(monkeypatch):
+    def _boom():
+        raise RuntimeError("missing")
+
+    monkeypatch.setattr(local_backend, "_load_fastembed", _boom)
+    with pytest.raises(RuntimeError, match="missing"):
+        local_backend.LocalEmbeddingBackend(model_name="demo")
 
 
 def test_vexor_searcher_embed_texts(monkeypatch):

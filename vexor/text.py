@@ -49,7 +49,7 @@ class Messages:
     HELP_CLEAR_API_KEY = "Remove the stored API key."
     HELP_SET_MODEL = "Set the default embedding model."
     HELP_SET_BATCH = "Set the default batch size (0 = single request)."
-    HELP_SET_PROVIDER = "Set the default embedding provider (e.g., gemini or openai)."
+    HELP_SET_PROVIDER = "Set the default embedding provider (e.g., gemini, openai, or local)."
     HELP_SET_BASE_URL = "Override the provider's base URL (leave unset for official endpoints)."
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
     HELP_SET_AUTO_INDEX = "Enable/disable automatic indexing before search (default: enabled)."
@@ -61,6 +61,9 @@ class Messages:
         "(targets: claude, codex)."
     )
     HELP_INSTALL_FORCE = "Overwrite the destination skill folder if it already exists."
+    HELP_LOCAL = "Manage local embedding models."
+    HELP_SETUP_LOCAL = "Download a local embedding model and configure Vexor to use it."
+    HELP_SETUP_LOCAL_MODEL = "Local embedding model name to download (fastembed model name)."
 
     ERROR_API_KEY_MISSING = (
         "API key is missing or still set to the placeholder. "
@@ -70,6 +73,13 @@ class Messages:
     ERROR_GENAI_PREFIX = "Gemini API request failed: "
     ERROR_OPENAI_PREFIX = "OpenAI API request failed: "
     ERROR_NO_EMBEDDINGS = "Embedding API returned no embeddings."
+    ERROR_LOCAL_DEP_MISSING = (
+        "Local model support is not installed. "
+        "Install with `pip install \"vexor\\[local]\"`."
+    )
+    ERROR_LOCAL_MODEL_LOAD = "Failed to load local model '{model}' ({reason})."
+    ERROR_LOCAL_MODEL_EMBED = "Local model embed failed ({reason})."
+    ERROR_LOCAL_MODEL_EMPTY = "Model name cannot be empty."
     ERROR_EMPTY_QUERY = "Query text must not be empty."
     ERROR_BATCH_NEGATIVE = "Batch size must be >= 0"
     ERROR_MODE_INVALID = "Unsupported mode '{value}'. Allowed values: {allowed}."
@@ -116,6 +126,10 @@ class Messages:
     INFO_BASE_URL_SET = "Base URL override set to {value}."
     INFO_BASE_URL_CLEARED = "Base URL override cleared."
     INFO_AUTO_INDEX_SET = "Auto index {value}."
+    INFO_LOCAL_SETUP_START = "Preparing local model {model}..."
+    INFO_LOCAL_SETUP_HINT = "Use `vexor local --setup` to configure a local embedding model."
+    INFO_LOCAL_CACHE_DIR = "Local model cache: {path}"
+    INFO_LOCAL_SETUP_DONE = "Local model ready: {model}. Provider set to local."
     INFO_CONFIG_EDITING = "Opening config file in editor ({editor}): {path}"
     ERROR_CONFIG_EDITOR_NOT_FOUND = "Unable to determine a text editor. Set $VISUAL or $EDITOR, or install nano/vi."
     ERROR_CONFIG_EDITOR_FAILED = "Editor exited with status {code}."
@@ -152,10 +166,14 @@ class Messages:
         "Run `vexor config --set-api-key <KEY>` or set VEXOR_API_KEY / "
         "OPENAI_API_KEY / GOOGLE_GENAI_API_KEY environment variable."
     )
+    DOCTOR_API_KEY_NOT_REQUIRED = "Local provider selected (no API key required)"
     DOCTOR_API_SKIPPED = "Skipped (no API key)"
     DOCTOR_API_REACHABLE = "API reachable (model: {model}, dim: {dim})"
     DOCTOR_API_UNEXPECTED = "API returned unexpected response"
     DOCTOR_API_FAILED = "API request failed"
+    DOCTOR_LOCAL_READY = "Local model ready (model: {model}, dim: {dim})"
+    DOCTOR_LOCAL_UNEXPECTED = "Local model returned unexpected response"
+    DOCTOR_LOCAL_FAILED = "Local model test failed"
     DOCTOR_ALL_PASSED = "All checks passed!"
     DOCTOR_SOME_FAILED = "Some checks failed. See details above."
     HELP_DOCTOR_SKIP_API = "Skip the API connectivity test."
