@@ -7,7 +7,7 @@ from typing import Iterator, Sequence
 
 import numpy as np
 
-from ..config import LOCAL_MODEL_DIR
+from ..config import local_model_dir
 from ..text import Messages
 
 
@@ -21,7 +21,7 @@ def _load_fastembed():
 
 def resolve_fastembed_cache_dir(*, create: bool = True) -> Path:
     """Return the fixed cache directory used for local models."""
-    cache_dir = LOCAL_MODEL_DIR
+    cache_dir = local_model_dir()
     if create:
         cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
@@ -80,19 +80,29 @@ class LocalEmbeddingBackend:
         *,
         model_name: str,
         chunk_size: int | None = None,
+        cuda: bool = False,
     ) -> None:
         self.model_name = model_name
         self.chunk_size = chunk_size if chunk_size and chunk_size > 0 else None
+        self.cuda = bool(cuda)
         TextEmbedding = _load_fastembed()
         cache_dir = resolve_fastembed_cache_dir()
         try:
-            self._model = TextEmbedding(model_name=model_name, cache_dir=str(cache_dir))
+            self._model = TextEmbedding(
+                model_name=model_name,
+                cache_dir=str(cache_dir),
+                cuda=self.cuda,
+            )
         except Exception as exc:
             if _is_unsupported_model_error(exc) and _register_custom_model(
                 TextEmbedding, model_name
             ):
                 try:
-                    self._model = TextEmbedding(model_name=model_name, cache_dir=str(cache_dir))
+                    self._model = TextEmbedding(
+                        model_name=model_name,
+                        cache_dir=str(cache_dir),
+                        cuda=self.cuda,
+                    )
                 except Exception as retry_exc:
                     raise RuntimeError(
                         Messages.ERROR_LOCAL_MODEL_LOAD.format(

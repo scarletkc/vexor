@@ -240,6 +240,7 @@ def search(
         provider=provider,
         base_url=base_url,
         api_key=api_key,
+        local_cuda=bool(config.local_cuda),
         extensions=normalized_exts,
         auto_index=auto_index,
     )
@@ -434,6 +435,7 @@ def index(
             provider=provider,
             base_url=base_url,
             api_key=api_key,
+            local_cuda=bool(config.local_cuda),
             extensions=normalized_exts,
         )
     except RuntimeError as exc:
@@ -604,6 +606,7 @@ def config(
                     model=cfg.model or DEFAULT_MODEL,
                     batch=cfg.batch_size if cfg.batch_size is not None else DEFAULT_BATCH_SIZE,
                     auto_index="yes" if cfg.auto_index else "no",
+                    local_cuda="yes" if cfg.local_cuda else "no",
                     base_url=cfg.base_url or "none",
                 ),
                 Styles.INFO,
@@ -653,6 +656,16 @@ def local(
         "--clean-up",
         help=Messages.HELP_LOCAL_CLEANUP,
     ),
+    cuda: bool = typer.Option(
+        False,
+        "--cuda",
+        help=Messages.HELP_LOCAL_CUDA,
+    ),
+    cpu: bool = typer.Option(
+        False,
+        "--cpu",
+        help=Messages.HELP_LOCAL_CPU,
+    ),
     model: str = typer.Option(
         DEFAULT_LOCAL_MODEL,
         "--model",
@@ -661,8 +674,15 @@ def local(
     ),
 ) -> None:
     """Manage local embedding models."""
-    if setup and clean_up:
+    if cuda and cpu:
+        raise typer.BadParameter(Messages.ERROR_LOCAL_CUDA_CONFLICT)
+    if clean_up and (setup or cuda or cpu):
         raise typer.BadParameter(Messages.ERROR_LOCAL_OPTIONS_CONFLICT)
+    local_cuda: bool | None = None
+    if cuda:
+        local_cuda = True
+    if cpu:
+        local_cuda = False
     if clean_up:
         cache_dir = resolve_fastembed_cache_dir(create=False)
         if not cache_dir.exists():
@@ -687,8 +707,17 @@ def local(
             _styled(Messages.INFO_LOCAL_CACHE_CLEARED.format(path=cache_dir), Styles.SUCCESS)
         )
         raise typer.Exit(code=0)
-    if not setup:
+    if not setup and local_cuda is None:
         console.print(_styled(Messages.INFO_LOCAL_SETUP_HINT, Styles.INFO))
+        raise typer.Exit(code=0)
+    if not setup and local_cuda is not None:
+        apply_config_updates(local_cuda=local_cuda)
+        message = (
+            Messages.INFO_LOCAL_CUDA_ENABLED
+            if local_cuda
+            else Messages.INFO_LOCAL_CUDA_DISABLED
+        )
+        console.print(_styled(message, Styles.SUCCESS))
         raise typer.Exit(code=0)
 
     clean_model = model.strip()
@@ -696,8 +725,51 @@ def local(
         raise typer.BadParameter(Messages.ERROR_LOCAL_MODEL_EMPTY, param_name="model")
 
     console.print(_styled(Messages.INFO_LOCAL_SETUP_START.format(model=clean_model), Styles.INFO))
+    if local_cuda is None:
+        config_snapshot = load_config()
+        effective_cuda = bool(config_snapshot.local_cuda)
+    else:
+        effective_cuda = local_cuda
+    if effective_cuda:
+        try:
+            import onnxruntime as ort
+        except Exception as exc:
+            console.print(
+                _styled(Messages.DOCTOR_LOCAL_CUDA_IMPORT_FAILED, Styles.ERROR)
+            )
+            console.print(
+                _styled(
+                    Messages.DOCTOR_LOCAL_CUDA_IMPORT_DETAIL.format(reason=str(exc)),
+                    Styles.ERROR,
+                )
+            )
+            raise typer.Exit(code=1)
+        try:
+            providers = ort.get_available_providers()
+        except Exception as exc:
+            console.print(
+                _styled(Messages.DOCTOR_LOCAL_CUDA_MISSING, Styles.ERROR)
+            )
+            console.print(
+                _styled(
+                    Messages.DOCTOR_LOCAL_CUDA_IMPORT_DETAIL.format(reason=str(exc)),
+                    Styles.ERROR,
+                )
+            )
+            raise typer.Exit(code=1)
+        if "CUDAExecutionProvider" not in providers:
+            console.print(_styled(Messages.DOCTOR_LOCAL_CUDA_MISSING, Styles.ERROR))
+            console.print(
+                _styled(
+                    Messages.DOCTOR_LOCAL_CUDA_MISSING_DETAIL.format(
+                        providers=", ".join(providers) if providers else "none"
+                    ),
+                    Styles.ERROR,
+                )
+            )
+            raise typer.Exit(code=1)
     try:
-        backend = LocalEmbeddingBackend(model_name=clean_model)
+        backend = LocalEmbeddingBackend(model_name=clean_model, cuda=effective_cuda)
         vectors = backend.embed(["test"])
     except RuntimeError as exc:
         console.print(_styled(str(exc), Styles.ERROR))
@@ -710,7 +782,15 @@ def local(
     apply_config_updates(
         provider="local",
         model=clean_model,
+        local_cuda=local_cuda,
     )
+    if local_cuda is not None:
+        message = (
+            Messages.INFO_LOCAL_CUDA_ENABLED
+            if local_cuda
+            else Messages.INFO_LOCAL_CUDA_DISABLED
+        )
+        console.print(_styled(message, Styles.SUCCESS))
     cache_dir = resolve_fastembed_cache_dir()
     console.print(_styled(Messages.INFO_LOCAL_CACHE_DIR.format(path=cache_dir), Styles.INFO))
     console.print(_styled(Messages.INFO_LOCAL_SETUP_DONE.format(model=clean_model), Styles.SUCCESS))
@@ -820,6 +900,7 @@ def doctor(
         api_key=config.api_key,
         base_url=config.base_url,
         skip_api_test=skip_api_test,
+        local_cuda=bool(config.local_cuda),
     )
     )
 

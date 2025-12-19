@@ -83,6 +83,11 @@ Install the lightweight local backend:
 pip install "vexor[local]"
 ```
 
+GPU backend (requires CUDA drivers):
+```bash
+pip install "vexor[local-cuda]"
+```
+
 Download a local embedding model and auto-configure Vexor:
 ```bash
 vexor local --setup --model intfloat/multilingual-e5-small
@@ -91,6 +96,9 @@ vexor local --setup --model intfloat/multilingual-e5-small
 Then use `vexor search` / `vexor index` as usual.
 
 Local models are stored in `~/.vexor/models` (clear with `vexor local --clean-up`).
+
+GPU (optional): install `onnxruntime-gpu` (or `vexor[local-cuda]`) and use `vexor local --setup --cuda` (or `vexor local --cuda`).
+Switch back with `vexor local --cpu`.
 
 ## Index Modes
 
@@ -129,6 +137,8 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 | `vexor config --show` | Display current configuration |
 | `vexor local --setup [--model MODEL]` | Download a local model and set provider to `local` |
 | `vexor local --clean-up` | Remove local model cache under `~/.vexor/models` |
+| `vexor local --cuda` | Enable CUDA for local embeddings (requires `onnxruntime-gpu`) |
+| `vexor local --cpu` | Disable CUDA and use CPU for local embeddings |
 | `vexor install --skills claude` | Install Agent Skill for Claude Code |
 | `vexor install --skills codex` | Install Agent Skill for Codex |
 | `vexor doctor` | Run diagnostic checks (command, config, cache, API key, API connectivity) |

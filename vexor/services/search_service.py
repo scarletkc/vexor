@@ -23,6 +23,7 @@ class SearchRequest:
     provider: str
     base_url: str | None
     api_key: str | None
+    local_cuda: bool
     extensions: tuple[str, ...]
     auto_index: bool = True
 
@@ -71,6 +72,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             provider=request.provider,
             base_url=request.base_url,
             api_key=request.api_key,
+            local_cuda=request.local_cuda,
             extensions=request.extensions,
         )
         if result.status == IndexStatus.EMPTY:
@@ -114,6 +116,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             provider=request.provider,
             base_url=request.base_url,
             api_key=request.api_key,
+            local_cuda=request.local_cuda,
             extensions=request.extensions,
         )
         if result.status == IndexStatus.EMPTY:
@@ -161,6 +164,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         provider=request.provider,
         base_url=request.base_url,
         api_key=request.api_key,
+        local_cuda=request.local_cuda,
     )
     query_vector = None
     query_hash = None

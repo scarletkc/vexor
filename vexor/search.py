@@ -48,12 +48,14 @@ class VexorSearcher:
         provider: str = DEFAULT_PROVIDER,
         base_url: str | None = None,
         api_key: str | None = None,
+        local_cuda: bool = False,
     ) -> None:
         self.model_name = model_name
         self.batch_size = max(batch_size, 0)
         self.provider = (provider or DEFAULT_PROVIDER).lower()
         self.base_url = base_url
         self.api_key = resolve_api_key(api_key, self.provider)
+        self.local_cuda = bool(local_cuda)
         if backend is not None:
             self._backend = backend
             self._device = getattr(backend, "device", "Custom embedding backend")
@@ -116,6 +118,7 @@ class VexorSearcher:
             return LocalEmbeddingBackend(
                 model_name=self.model_name,
                 chunk_size=self.batch_size,
+                cuda=self.local_cuda,
             )
         if self.provider == "openai":
             self._device = f"{self.model_name} via OpenAI API"

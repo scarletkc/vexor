@@ -19,6 +19,7 @@ def test_load_config_defaults(tmp_path, monkeypatch):
     assert cfg.provider == config_module.DEFAULT_PROVIDER
     assert cfg.base_url is None
     assert cfg.auto_index is True
+    assert cfg.local_cuda is False
 
 
 def test_set_provider_and_base_url(tmp_path, monkeypatch):
@@ -43,6 +44,14 @@ def test_save_and_load_auto_index(tmp_path, monkeypatch):
     config_module.save_config(config_module.Config(auto_index=False))
     cfg = config_module.load_config()
     assert cfg.auto_index is False
+
+
+def test_save_and_load_local_cuda(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+
+    config_module.save_config(config_module.Config(local_cuda=True))
+    cfg = config_module.load_config()
+    assert cfg.local_cuda is True
 
 
 def test_resolve_api_key_prefers_config(monkeypatch):

@@ -10,7 +10,6 @@ from typing import Any, Dict
 
 CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-LOCAL_MODEL_DIR = CONFIG_DIR / "models"
 DEFAULT_MODEL = "text-embedding-3-small"
 DEFAULT_LOCAL_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_BATCH_SIZE = 0
@@ -29,6 +28,7 @@ class Config:
     provider: str = DEFAULT_PROVIDER
     base_url: str | None = None
     auto_index: bool = True
+    local_cuda: bool = False
 
 
 def load_config() -> Config:
@@ -42,6 +42,7 @@ def load_config() -> Config:
         provider=raw.get("provider") or DEFAULT_PROVIDER,
         base_url=raw.get("base_url") or None,
         auto_index=bool(raw.get("auto_index", True)),
+        local_cuda=bool(raw.get("local_cuda", False)),
     )
 
 
@@ -58,7 +59,12 @@ def save_config(config: Config) -> None:
     if config.base_url:
         data["base_url"] = config.base_url
     data["auto_index"] = bool(config.auto_index)
+    data["local_cuda"] = bool(config.local_cuda)
     CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def local_model_dir() -> Path:
+    return CONFIG_DIR / "models"
 
 
 def set_api_key(value: str | None) -> None:
@@ -94,6 +100,12 @@ def set_base_url(value: str | None) -> None:
 def set_auto_index(value: bool) -> None:
     config = load_config()
     config.auto_index = bool(value)
+    save_config(config)
+
+
+def set_local_cuda(value: bool) -> None:
+    config = load_config()
+    config.local_cuda = bool(value)
     save_config(config)
 
 

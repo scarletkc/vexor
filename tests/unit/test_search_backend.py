@@ -281,9 +281,15 @@ def test_format_openai_error_prefers_message_attr():
 
 def test_local_backend_chunks_requests(monkeypatch, tmp_path):
     class FakeEmbeddingModel:
-        def __init__(self, model_name: str, cache_dir: str | None = None) -> None:
+        def __init__(
+            self,
+            model_name: str,
+            cache_dir: str | None = None,
+            cuda: bool | None = None,
+        ) -> None:
             self.model_name = model_name
             self.cache_dir = cache_dir
+            self.cuda = cuda
             self.calls = []
 
         def embed(self, texts):
@@ -320,13 +326,19 @@ def test_local_backend_registers_custom_model(monkeypatch, tmp_path):
     calls = {"registered": 0}
 
     class FakeTextEmbedding:
-        def __init__(self, model_name: str, cache_dir: str | None = None) -> None:
+        def __init__(
+            self,
+            model_name: str,
+            cache_dir: str | None = None,
+            cuda: bool | None = None,
+        ) -> None:
             if calls["registered"] == 0:
                 raise ValueError(
                     "Model intfloat/multilingual-e5-small is not supported in TextEmbedding."
                 )
             self.model_name = model_name
             self.cache_dir = cache_dir
+            self.cuda = cuda
 
         def embed(self, texts):
             return [np.array([1.0, 0.0], dtype=np.float32) for _ in texts]

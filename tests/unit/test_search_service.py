@@ -62,6 +62,7 @@ def test_perform_search_auto_indexes_when_missing(monkeypatch, tmp_path: Path) -
         provider="gemini",
         base_url=None,
         api_key="k",
+        local_cuda=False,
         extensions=(),
         auto_index=True,
     )
@@ -96,6 +97,7 @@ def test_perform_search_missing_index_raises_when_auto_index_disabled(monkeypatc
         provider="gemini",
         base_url=None,
         api_key="k",
+        local_cuda=False,
         extensions=(),
         auto_index=False,
     )
@@ -148,6 +150,7 @@ def test_perform_search_auto_indexes_when_stale(monkeypatch, tmp_path: Path) -> 
         provider="gemini",
         base_url=None,
         api_key="k",
+        local_cuda=False,
         extensions=(),
         auto_index=True,
     )
@@ -222,6 +225,7 @@ def test_perform_search_uses_cached_query_vector(monkeypatch, tmp_path: Path) ->
         provider="openai",
         base_url=None,
         api_key="k",
+        local_cuda=False,
         extensions=(),
         auto_index=False,
     )

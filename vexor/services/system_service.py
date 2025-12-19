@@ -98,6 +98,7 @@ def check_api_connectivity(
     model: str,
     api_key: str | None,
     base_url: str | None,
+    local_cuda: bool = False,
 ) -> DoctorCheckResult:
     """Test API connectivity with a minimal embedding request."""
     from ..config import resolve_api_key
@@ -106,7 +107,36 @@ def check_api_connectivity(
         try:
             from ..providers.local import LocalEmbeddingBackend
 
-            backend = LocalEmbeddingBackend(model_name=model)
+            if local_cuda:
+                try:
+                    import onnxruntime as ort
+                except Exception as exc:
+                    return DoctorCheckResult(
+                        name="Local Model",
+                        passed=False,
+                        message=Messages.DOCTOR_LOCAL_CUDA_IMPORT_FAILED,
+                        detail=Messages.DOCTOR_LOCAL_CUDA_IMPORT_DETAIL.format(reason=str(exc)),
+                    )
+                try:
+                    providers = ort.get_available_providers()
+                except Exception as exc:
+                    return DoctorCheckResult(
+                        name="Local Model",
+                        passed=False,
+                        message=Messages.DOCTOR_LOCAL_CUDA_MISSING,
+                        detail=Messages.DOCTOR_LOCAL_CUDA_IMPORT_DETAIL.format(reason=str(exc)),
+                    )
+                if "CUDAExecutionProvider" not in providers:
+                    return DoctorCheckResult(
+                        name="Local Model",
+                        passed=False,
+                        message=Messages.DOCTOR_LOCAL_CUDA_MISSING,
+                        detail=Messages.DOCTOR_LOCAL_CUDA_MISSING_DETAIL.format(
+                            providers=", ".join(providers) if providers else "none"
+                        ),
+                    )
+
+            backend = LocalEmbeddingBackend(model_name=model, cuda=local_cuda)
             result = backend.embed(["test"])
             if result.shape[0] == 1 and result.shape[1] > 0:
                 return DoctorCheckResult(
@@ -220,6 +250,7 @@ def run_all_doctor_checks(
     base_url: str | None,
     *,
     skip_api_test: bool = False,
+    local_cuda: bool = False,
 ) -> list[DoctorCheckResult]:
     """Run all doctor checks and return results."""
     results = [
@@ -229,7 +260,15 @@ def run_all_doctor_checks(
         check_api_key_configured(provider, api_key),
     ]
     if not skip_api_test:
-        results.append(check_api_connectivity(provider, model, api_key, base_url))
+        results.append(
+            check_api_connectivity(
+                provider,
+                model,
+                api_key,
+                base_url,
+                local_cuda=local_cuda,
+            )
+        )
     return results
 
 

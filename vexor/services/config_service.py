@@ -11,6 +11,7 @@ from ..config import (
     set_base_url,
     set_batch_size,
     set_auto_index,
+    set_local_cuda,
     set_model,
     set_provider,
 )
@@ -26,6 +27,7 @@ class ConfigUpdateResult:
     base_url_set: bool = False
     base_url_cleared: bool = False
     auto_index_set: bool = False
+    local_cuda_set: bool = False
 
     @property
     def changed(self) -> bool:
@@ -39,6 +41,7 @@ class ConfigUpdateResult:
                 self.base_url_set,
                 self.base_url_cleared,
                 self.auto_index_set,
+                self.local_cuda_set,
             )
         )
 
@@ -53,6 +56,7 @@ def apply_config_updates(
     base_url: str | None = None,
     clear_base_url: bool = False,
     auto_index: bool | None = None,
+    local_cuda: bool | None = None,
 ) -> ConfigUpdateResult:
     """Apply config mutations and report which fields were updated."""
 
@@ -81,6 +85,9 @@ def apply_config_updates(
     if auto_index is not None:
         set_auto_index(auto_index)
         result.auto_index_set = True
+    if local_cuda is not None:
+        set_local_cuda(local_cuda)
+        result.local_cuda_set = True
     return result
 
 

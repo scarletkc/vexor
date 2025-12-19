@@ -41,6 +41,7 @@ def build_index(
     provider: str,
     base_url: str | None,
     api_key: str | None,
+    local_cuda: bool = False,
     extensions: Sequence[str] | None = None,
 ) -> IndexResult:
     """Create or refresh the cached index for *directory*."""
@@ -79,6 +80,7 @@ def build_index(
         provider=provider,
         base_url=base_url,
         api_key=api_key,
+        local_cuda=local_cuda,
     )
 
     if cached_files:

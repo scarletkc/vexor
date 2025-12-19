@@ -779,6 +779,7 @@ def test_config_set_and_show(tmp_path):
     assert data["provider"] == "gemini"
     assert data["base_url"] == "https://proxy.example.com"
     assert data["auto_index"] is True
+    assert data["local_cuda"] is False
 
     result_show = runner.invoke(app, ["config", "--show"])
     assert "custom-model" in result_show.stdout
@@ -788,8 +789,9 @@ def test_local_setup_updates_config(tmp_path, monkeypatch):
     runner = CliRunner()
 
     class DummyLocalBackend:
-        def __init__(self, model_name: str) -> None:
+        def __init__(self, model_name: str, cuda: bool = False) -> None:
             self.model_name = model_name
+            self.cuda = cuda
 
         def embed(self, texts):
             return np.zeros((len(texts), 2), dtype=np.float32)
@@ -827,6 +829,23 @@ def test_local_cleanup_removes_cache(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert not cache_dir.exists()
+
+
+def test_local_cuda_toggle_updates_config(tmp_path):
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["local", "--cuda"])
+    assert result.exit_code == 0
+
+    config_path = tmp_path / "config" / "config.json"
+    data = json.loads(config_path.read_text())
+    assert data["local_cuda"] is True
+
+    result = runner.invoke(app, ["local", "--cpu"])
+    assert result.exit_code == 0
+
+    data = json.loads(config_path.read_text())
+    assert data["local_cuda"] is False
 
 
 def test_config_set_auto_index(tmp_path):

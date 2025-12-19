@@ -65,6 +65,8 @@ class Messages:
     HELP_SETUP_LOCAL = "Download a local embedding model and configure Vexor to use it."
     HELP_SETUP_LOCAL_MODEL = "Local embedding model name to download (fastembed model name)."
     HELP_LOCAL_CLEANUP = "Delete the local model cache stored under ~/.vexor/models."
+    HELP_LOCAL_CUDA = "Enable CUDA for local embedding (requires onnxruntime-gpu)."
+    HELP_LOCAL_CPU = "Disable CUDA and use CPU for local embedding."
 
     ERROR_API_KEY_MISSING = (
         "API key is missing or still set to the placeholder. "
@@ -76,13 +78,15 @@ class Messages:
     ERROR_NO_EMBEDDINGS = "Embedding API returned no embeddings."
     ERROR_LOCAL_DEP_MISSING = (
         "Local model support is not installed. "
-        "Install with `pip install \"vexor\\[local]\"`."
+        "Install with `pip install \"vexor\\[local]\"` "
+        "(or `vexor\\[local-cuda]` for GPU)."
     )
     ERROR_LOCAL_MODEL_LOAD = "Failed to load local model '{model}' ({reason})."
     ERROR_LOCAL_MODEL_EMBED = "Local model embed failed ({reason})."
     ERROR_LOCAL_MODEL_EMPTY = "Model name cannot be empty."
-    ERROR_LOCAL_OPTIONS_CONFLICT = "Use only one of --setup or --clean-up."
+    ERROR_LOCAL_OPTIONS_CONFLICT = "Use --clean-up without combining it with other options."
     ERROR_LOCAL_CACHE_CLEANUP = "Failed to remove local model cache at {path} ({reason})."
+    ERROR_LOCAL_CUDA_CONFLICT = "Use only one of --cuda or --cpu."
     ERROR_EMPTY_QUERY = "Query text must not be empty."
     ERROR_BATCH_NEGATIVE = "Batch size must be >= 0"
     ERROR_MODE_INVALID = "Unsupported mode '{value}'. Allowed values: {allowed}."
@@ -135,6 +139,17 @@ class Messages:
     INFO_LOCAL_CACHE_EMPTY = "Local model cache already empty at {path}"
     INFO_LOCAL_CACHE_CLEARED = "Local model cache removed at {path}"
     INFO_LOCAL_SETUP_DONE = "Local model ready: {model}. Provider set to local."
+    INFO_LOCAL_CUDA_ENABLED = "Local embeddings will use CUDA."
+    INFO_LOCAL_CUDA_DISABLED = "Local embeddings will use CPU."
+    DOCTOR_LOCAL_CUDA_MISSING = "CUDA provider not available for local embeddings"
+    DOCTOR_LOCAL_CUDA_IMPORT_FAILED = "Unable to import onnxruntime (CUDA check failed)"
+    DOCTOR_LOCAL_CUDA_MISSING_DETAIL = (
+        "Install `vexor\\[local-cuda]` or `onnxruntime-gpu`, "
+        "and ensure CUDA drivers are installed. Available providers: {providers}"
+    )
+    DOCTOR_LOCAL_CUDA_IMPORT_DETAIL = (
+        "Install `vexor\\[local-cuda]` or `onnxruntime-gpu` ({reason})"
+    )
     INFO_CONFIG_EDITING = "Opening config file in editor ({editor}): {path}"
     ERROR_CONFIG_EDITOR_NOT_FOUND = "Unable to determine a text editor. Set $VISUAL or $EDITOR, or install nano/vi."
     ERROR_CONFIG_EDITOR_FAILED = "Editor exited with status {code}."
@@ -145,6 +160,7 @@ class Messages:
         "Default model: {model}\n"
         "Default batch size: {batch}\n"
         "Auto index: {auto_index}\n"
+        "Local CUDA: {local_cuda}\n"
         "Custom base URL: {base_url}"
     )
     INFO_SEARCH_RUNNING = "Searching cached index under {path}..."
