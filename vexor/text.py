@@ -64,6 +64,7 @@ class Messages:
     HELP_LOCAL = "Manage local embedding models."
     HELP_SETUP_LOCAL = "Download a local embedding model and configure Vexor to use it."
     HELP_SETUP_LOCAL_MODEL = "Local embedding model name to download (fastembed model name)."
+    HELP_LOCAL_CLEANUP = "Delete the local model cache stored under ~/.vexor/models."
 
     ERROR_API_KEY_MISSING = (
         "API key is missing or still set to the placeholder. "
@@ -80,6 +81,8 @@ class Messages:
     ERROR_LOCAL_MODEL_LOAD = "Failed to load local model '{model}' ({reason})."
     ERROR_LOCAL_MODEL_EMBED = "Local model embed failed ({reason})."
     ERROR_LOCAL_MODEL_EMPTY = "Model name cannot be empty."
+    ERROR_LOCAL_OPTIONS_CONFLICT = "Use only one of --setup or --clean-up."
+    ERROR_LOCAL_CACHE_CLEANUP = "Failed to remove local model cache at {path} ({reason})."
     ERROR_EMPTY_QUERY = "Query text must not be empty."
     ERROR_BATCH_NEGATIVE = "Batch size must be >= 0"
     ERROR_MODE_INVALID = "Unsupported mode '{value}'. Allowed values: {allowed}."
@@ -129,6 +132,8 @@ class Messages:
     INFO_LOCAL_SETUP_START = "Preparing local model {model}..."
     INFO_LOCAL_SETUP_HINT = "Use `vexor local --setup` to configure a local embedding model."
     INFO_LOCAL_CACHE_DIR = "Local model cache: {path}"
+    INFO_LOCAL_CACHE_EMPTY = "Local model cache already empty at {path}"
+    INFO_LOCAL_CACHE_CLEARED = "Local model cache removed at {path}"
     INFO_LOCAL_SETUP_DONE = "Local model ready: {model}. Provider set to local."
     INFO_CONFIG_EDITING = "Opening config file in editor ({editor}): {path}"
     ERROR_CONFIG_EDITOR_NOT_FOUND = "Unable to determine a text editor. Set $VISUAL or $EDITOR, or install nano/vi."

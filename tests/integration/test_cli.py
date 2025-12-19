@@ -795,6 +795,13 @@ def test_local_setup_updates_config(tmp_path, monkeypatch):
             return np.zeros((len(texts), 2), dtype=np.float32)
 
     monkeypatch.setattr("vexor.cli.LocalEmbeddingBackend", DummyLocalBackend)
+    def _cache_dir(create: bool = True):
+        path = tmp_path / "models"
+        if create:
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    monkeypatch.setattr("vexor.cli.resolve_fastembed_cache_dir", _cache_dir)
 
     result = runner.invoke(app, ["local", "--setup", "--model", "local-model"])
 
@@ -803,6 +810,23 @@ def test_local_setup_updates_config(tmp_path, monkeypatch):
     data = json.loads(config_path.read_text())
     assert data["provider"] == "local"
     assert data["model"] == "local-model"
+
+
+def test_local_cleanup_removes_cache(tmp_path, monkeypatch):
+    runner = CliRunner()
+    cache_dir = tmp_path / "models"
+    cache_dir.mkdir()
+    (cache_dir / "dummy.txt").write_text("data", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "vexor.cli.resolve_fastembed_cache_dir",
+        lambda create=False: cache_dir,
+    )
+
+    result = runner.invoke(app, ["local", "--clean-up"])
+
+    assert result.exit_code == 0
+    assert not cache_dir.exists()
 
 
 def test_config_set_auto_index(tmp_path):

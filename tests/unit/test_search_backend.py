@@ -279,10 +279,11 @@ def test_format_openai_error_prefers_message_attr():
     assert "boom" in msg
 
 
-def test_local_backend_chunks_requests(monkeypatch):
+def test_local_backend_chunks_requests(monkeypatch, tmp_path):
     class FakeEmbeddingModel:
-        def __init__(self, model_name: str) -> None:
+        def __init__(self, model_name: str, cache_dir: str | None = None) -> None:
             self.model_name = model_name
+            self.cache_dir = cache_dir
             self.calls = []
 
         def embed(self, texts):
@@ -291,6 +292,13 @@ def test_local_backend_chunks_requests(monkeypatch):
                 yield np.array([1.0, 0.0], dtype=np.float32)
 
     monkeypatch.setattr(local_backend, "_load_fastembed", lambda: FakeEmbeddingModel)
+    def _cache_dir(create: bool = True):
+        path = tmp_path / "models"
+        if create:
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    monkeypatch.setattr(local_backend, "resolve_fastembed_cache_dir", _cache_dir)
 
     backend = local_backend.LocalEmbeddingBackend(model_name="demo", chunk_size=2)
     vectors = backend.embed(["a", "bb", "ccc"])
@@ -306,6 +314,44 @@ def test_local_backend_requires_dependency(monkeypatch):
     monkeypatch.setattr(local_backend, "_load_fastembed", _boom)
     with pytest.raises(RuntimeError, match="missing"):
         local_backend.LocalEmbeddingBackend(model_name="demo")
+
+
+def test_local_backend_registers_custom_model(monkeypatch, tmp_path):
+    calls = {"registered": 0}
+
+    class FakeTextEmbedding:
+        def __init__(self, model_name: str, cache_dir: str | None = None) -> None:
+            if calls["registered"] == 0:
+                raise ValueError(
+                    "Model intfloat/multilingual-e5-small is not supported in TextEmbedding."
+                )
+            self.model_name = model_name
+            self.cache_dir = cache_dir
+
+        def embed(self, texts):
+            return [np.array([1.0, 0.0], dtype=np.float32) for _ in texts]
+
+    monkeypatch.setattr(local_backend, "_load_fastembed", lambda: FakeTextEmbedding)
+    def _cache_dir(create: bool = True):
+        path = tmp_path / "models"
+        if create:
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    monkeypatch.setattr(local_backend, "resolve_fastembed_cache_dir", _cache_dir)
+
+    def fake_register(_cls, model_name: str) -> bool:
+        assert model_name == "intfloat/multilingual-e5-small"
+        calls["registered"] += 1
+        return True
+
+    monkeypatch.setattr(local_backend, "_register_custom_model", fake_register)
+
+    backend = local_backend.LocalEmbeddingBackend(model_name="intfloat/multilingual-e5-small")
+    vectors = backend.embed(["x"])
+
+    assert calls["registered"] == 1
+    assert vectors.shape == (1, 2)
 
 
 def test_vexor_searcher_embed_texts(monkeypatch):

@@ -90,6 +90,8 @@ vexor local --setup --model intfloat/multilingual-e5-small
 
 Then use `vexor search` / `vexor index` as usual.
 
+Local models are stored in `~/.vexor/models` (clear with `vexor local --clean-up`).
+
 ## Index Modes
 
 Control embedding granularity with `--mode`:
@@ -126,6 +128,7 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 | `vexor index --path PATH` | Build/refresh index manually |
 | `vexor config --show` | Display current configuration |
 | `vexor local --setup [--model MODEL]` | Download a local model and set provider to `local` |
+| `vexor local --clean-up` | Remove local model cache under `~/.vexor/models` |
 | `vexor install --skills claude` | Install Agent Skill for Claude Code |
 | `vexor install --skills codex` | Install Agent Skill for Codex |
 | `vexor doctor` | Run diagnostic checks (command, config, cache, API key, API connectivity) |

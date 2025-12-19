@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shlex
+import shutil
 import subprocess
 import sys
 from enum import Enum
@@ -647,6 +648,11 @@ def local(
         "--setup",
         help=Messages.HELP_SETUP_LOCAL,
     ),
+    clean_up: bool = typer.Option(
+        False,
+        "--clean-up",
+        help=Messages.HELP_LOCAL_CLEANUP,
+    ),
     model: str = typer.Option(
         DEFAULT_LOCAL_MODEL,
         "--model",
@@ -655,6 +661,32 @@ def local(
     ),
 ) -> None:
     """Manage local embedding models."""
+    if setup and clean_up:
+        raise typer.BadParameter(Messages.ERROR_LOCAL_OPTIONS_CONFLICT)
+    if clean_up:
+        cache_dir = resolve_fastembed_cache_dir(create=False)
+        if not cache_dir.exists():
+            console.print(
+                _styled(Messages.INFO_LOCAL_CACHE_EMPTY.format(path=cache_dir), Styles.INFO)
+            )
+            raise typer.Exit(code=0)
+        try:
+            shutil.rmtree(cache_dir)
+        except OSError as exc:
+            console.print(
+                _styled(
+                    Messages.ERROR_LOCAL_CACHE_CLEANUP.format(
+                        path=cache_dir,
+                        reason=str(exc),
+                    ),
+                    Styles.ERROR,
+                )
+            )
+            raise typer.Exit(code=1)
+        console.print(
+            _styled(Messages.INFO_LOCAL_CACHE_CLEARED.format(path=cache_dir), Styles.SUCCESS)
+        )
+        raise typer.Exit(code=0)
     if not setup:
         console.print(_styled(Messages.INFO_LOCAL_SETUP_HINT, Styles.INFO))
         raise typer.Exit(code=0)

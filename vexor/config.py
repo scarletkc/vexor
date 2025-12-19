@@ -10,6 +10,7 @@ from typing import Any, Dict
 
 CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+LOCAL_MODEL_DIR = CONFIG_DIR / "models"
 DEFAULT_MODEL = "text-embedding-3-small"
 DEFAULT_LOCAL_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_BATCH_SIZE = 0
