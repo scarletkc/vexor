@@ -77,9 +77,7 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
-          pip install pytest pytest-cov
+          pip install -e ".[dev]"
 
       - name: Run pytest with coverage
         if: steps.detect.outputs.changed == 'true'
@@ -184,7 +182,7 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install ".[dev]"
 
       - name: Clean previous builds
         shell: bash
