@@ -67,4 +67,5 @@ vexor search "config loader" --path . --mode code --ext .py
 
 ## Tips
 
-First time search will index files (may take a minute). Subsequent searches are fast.
+- First time search will index files (may take a minute). Subsequent searches are fast.
+- Results return similarity ranking, exact file location, line numbers, and matching snippet preview.
