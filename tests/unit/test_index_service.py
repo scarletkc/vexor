@@ -211,14 +211,10 @@ def test_build_index_returns_up_to_date_when_no_changes(tmp_path, monkeypatch):
 
     monkeypatch.setattr("vexor.utils.collect_files", lambda *_args, **_kwargs: [file_a])
     monkeypatch.setattr(index_service, "_diff_cached_files", lambda *_args, **_kwargs: index_service.FileDiff())
-    monkeypatch.setattr(index_service, "_has_missing_line_metadata", lambda *_args, **_kwargs: False)
-
-    payload = index_service.ModePayload(file=file_a, label="a", preview="a", chunk_index=0, start_line=1, end_line=1)
 
     class DummyStrategy:
         def payloads_for_files(self, files):
-            assert files == [file_a]
-            return [payload]
+            raise AssertionError("payloads_for_files should not be called when no changes")
 
     monkeypatch.setattr(index_service, "get_strategy", lambda *_args, **_kwargs: DummyStrategy())
 

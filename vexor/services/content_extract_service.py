@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from bisect import bisect_left
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -198,6 +199,9 @@ def extract_full_chunks_with_lines(
     size = max(int(chunk_size), 1)
     stride = max(size - max(int(overlap), 0), 1)
     chunks: list[FullChunk] = []
+    newline_positions: list[int] = []
+    if include_lines:
+        newline_positions = [idx for idx, ch in enumerate(normalized) if ch == "\n"]
     start = 0
     length = len(normalized)
     while start < length:
@@ -212,9 +216,9 @@ def extract_full_chunks_with_lines(
                 trailing = len(window) - len(window.rstrip())
                 span_start = min(start + leading, length)
                 span_end = max(span_start, end - trailing)
-                start_line = normalized.count("\n", 0, span_start) + 1
+                start_line = bisect_left(newline_positions, span_start) + 1
                 last_index = max(span_start, span_end - 1)
-                end_line = normalized.count("\n", 0, last_index) + 1
+                end_line = bisect_left(newline_positions, last_index) + 1
             chunks.append(FullChunk(text=cleaned, start_line=start_line, end_line=end_line))
         if end >= length:
             break

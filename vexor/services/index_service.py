@@ -9,11 +9,14 @@ from pathlib import Path
 from typing import MutableMapping, Sequence
 
 from .cache_service import load_index_metadata_safe
+from .content_extract_service import TEXT_EXTENSIONS
+from .js_parser import JSTS_EXTENSIONS
 from ..cache import CACHE_VERSION, IndexedChunk, backfill_chunk_lines
 from ..modes import get_strategy, ModePayload
 
 INCREMENTAL_CHANGE_THRESHOLD = 0.5
 MTIME_TOLERANCE = 5e-1
+MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
 
 
 class IndexStatus(str, Enum):
@@ -73,7 +76,6 @@ def build_index(
     cached_files = existing_meta.get("files", []) if existing_meta else []
 
     strategy = get_strategy(mode)
-    payloads = strategy.payloads_for_files(files)
     searcher = VexorSearcher(
         model_name=model_name,
         batch_size=batch_size,
@@ -85,25 +87,21 @@ def build_index(
 
     if cached_files:
         cached_version = int(existing_meta.get("version", 0) or 0) if existing_meta else 0
-        needs_line_backfill = cached_version < CACHE_VERSION or _has_missing_line_metadata(
-            existing_meta,
-            payloads,
-            directory,
+        full_max_bytes = (
+            getattr(strategy, "full_max_bytes", 10_000) if mode == "auto" else None
         )
+        missing_line_files = _missing_line_files(existing_meta, mode, full_max_bytes)
 
         snapshot = _snapshot_current_files(files, directory, stat_cache=stat_cache)
         diff = _diff_cached_files(snapshot, cached_files)
         if diff.is_noop:
-            if needs_line_backfill:
-                updates = [
-                    (
-                        _relative_to_root(payload.file, directory),
-                        payload.chunk_index,
-                        payload.start_line,
-                        payload.end_line,
-                    )
-                    for payload in payloads
-                ]
+            if missing_line_files:
+                updates = _build_line_backfill_updates(
+                    strategy=strategy,
+                    files=files,
+                    missing_rel_paths=missing_line_files,
+                    root=directory,
+                )
                 cache_path = backfill_chunk_lines(
                     root=directory,
                     model=model_name,
@@ -119,10 +117,48 @@ def build_index(
                     cache_path=cache_path,
                     files_indexed=len(files),
                 )
+            if cached_version < CACHE_VERSION:
+                cache_path = backfill_chunk_lines(
+                    root=directory,
+                    model=model_name,
+                    include_hidden=include_hidden,
+                    respect_gitignore=respect_gitignore,
+                    mode=mode,
+                    recursive=recursive,
+                    updates=[],
+                    extensions=extensions,
+                )
+                return IndexResult(
+                    status=IndexStatus.STORED,
+                    cache_path=cache_path,
+                    files_indexed=len(files),
+                )
             return IndexResult(status=IndexStatus.UP_TO_DATE, files_indexed=len(files))
 
         change_ratio = diff.change_ratio(len(snapshot), len(cached_files))
         if change_ratio <= INCREMENTAL_CHANGE_THRESHOLD:
+            cached_chunks = existing_meta.get("chunks", []) if existing_meta else []
+            cached_chunk_map = _cached_chunk_map(cached_chunks)
+            removed_rel_paths = set(diff.removed)
+            changed_rel_paths = {
+                _relative_to_root(path, directory) for path in diff.changed_paths()
+            }
+            files_with_rel = [
+                (_relative_to_root(path, directory), path) for path in files
+            ]
+            for rel, _path in files_with_rel:
+                if rel in removed_rel_paths or rel in changed_rel_paths:
+                    continue
+                if rel not in cached_chunk_map:
+                    changed_rel_paths.add(rel)
+
+            changed_files = [
+                path for rel, path in files_with_rel if rel in changed_rel_paths
+            ]
+            changed_payloads = (
+                strategy.payloads_for_files(changed_files) if changed_files else []
+            )
+
             cache_path = _apply_incremental_update(
                 directory=directory,
                 include_hidden=include_hidden,
@@ -130,23 +166,24 @@ def build_index(
                 recursive=recursive,
                 mode=mode,
                 model_name=model_name,
-                payloads=payloads,
-                diff=diff,
+                files=files,
+                changed_payloads=changed_payloads,
+                removed_rel_paths=removed_rel_paths,
+                cached_chunk_map=cached_chunk_map,
                 searcher=searcher,
                 apply_fn=apply_index_updates,
                 extensions=extensions,
                 stat_cache=stat_cache,
             )
-            if needs_line_backfill:
-                updates = [
-                    (
-                        _relative_to_root(payload.file, directory),
-                        payload.chunk_index,
-                        payload.start_line,
-                        payload.end_line,
-                    )
-                    for payload in payloads
-                ]
+
+            line_backfill_targets = missing_line_files - changed_rel_paths - removed_rel_paths
+            if line_backfill_targets:
+                updates = _build_line_backfill_updates(
+                    strategy=strategy,
+                    files=files,
+                    missing_rel_paths=line_backfill_targets,
+                    root=directory,
+                )
                 cache_path = backfill_chunk_lines(
                     root=directory,
                     model=model_name,
@@ -163,6 +200,7 @@ def build_index(
                 files_indexed=len(files),
             )
 
+    payloads = strategy.payloads_for_files(files)
     file_labels = [payload.label for payload in payloads]
     embeddings = searcher.embed_texts(file_labels)
     entries = _build_index_entries(payloads, embeddings, directory, stat_cache=stat_cache)
@@ -298,31 +336,32 @@ def _apply_incremental_update(
     mode: str,
     recursive: bool,
     model_name: str,
-    payloads: list[ModePayload],
-    diff: FileDiff,
+    files: Sequence[Path],
+    changed_payloads: Sequence[ModePayload],
+    removed_rel_paths: set[str],
+    cached_chunk_map: dict[str, list[int]],
     searcher,
     apply_fn,
     extensions: Sequence[str] | None,
     stat_cache: MutableMapping[Path, os.stat_result] | None = None,
 ) -> Path:
-    ordered_entries = [
-        (_relative_to_root(payload.file, directory), payload.chunk_index)
-        for payload in payloads
-    ]
-    changed_set = set(diff.changed_paths())
-    if changed_set:
-        targets = [payload for payload in payloads if payload.file in changed_set]
-        if targets:
-            labels = [payload.label for payload in targets]
-            embeddings = searcher.embed_texts(labels)
-            changed_entries = _build_index_entries(
-                targets,
-                embeddings,
-                directory,
-                stat_cache=stat_cache,
-            )
-        else:
-            changed_entries = []
+    changed_payloads_by_rel = _payloads_by_rel_path(changed_payloads, directory)
+    ordered_entries = _build_ordered_entries(
+        files=files,
+        root=directory,
+        cached_chunk_map=cached_chunk_map,
+        changed_payloads_by_rel=changed_payloads_by_rel,
+        removed_rel_paths=removed_rel_paths,
+    )
+    if changed_payloads:
+        labels = [payload.label for payload in changed_payloads]
+        embeddings = searcher.embed_texts(labels)
+        changed_entries = _build_index_entries(
+            changed_payloads,
+            embeddings,
+            directory,
+            stat_cache=stat_cache,
+        )
     else:
         changed_entries = []
 
@@ -335,7 +374,7 @@ def _apply_incremental_update(
         recursive=recursive,
         ordered_entries=ordered_entries,
         changed_entries=changed_entries,
-        removed_rel_paths=diff.removed,
+        removed_rel_paths=sorted(removed_rel_paths),
         extensions=extensions,
     )
     return cache_path
@@ -349,17 +388,8 @@ def _relative_to_root(path: Path, root: Path) -> str:
     return str(rel)
 
 
-def _has_missing_line_metadata(
-    metadata: dict | None,
-    payloads: Sequence[ModePayload],
-    root: Path,
-) -> bool:
-    if not metadata:
-        return False
-    chunk_entries = metadata.get("chunks") or []
-    if not chunk_entries:
-        return False
-    line_map: dict[tuple[str, int], tuple[int | None, int | None]] = {}
+def _cached_chunk_map(chunk_entries: Sequence[dict]) -> dict[str, list[int]]:
+    chunk_map: dict[str, list[int]] = {}
     for entry in chunk_entries:
         rel_path = entry.get("path")
         if not isinstance(rel_path, str):
@@ -368,21 +398,126 @@ def _has_missing_line_metadata(
             chunk_index = int(entry.get("chunk_index", 0))
         except (TypeError, ValueError):
             chunk_index = 0
-        start_line = entry.get("start_line")
-        end_line = entry.get("end_line")
-        line_map[(rel_path, chunk_index)] = (start_line, end_line)
+        chunk_map.setdefault(rel_path, []).append(chunk_index)
+    return chunk_map
 
+
+def _payloads_by_rel_path(
+    payloads: Sequence[ModePayload],
+    root: Path,
+) -> dict[str, list[ModePayload]]:
+    payload_map: dict[str, list[ModePayload]] = {}
     for payload in payloads:
-        if payload.start_line is None and payload.end_line is None:
-            continue
         rel_path = _relative_to_root(payload.file, root)
-        existing = line_map.get((rel_path, payload.chunk_index))
-        if existing is None:
+        payload_map.setdefault(rel_path, []).append(payload)
+    return payload_map
+
+
+def _build_ordered_entries(
+    *,
+    files: Sequence[Path],
+    root: Path,
+    cached_chunk_map: dict[str, list[int]],
+    changed_payloads_by_rel: dict[str, list[ModePayload]],
+    removed_rel_paths: set[str],
+) -> list[tuple[str, int]]:
+    ordered_entries: list[tuple[str, int]] = []
+    for path in files:
+        rel_path = _relative_to_root(path, root)
+        if rel_path in removed_rel_paths:
             continue
-        existing_start, existing_end = existing
-        if existing_start is None and existing_end is None:
+        payloads = changed_payloads_by_rel.get(rel_path)
+        if payloads is not None:
+            ordered_entries.extend(
+                (rel_path, payload.chunk_index) for payload in payloads
+            )
+            continue
+        chunk_indices = cached_chunk_map.get(rel_path)
+        if not chunk_indices:
+            continue
+        ordered_entries.extend((rel_path, chunk_index) for chunk_index in chunk_indices)
+    return ordered_entries
+
+
+def _line_metadata_expected(
+    mode: str,
+    rel_path: str,
+    size_bytes: int | None,
+    full_max_bytes: int | None,
+) -> bool:
+    suffix = Path(rel_path).suffix.lower()
+    if mode in {"name", "head", "brief"}:
+        return False
+    if mode == "outline":
+        if suffix in MARKDOWN_EXTENSIONS:
             return True
+        return suffix in TEXT_EXTENSIONS
+    if mode == "code":
+        if suffix == ".py" or suffix in JSTS_EXTENSIONS:
+            return True
+        return suffix in TEXT_EXTENSIONS
+    if mode == "full":
+        return suffix in TEXT_EXTENSIONS
+    if mode == "auto":
+        if suffix == ".py" or suffix in JSTS_EXTENSIONS:
+            return True
+        if suffix in MARKDOWN_EXTENSIONS:
+            return True
+        if size_bytes is None:
+            return suffix in TEXT_EXTENSIONS
+        if full_max_bytes is not None and size_bytes <= full_max_bytes:
+            return suffix in TEXT_EXTENSIONS
+        return False
     return False
+
+
+def _missing_line_files(
+    metadata: dict | None,
+    mode: str,
+    full_max_bytes: int | None,
+) -> set[str]:
+    if not metadata:
+        return set()
+    chunk_entries = metadata.get("chunks") or []
+    if not chunk_entries:
+        return set()
+    missing: set[str] = set()
+    for entry in chunk_entries:
+        rel_path = entry.get("path")
+        if not isinstance(rel_path, str):
+            continue
+        if entry.get("start_line") is not None or entry.get("end_line") is not None:
+            continue
+        size = entry.get("size")
+        size_bytes = int(size) if isinstance(size, (int, float)) else None
+        if _line_metadata_expected(mode, rel_path, size_bytes, full_max_bytes):
+            missing.add(rel_path)
+    return missing
+
+
+def _build_line_backfill_updates(
+    *,
+    strategy,
+    files: Sequence[Path],
+    missing_rel_paths: set[str],
+    root: Path,
+) -> list[tuple[str, int, int | None, int | None]]:
+    if not missing_rel_paths:
+        return []
+    files_by_rel = {_relative_to_root(path, root): path for path in files}
+    targets = [files_by_rel[rel] for rel in missing_rel_paths if rel in files_by_rel]
+    if not targets:
+        return []
+    payloads = strategy.payloads_for_files(targets)
+    return [
+        (
+            _relative_to_root(payload.file, root),
+            payload.chunk_index,
+            payload.start_line,
+            payload.end_line,
+        )
+        for payload in payloads
+    ]
 
 
 def _build_index_entries(
