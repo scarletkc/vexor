@@ -73,6 +73,6 @@ vexor search "config loader" --path . --exclude-pattern tests/** --exclude-patte
 
 ## Tips
 
-- First time search will index files (may take a minute). Subsequent searches are fast.
+- First time search will index files (may take a minute). Subsequent searches are fast. Use longer timeouts if needed.
 - Results return similarity ranking, exact file location, line numbers, and matching snippet preview.
 - Combine `--ext` with `--exclude-pattern` to focus on a subset (exclude rules apply on top).
