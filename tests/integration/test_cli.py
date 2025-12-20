@@ -121,6 +121,7 @@ def test_search_prints_index_message_when_auto_index_missing(tmp_path, monkeypat
     sample_file.write_text("data")
 
     monkeypatch.setattr("vexor.cli.load_index_metadata_safe", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("vexor.cli.list_cache_entries", lambda: [])
 
     def fake_perform_search(request):
         return SearchResponse(
@@ -152,6 +153,7 @@ def test_search_prints_index_message_when_auto_index_stale(tmp_path, monkeypatch
         lambda *_args, **_kwargs: {"files": [{"path": "alpha.txt", "mtime": 0.0, "size": 1}]},
     )
     monkeypatch.setattr("vexor.cli.is_cache_current", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr("vexor.cli.list_cache_entries", lambda: [])
 
     def fake_perform_search(request):
         return SearchResponse(
