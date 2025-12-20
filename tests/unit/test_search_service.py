@@ -236,3 +236,361 @@ def test_perform_search_uses_cached_query_vector(monkeypatch, tmp_path: Path) ->
     assert response1.index_empty is False
     assert response2.index_empty is False
     assert calls["embeds"] == 1
+
+
+def test_perform_search_reuses_superset_index_for_extension_filter(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import vexor.cache as cache
+
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
+    root = tmp_path / "project"
+    root.mkdir()
+    file_py = root / "a.py"
+    file_md = root / "b.md"
+    file_py.write_text("print('a')", encoding="utf-8")
+    file_md.write_text("# doc", encoding="utf-8")
+
+    entries = [
+        cache.IndexedChunk(
+            path=file_py,
+            rel_path="a.py",
+            chunk_index=0,
+            preview="a",
+            embedding=[1.0, 0.0],
+        ),
+        cache.IndexedChunk(
+            path=file_md,
+            rel_path="b.md",
+            chunk_index=0,
+            preview="b",
+            embedding=[0.0, 1.0],
+        ),
+    ]
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        entries=entries,
+    )
+
+    calls = {"indexed": 0}
+
+    def fake_build_index(*_args, **_kwargs):
+        calls["indexed"] += 1
+        return IndexResult(status=IndexStatus.STORED, files_indexed=2)
+
+    class DummySearcher:
+        device = "dummy-backend"
+
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def embed_texts(self, texts):
+            return np.array([[1.0, 0.0]], dtype=np.float32)
+
+    monkeypatch.setattr("vexor.services.index_service.build_index", fake_build_index)
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
+
+    request = SearchRequest(
+        query="alpha",
+        directory=root,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=True,
+        top_k=5,
+        model_name="model",
+        batch_size=0,
+        provider="openai",
+        base_url=None,
+        api_key="k",
+        local_cuda=False,
+        extensions=(".py",),
+        auto_index=True,
+    )
+
+    response = perform_search(request)
+
+    assert calls["indexed"] == 0
+    assert [result.path.name for result in response.results] == ["a.py"]
+
+
+def test_perform_search_reindexes_superset_for_extension_filter(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import vexor.cache as cache
+
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
+    root = tmp_path / "project"
+    root.mkdir()
+    file_py = root / "a.py"
+    file_md = root / "b.md"
+    file_py.write_text("print('a')", encoding="utf-8")
+    file_md.write_text("# doc", encoding="utf-8")
+
+    entries = [
+        cache.IndexedChunk(
+            path=file_py,
+            rel_path="a.py",
+            chunk_index=0,
+            preview="a",
+            embedding=[1.0, 0.0],
+        ),
+        cache.IndexedChunk(
+            path=file_md,
+            rel_path="b.md",
+            chunk_index=0,
+            preview="b",
+            embedding=[0.0, 1.0],
+        ),
+    ]
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        entries=entries,
+    )
+
+    calls = {"indexed": 0, "extensions": None}
+
+    def fake_build_index(*_args, **kwargs):
+        calls["indexed"] += 1
+        calls["extensions"] = kwargs.get("extensions")
+        return IndexResult(status=IndexStatus.STORED, files_indexed=2)
+
+    class DummySearcher:
+        device = "dummy-backend"
+
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def embed_texts(self, texts):
+            return np.array([[1.0, 0.0]], dtype=np.float32)
+
+    state = {"count": 0}
+
+    def fake_is_cache_current(*_args, **_kwargs) -> bool:
+        state["count"] += 1
+        return state["count"] > 1
+
+    monkeypatch.setattr("vexor.services.index_service.build_index", fake_build_index)
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    monkeypatch.setattr("vexor.services.search_service.is_cache_current", fake_is_cache_current)
+
+    request = SearchRequest(
+        query="alpha",
+        directory=root,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=True,
+        top_k=5,
+        model_name="model",
+        batch_size=0,
+        provider="openai",
+        base_url=None,
+        api_key="k",
+        local_cuda=False,
+        extensions=(".py",),
+        auto_index=True,
+    )
+
+    response = perform_search(request)
+
+    assert calls["indexed"] == 1
+    assert calls["extensions"] == ()
+    assert [result.path.name for result in response.results] == ["a.py"]
+
+
+def test_perform_search_reuses_parent_index_for_subdir(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import vexor.cache as cache
+
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
+    root = tmp_path / "project"
+    subdir = root / "pkg"
+    subdir.mkdir(parents=True)
+    file_py = subdir / "a.py"
+    nested_py = subdir / "nested" / "c.py"
+    file_md = root / "b.md"
+    file_py.write_text("print('a')", encoding="utf-8")
+    nested_py.parent.mkdir(parents=True)
+    nested_py.write_text("print('c')", encoding="utf-8")
+    file_md.write_text("# doc", encoding="utf-8")
+
+    entries = [
+        cache.IndexedChunk(
+            path=file_py,
+            rel_path="pkg/a.py",
+            chunk_index=0,
+            preview="a",
+            embedding=[1.0, 0.0],
+        ),
+        cache.IndexedChunk(
+            path=nested_py,
+            rel_path="pkg/nested/c.py",
+            chunk_index=0,
+            preview="c",
+            embedding=[0.5, 0.5],
+        ),
+        cache.IndexedChunk(
+            path=file_md,
+            rel_path="b.md",
+            chunk_index=0,
+            preview="b",
+            embedding=[0.0, 1.0],
+        ),
+    ]
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        entries=entries,
+    )
+
+    calls = {"indexed": 0}
+
+    def fake_build_index(*_args, **_kwargs):
+        calls["indexed"] += 1
+        return IndexResult(status=IndexStatus.STORED, files_indexed=2)
+
+    class DummySearcher:
+        device = "dummy-backend"
+
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def embed_texts(self, texts):
+            return np.array([[1.0, 0.0]], dtype=np.float32)
+
+    monkeypatch.setattr("vexor.services.index_service.build_index", fake_build_index)
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
+
+    request = SearchRequest(
+        query="alpha",
+        directory=subdir,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=False,
+        top_k=5,
+        model_name="model",
+        batch_size=0,
+        provider="openai",
+        base_url=None,
+        api_key="k",
+        local_cuda=False,
+        extensions=(),
+        auto_index=True,
+    )
+
+    response = perform_search(request)
+
+    assert calls["indexed"] == 0
+    assert [result.path.name for result in response.results] == ["a.py"]
+
+
+def test_perform_search_reindexes_parent_for_subdir_stale(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import vexor.cache as cache
+
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
+    root = tmp_path / "project"
+    subdir = root / "pkg"
+    subdir.mkdir(parents=True)
+    file_py = subdir / "a.py"
+    file_md = root / "b.md"
+    file_py.write_text("print('a')", encoding="utf-8")
+    file_md.write_text("# doc", encoding="utf-8")
+
+    entries = [
+        cache.IndexedChunk(
+            path=file_py,
+            rel_path="pkg/a.py",
+            chunk_index=0,
+            preview="a",
+            embedding=[1.0, 0.0],
+        ),
+        cache.IndexedChunk(
+            path=file_md,
+            rel_path="b.md",
+            chunk_index=0,
+            preview="b",
+            embedding=[0.0, 1.0],
+        ),
+    ]
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        entries=entries,
+    )
+
+    calls = {"indexed": 0, "directory": None, "recursive": None}
+
+    def fake_build_index(directory: Path, **kwargs):
+        calls["indexed"] += 1
+        calls["directory"] = directory
+        calls["recursive"] = kwargs.get("recursive")
+        return IndexResult(status=IndexStatus.STORED, files_indexed=2)
+
+    class DummySearcher:
+        device = "dummy-backend"
+
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def embed_texts(self, texts):
+            return np.array([[1.0, 0.0]], dtype=np.float32)
+
+    state = {"count": 0}
+
+    def fake_is_cache_current(*_args, **_kwargs) -> bool:
+        state["count"] += 1
+        return state["count"] > 1
+
+    monkeypatch.setattr("vexor.services.index_service.build_index", fake_build_index)
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    monkeypatch.setattr("vexor.services.search_service.is_cache_current", fake_is_cache_current)
+
+    request = SearchRequest(
+        query="alpha",
+        directory=subdir,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=False,
+        top_k=5,
+        model_name="model",
+        batch_size=0,
+        provider="openai",
+        base_url=None,
+        api_key="k",
+        local_cuda=False,
+        extensions=(),
+        auto_index=True,
+    )
+
+    response = perform_search(request)
+
+    assert calls["indexed"] == 1
+    assert calls["directory"] == root
+    assert calls["recursive"] is True
+    assert [result.path.name for result in response.results] == ["a.py"]
