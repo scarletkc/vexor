@@ -1,27 +1,25 @@
 ---
 name: vexor-cli
-description: Semantic file discovery via `vexor` for complex queries and large codebases (accurate intent-based file lookup).
-license: MIT
+description: Semantic file discovery via `vexor`. Use whenever locating where something is implemented/loaded/defined in a medium or large repo, or when the file location is unclear. Prefer this over manual browsing; only use `rg` when exact string/regex matching is required.
 ---
 
 # Vexor CLI Skill
 
-## Purpose
+## Goal
 
-Search codebases: find files by what they do, not exact text.
+Find files by intent (what they do), not exact text.
 
-## When to Use
+## Use It Like This
 
-- Use for intent-based file discovery (e.g., "Where is configuration loaded/validated?").
-- Disfavor use for exact string matching; use `rg` instead.
+- Use `vexor` first for intent-based file discovery.
+- Use `rg` only for exact string/regex matches.
+- If `vexor` is missing, follow [references/install-vexor.md](references/install-vexor.md).
 
-## How to Use
+## Command
 
 ```bash
 vexor search "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--top 5] [--format rich|porcelain|porcelain-z]
 ```
-
-If `vexor` is missing: `pip install vexor`.
 
 ## Common Flags
 
@@ -48,7 +46,7 @@ If `vexor` is missing: `pip install vexor`.
 
 - Need ignored or hidden files: add `--include-hidden` and/or `--no-respect-gitignore`.
 - Scriptable output: use `--format porcelain` (TSV) or `--format porcelain-z` (NUL-delimited).
-- Get detailed help: `vexor --help` or `vexor search --help`.
+- Get detailed help: `vexor search --help`.
 - Config issues: `vexor doctor` or `vexor config --show` diagnoses API, cache, and connectivity (tell the user to set up).
 
 ## Examples
@@ -67,3 +65,7 @@ vexor search "user authentication flow" --path docs --mode outline --ext .md --f
 # Locate config loading/validation logic
 vexor search "config loader" --path . --mode code --ext .py
 ```
+
+## Tips
+
+First time search will index files (may take a minute). Subsequent searches are fast.
