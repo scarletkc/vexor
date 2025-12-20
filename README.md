@@ -124,7 +124,7 @@ Control embedding granularity with `--mode`:
 
 ## Cache Behavior
 
-Index cache keys derive from: `--path`, `--mode`, `--include-hidden`, `--no-recursive`, `--no-respect-gitignore`, `--ext`.
+Index cache keys derive from: `--path`, `--mode`, `--include-hidden`, `--no-recursive`, `--no-respect-gitignore`, `--ext`, `--exclude-pattern`.
 
 Keep flags consistent to reuse cache; changing flags creates a separate index.
 
@@ -161,6 +161,7 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 | `--mode MODE` | Index mode (`auto`/`name`/`head`/`brief`/`full`/`code`/`outline`) |
 | `--top K` / `-k` | Number of results (default: 5) |
 | `--ext .py,.md` / `-e` | Filter by extension (repeatable) |
+| `--exclude-pattern PATTERN` | Exclude paths by gitignore-style pattern (repeatable; `.js` treated as `**/*.js`) |
 | `--include-hidden` / `-i` | Include hidden files |
 | `--no-recursive` / `-n` | Don't recurse into subdirectories |
 | `--no-respect-gitignore` | Include gitignored files |

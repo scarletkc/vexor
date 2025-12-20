@@ -63,6 +63,7 @@ def test_perform_search_auto_indexes_when_missing(monkeypatch, tmp_path: Path) -
         base_url=None,
         api_key="k",
         local_cuda=False,
+        exclude_patterns=(),
         extensions=(),
         auto_index=True,
     )
@@ -98,6 +99,7 @@ def test_perform_search_missing_index_raises_when_auto_index_disabled(monkeypatc
         base_url=None,
         api_key="k",
         local_cuda=False,
+        exclude_patterns=(),
         extensions=(),
         auto_index=False,
     )
@@ -151,6 +153,7 @@ def test_perform_search_auto_indexes_when_stale(monkeypatch, tmp_path: Path) -> 
         base_url=None,
         api_key="k",
         local_cuda=False,
+        exclude_patterns=(),
         extensions=(),
         auto_index=True,
     )
@@ -161,6 +164,90 @@ def test_perform_search_auto_indexes_when_stale(monkeypatch, tmp_path: Path) -> 
     assert calls["indexed"] == 1
     assert calls["load"] == 2
     assert response.results[0].path.name == "b.txt"
+
+
+def test_perform_search_filters_exclude_patterns_with_superset(
+    monkeypatch, tmp_path: Path
+) -> None:
+    calls: dict[str, list[dict[str, object]]] = {"loads": []}
+
+    def fake_load_index_vectors(
+        root: Path,
+        model: str,
+        include_hidden: bool,
+        mode: str,
+        recursive: bool,
+        exclude_patterns,
+        extensions,
+        *,
+        respect_gitignore: bool,
+    ):
+        calls["loads"].append(
+            {"exclude_patterns": exclude_patterns, "extensions": extensions}
+        )
+        if len(calls["loads"]) == 1:
+            raise FileNotFoundError("missing index")
+        paths = [tmp_path / "keep.py", tmp_path / "skip.js"]
+        vectors = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+        metadata = {
+            "files": [
+                {"path": "keep.py", "absolute": str(paths[0]), "mtime": 0.0, "size": 1},
+                {"path": "skip.js", "absolute": str(paths[1]), "mtime": 0.0, "size": 1},
+            ],
+            "chunks": [
+                {"path": "keep.py", "chunk_index": 0, "preview": "keep"},
+                {"path": "skip.js", "chunk_index": 0, "preview": "skip"},
+            ],
+        }
+        return paths, vectors, metadata
+
+    def fake_list_cache_entries():
+        return [
+            {
+                "root_path": str(tmp_path),
+                "model": "model",
+                "include_hidden": False,
+                "respect_gitignore": True,
+                "recursive": True,
+                "mode": "name",
+                "exclude_patterns": (),
+                "extensions": (),
+                "file_count": 2,
+            }
+        ]
+
+    monkeypatch.setattr("vexor.cache.load_index_vectors", fake_load_index_vectors)
+    monkeypatch.setattr("vexor.cache.list_cache_entries", fake_list_cache_entries)
+    monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+
+    request = SearchRequest(
+        query="alpha",
+        directory=tmp_path,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=True,
+        top_k=5,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key="k",
+        local_cuda=False,
+        exclude_patterns=(".js",),
+        extensions=(".py",),
+        auto_index=False,
+    )
+    response = perform_search(request)
+
+    assert len(calls["loads"]) == 2
+    assert calls["loads"][0]["exclude_patterns"] == (".js",)
+    assert calls["loads"][0]["extensions"] == (".py",)
+    assert calls["loads"][1]["exclude_patterns"] == ()
+    assert calls["loads"][1]["extensions"] == ()
+    assert len(response.results) == 1
+    assert response.results[0].path.name == "keep.py"
 
 
 def test_perform_search_uses_cached_query_vector(monkeypatch, tmp_path: Path) -> None:
@@ -226,6 +313,7 @@ def test_perform_search_uses_cached_query_vector(monkeypatch, tmp_path: Path) ->
         base_url=None,
         api_key="k",
         local_cuda=False,
+        exclude_patterns=(),
         extensions=(),
         auto_index=False,
     )
@@ -310,6 +398,7 @@ def test_perform_search_reuses_superset_index_for_extension_filter(
         base_url=None,
         api_key="k",
         local_cuda=False,
+        exclude_patterns=(),
         extensions=(".py",),
         auto_index=True,
     )
@@ -399,6 +488,7 @@ def test_perform_search_reindexes_superset_for_extension_filter(
         base_url=None,
         api_key="k",
         local_cuda=False,
+        exclude_patterns=(),
         extensions=(".py",),
         auto_index=True,
     )
@@ -493,6 +583,7 @@ def test_perform_search_reuses_parent_index_for_subdir(
         base_url=None,
         api_key="k",
         local_cuda=False,
+        exclude_patterns=(),
         extensions=(),
         auto_index=True,
     )
@@ -584,6 +675,7 @@ def test_perform_search_reindexes_parent_for_subdir_stale(
         base_url=None,
         api_key="k",
         local_cuda=False,
+        exclude_patterns=(),
         extensions=(),
         auto_index=True,
     )

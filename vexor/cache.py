@@ -42,6 +42,7 @@ def _cache_key(
     recursive: bool,
     mode: str,
     extensions: Sequence[str] | None = None,
+    exclude_patterns: Sequence[str] | None = None,
 ) -> str:
     base = (
         f"{root.resolve()}|hidden={include_hidden}|gitignore={respect_gitignore}"
@@ -50,6 +51,9 @@ def _cache_key(
     ext_key = _serialize_extensions(extensions)
     if ext_key:
         base = f"{base}|ext={ext_key}"
+    exclude_key = _serialize_exclude_patterns(exclude_patterns)
+    if exclude_key:
+        base = f"{base}|exclude={exclude_key}"
     digest = hashlib.sha1(base.encode("utf-8")).hexdigest()
     return digest
 
@@ -85,10 +89,23 @@ def _serialize_extensions(extensions: Sequence[str] | None) -> str:
     return ",".join(extensions)
 
 
+def _serialize_exclude_patterns(patterns: Sequence[str] | None) -> str:
+    if not patterns:
+        return ""
+    return "\n".join(patterns)
+
+
 def _deserialize_extensions(value: str | None) -> tuple[str, ...]:
     if not value:
         return ()
     parts = [part for part in value.split(",") if part]
+    return tuple(parts)
+
+
+def _deserialize_exclude_patterns(value: str | None) -> tuple[str, ...]:
+    if not value:
+        return ()
+    parts = [part for part in value.split("\n") if part]
     return tuple(parts)
 
 
@@ -117,7 +134,11 @@ def cache_file(root: Path, model: str, include_hidden: bool) -> Path:  # pragma:
 def _connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL;")
+    try:
+        conn.execute("PRAGMA journal_mode = WAL;")
+    except sqlite3.OperationalError as exc:
+        if "readonly" not in str(exc).lower():
+            raise
     conn.execute("PRAGMA synchronous = NORMAL;")
     conn.execute("PRAGMA temp_store = MEMORY;")
     conn.execute("PRAGMA busy_timeout = 5000;")
@@ -140,6 +161,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             dimension INTEGER NOT NULL,
             version INTEGER NOT NULL,
             generated_at TEXT NOT NULL,
+            exclude_patterns TEXT DEFAULT '',
             extensions TEXT DEFAULT '',
             UNIQUE(cache_key, model)
         );
@@ -241,6 +263,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         )
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute(
+            "ALTER TABLE index_metadata ADD COLUMN exclude_patterns TEXT DEFAULT ''"
+        )
+    except sqlite3.OperationalError:
+        pass
     _cleanup_orphan_embeddings(conn)
 
 
@@ -326,19 +354,29 @@ def store_index(
     mode: str,
     recursive: bool,
     entries: Sequence[IndexedChunk],
+    exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
 ) -> Path:
     db_path = cache_file(root, model, include_hidden)
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
+        key = _cache_key(
+            root,
+            include_hidden,
+            respect_gitignore,
+            recursive,
+            mode,
+            extensions,
+            exclude_patterns,
+        )
         generated_at = datetime.now(timezone.utc).isoformat()
         dimension = int(len(entries[0].embedding) if entries else 0)
         include_flag = 1 if include_hidden else 0
         gitignore_flag = 1 if respect_gitignore else 0
         recursive_flag = 1 if recursive else 0
         extensions_value = _serialize_extensions(extensions)
+        exclude_patterns_value = _serialize_exclude_patterns(exclude_patterns)
 
         with conn:
             conn.execute("BEGIN IMMEDIATE;")
@@ -359,8 +397,9 @@ def store_index(
                     dimension,
                     version,
                     generated_at,
+                    exclude_patterns,
                     extensions
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     key,
@@ -373,6 +412,7 @@ def store_index(
                     dimension,
                     CACHE_VERSION,
                     generated_at,
+                    exclude_patterns_value,
                     extensions_value,
                 ),
             )
@@ -456,6 +496,7 @@ def apply_index_updates(
         tuple[str, int, int, float, str | None, int | None, int | None, str]
     ] = (),
     removed_rel_paths: Sequence[str],
+    exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
 ) -> Path:
     """Apply incremental updates to an existing cached index."""
@@ -467,7 +508,15 @@ def apply_index_updates(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
+        key = _cache_key(
+            root,
+            include_hidden,
+            respect_gitignore,
+            recursive,
+            mode,
+            extensions,
+            exclude_patterns,
+        )
         include_flag = 1 if include_hidden else 0
         gitignore_flag = 1 if respect_gitignore else 0
         recursive_flag = 1 if recursive else 0
@@ -628,6 +677,7 @@ def backfill_chunk_lines(
     mode: str,
     recursive: bool,
     updates: Sequence[tuple[str, int, int | None, int | None]],
+    exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
     respect_gitignore: bool = True,
 ) -> Path:
@@ -640,7 +690,15 @@ def backfill_chunk_lines(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
+        key = _cache_key(
+            root,
+            include_hidden,
+            respect_gitignore,
+            recursive,
+            mode,
+            extensions,
+            exclude_patterns,
+        )
         include_flag = 1 if include_hidden else 0
         gitignore_flag = 1 if respect_gitignore else 0
         recursive_flag = 1 if recursive else 0
@@ -690,6 +748,7 @@ def load_index(
     include_hidden: bool,
     mode: str,
     recursive: bool,
+    exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
     *,
     respect_gitignore: bool = True,
@@ -701,13 +760,21 @@ def load_index(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
+        key = _cache_key(
+            root,
+            include_hidden,
+            respect_gitignore,
+            recursive,
+            mode,
+            extensions,
+            exclude_patterns,
+        )
         include_flag = 1 if include_hidden else 0
         gitignore_flag = 1 if respect_gitignore else 0
         recursive_flag = 1 if recursive else 0
         meta = conn.execute(
             """
-            SELECT id, root_path, model, include_hidden, respect_gitignore, recursive, mode, dimension, version, generated_at, extensions
+            SELECT id, root_path, model, include_hidden, respect_gitignore, recursive, mode, dimension, version, generated_at, exclude_patterns, extensions
             FROM index_metadata
             WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
             """,
@@ -762,6 +829,7 @@ def load_index(
             "recursive": bool(meta["recursive"]),
             "mode": meta["mode"],
             "dimension": meta["dimension"],
+            "exclude_patterns": _deserialize_exclude_patterns(meta["exclude_patterns"]),
             "extensions": _deserialize_extensions(meta["extensions"]),
             "files": list(file_snapshot.values()),
             "chunks": chunk_entries,
@@ -776,6 +844,7 @@ def load_index_vectors(
     include_hidden: bool,
     mode: str,
     recursive: bool,
+    exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
     *,
     respect_gitignore: bool = True,
@@ -787,13 +856,21 @@ def load_index_vectors(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
+        key = _cache_key(
+            root,
+            include_hidden,
+            respect_gitignore,
+            recursive,
+            mode,
+            extensions,
+            exclude_patterns,
+        )
         include_flag = 1 if include_hidden else 0
         gitignore_flag = 1 if respect_gitignore else 0
         recursive_flag = 1 if recursive else 0
         meta = conn.execute(
             """
-            SELECT id, root_path, model, include_hidden, respect_gitignore, recursive, mode, dimension, version, generated_at, extensions
+            SELECT id, root_path, model, include_hidden, respect_gitignore, recursive, mode, dimension, version, generated_at, exclude_patterns, extensions
             FROM index_metadata
             WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
             """,
@@ -823,6 +900,7 @@ def load_index_vectors(
                 "recursive": bool(meta["recursive"]),
                 "mode": meta["mode"],
                 "dimension": meta["dimension"],
+                "exclude_patterns": _deserialize_exclude_patterns(meta["exclude_patterns"]),
                 "extensions": _deserialize_extensions(meta["extensions"]),
                 "files": [],
                 "chunks": [],
@@ -887,6 +965,7 @@ def load_index_vectors(
             "recursive": bool(meta["recursive"]),
             "mode": meta["mode"],
             "dimension": meta["dimension"],
+            "exclude_patterns": _deserialize_exclude_patterns(meta["exclude_patterns"]),
             "extensions": _deserialize_extensions(meta["extensions"]),
             "files": list(file_snapshot.values()),
             "chunks": chunk_entries,
@@ -905,9 +984,15 @@ def load_query_vector(
 
     db_path = cache_db_path()
     owns_connection = conn is None
-    connection = conn or _connect(db_path)
     try:
-        _ensure_schema(connection)
+        connection = conn or _connect(db_path)
+    except sqlite3.OperationalError:
+        return None
+    try:
+        try:
+            _ensure_schema(connection)
+        except sqlite3.OperationalError:
+            return None
         row = connection.execute(
             """
             SELECT query_vector
@@ -976,9 +1061,15 @@ def load_embedding_cache(
         return {}
     db_path = cache_db_path()
     owns_connection = conn is None
-    connection = conn or _connect(db_path)
     try:
-        _ensure_schema(connection)
+        connection = conn or _connect(db_path)
+    except sqlite3.OperationalError:
+        return {}
+    try:
+        try:
+            _ensure_schema(connection)
+        except sqlite3.OperationalError:
+            return {}
         results: dict[str, np.ndarray] = {}
         for chunk in _chunk_values(unique_hashes, 900):
             placeholders = ", ".join("?" for _ in chunk)
@@ -1090,6 +1181,7 @@ def clear_index(
     mode: str,
     recursive: bool,
     model: str | None = None,
+    exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
     *,
     respect_gitignore: bool = True,
@@ -1102,7 +1194,15 @@ def clear_index(
     conn = _connect(db_path)
     try:
         _ensure_schema(conn)
-        key = _cache_key(root, include_hidden, respect_gitignore, recursive, mode, extensions)
+        key = _cache_key(
+            root,
+            include_hidden,
+            respect_gitignore,
+            recursive,
+            mode,
+            extensions,
+            exclude_patterns,
+        )
         # when model is None we still need a mode; reuse provided mode
         if model is None:
             query = "DELETE FROM index_metadata WHERE cache_key = ? AND mode = ?"
@@ -1124,9 +1224,15 @@ def list_cache_entries() -> list[dict[str, object]]:
     if not db_path.exists():
         return []
 
-    conn = _connect(db_path)
     try:
-        _ensure_schema(conn)
+        conn = _connect(db_path)
+    except sqlite3.OperationalError:
+        return []
+    try:
+        try:
+            _ensure_schema(conn)
+        except sqlite3.OperationalError:
+            return []
         rows = conn.execute(
             """
             SELECT
@@ -1139,6 +1245,7 @@ def list_cache_entries() -> list[dict[str, object]]:
                 dimension,
                 version,
                 generated_at,
+                exclude_patterns,
                 extensions,
                 (
                     SELECT COUNT(DISTINCT rel_path)
@@ -1163,6 +1270,9 @@ def list_cache_entries() -> list[dict[str, object]]:
                     "dimension": row["dimension"],
                     "version": row["version"],
                     "generated_at": row["generated_at"],
+                    "exclude_patterns": _deserialize_exclude_patterns(
+                        row["exclude_patterns"]
+                    ),
                     "extensions": _deserialize_extensions(row["extensions"]),
                     "file_count": int(row["file_count"] or 0),
                 }
@@ -1203,6 +1313,7 @@ def compare_snapshot(
     cached_files: Sequence[dict],
     *,
     recursive: bool,
+    exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
     current_files: Sequence[Path] | None = None,
     respect_gitignore: bool = True,
@@ -1214,6 +1325,7 @@ def compare_snapshot(
             include_hidden=include_hidden,
             recursive=recursive,
             extensions=extensions,
+            exclude_patterns=exclude_patterns,
             respect_gitignore=respect_gitignore,
         )
     if len(current_files) != len(cached_files):

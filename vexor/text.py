@@ -35,6 +35,11 @@ class Messages:
         "(repeat --ext; each value may also be a comma/space-separated list like "
         "--ext .py,.md or --ext '.py .md')."
     )
+    HELP_EXCLUDE_PATTERNS = (
+        "Exclude files or directories by gitignore-style patterns "
+        "(repeat --exclude-pattern; supports wildcards and paths like tests/**; "
+        "plain extensions like .js are treated as **/*.js)."
+    )
     HELP_RESPECT_GITIGNORE = (
         "Respect .gitignore-style exclude rules when scanning (default). "
         "Use --no-respect-gitignore to include ignored files."
@@ -123,6 +128,7 @@ class Messages:
         "Include hidden: {hidden}\n"
         "Recursive: {recursive}\n"
         "Respect gitignore: {gitignore}\n"
+        "Exclude patterns: {exclude_patterns}\n"
         "Extensions: {extensions}\n"
         "Files: {files}\n"
         "Embedding dimension: {dimension}\n"
@@ -249,6 +255,7 @@ class Messages:
     TABLE_INDEX_HEADER_HIDDEN = "Hidden"
     TABLE_INDEX_HEADER_RECURSIVE = "Recursive"
     TABLE_INDEX_HEADER_GITIGNORE = "Gitignore"
+    TABLE_INDEX_HEADER_EXCLUDES = "Exclude"
     TABLE_INDEX_HEADER_EXTENSIONS = "Extensions"
     TABLE_INDEX_HEADER_FILES = "Files"
     TABLE_INDEX_HEADER_GENERATED = "Generated"

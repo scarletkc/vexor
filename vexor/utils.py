@@ -44,6 +44,57 @@ def normalize_extensions(values: Iterable[str] | None) -> tuple[str, ...]:
     return tuple(sorted(normalized))
 
 
+def normalize_exclude_patterns(values: Iterable[str] | None) -> tuple[str, ...]:
+    """Return a normalized tuple of exclude patterns, preserving order."""
+
+    if not values:
+        return ()
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        if raw is None:
+            continue
+        for piece in raw.replace(",", " ").split():
+            token = piece.strip()
+            if not token:
+                continue
+            if _looks_like_extension_token(token):
+                token = f"**/*{token}"
+            if token in seen:
+                continue
+            seen.add(token)
+            normalized.append(token)
+    return tuple(normalized)
+
+
+def _looks_like_extension_token(token: str) -> bool:
+    if not token.startswith("."):
+        return False
+    if token in {".", ".."}:
+        return False
+    if any(ch in token for ch in ("/", "\\", "*", "?", "[", "]")):
+        return False
+    return True
+
+
+def build_exclude_spec(patterns: Iterable[str] | None):
+    """Return a GitIgnoreSpec for the provided exclude patterns, or None."""
+
+    normalized = normalize_exclude_patterns(patterns)
+    if not normalized:
+        return None
+    return _gitignore_spec_from_lines(normalized, "")
+
+
+def is_excluded_path(spec, rel_path: str, *, is_dir: bool = False) -> bool:
+    """Return True if *rel_path* matches *spec* exclusion rules."""
+
+    if spec is None or not rel_path:
+        return False
+    clean = rel_path.replace("\\", "/")
+    return _is_ignored(spec, clean, is_dir=is_dir)
+
+
 def _relative_posix(path: Path, root: Path) -> str:
     rel = path.relative_to(root)
     if rel == Path("."):
@@ -173,6 +224,7 @@ def collect_files(
     include_hidden: bool = False,
     recursive: bool = True,
     extensions: Sequence[str] | None = None,
+    exclude_patterns: Sequence[str] | None = None,
     respect_gitignore: bool = True,
 ) -> List[Path]:
     """Collect files under *root*; optionally keep hidden entries and recurse."""
@@ -180,6 +232,11 @@ def collect_files(
     directory = resolve_directory(root)
     files: List[Path] = []
     normalized_exts: Tuple[str, ...] = tuple(extensions or ())
+    normalized_excludes = normalize_exclude_patterns(exclude_patterns)
+
+    exclude_spec = None
+    if normalized_excludes:
+        exclude_spec = _gitignore_spec_from_lines(normalized_excludes, "")
 
     ignore_root: Path | None = None
     ignore_spec = None
@@ -202,6 +259,11 @@ def collect_files(
             if respect_gitignore:
                 dirnames[:] = [d for d in dirnames if d != ".git"]
                 filenames = [f for f in filenames if f != ".git"]
+            if exclude_spec is not None:
+                rel_dir = _relative_posix(current_dir, directory)
+                if _is_ignored(exclude_spec, rel_dir, is_dir=True):
+                    dirnames[:] = []
+                    continue
             spec = ignore_spec
             if respect_gitignore and ignore_root is not None and ignore_spec is not None:
                 spec = spec_by_dir.get(current_dir, ignore_spec)
@@ -226,6 +288,10 @@ def collect_files(
 
             for filename in filenames:
                 candidate = current_dir / filename
+                if exclude_spec is not None:
+                    rel_file = _relative_posix(candidate, directory)
+                    if _is_ignored(exclude_spec, rel_file, is_dir=False):
+                        continue
                 if normalized_exts and not _matches_extension(candidate, normalized_exts):
                     continue
                 if respect_gitignore and ignore_root is not None and spec is not None:
@@ -250,6 +316,10 @@ def collect_files(
                 continue
             if not include_hidden and entry.name.startswith("."):
                 continue
+            if exclude_spec is not None:
+                rel_file = _relative_posix(entry, directory)
+                if _is_ignored(exclude_spec, rel_file, is_dir=False):
+                    continue
             if normalized_exts and not _matches_extension(entry, normalized_exts):
                 continue
             if respect_gitignore and ignore_root is not None and spec is not None:

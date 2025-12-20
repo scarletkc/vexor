@@ -17,7 +17,7 @@ Find files by intent (what they do), not exact text.
 ## Command
 
 ```bash
-vexor search "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--top 5] [--format rich|porcelain|porcelain-z]
+vexor search "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--exclude-pattern <PATTERN>] [--top 5] [--format rich|porcelain|porcelain-z]
 ```
 
 ## Common Flags
@@ -25,6 +25,7 @@ vexor search "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--top 5]
 - `--path/-p`: root directory (default: current dir)
 - `--mode/-m`: indexing/search strategy
 - `--ext/-e`: limit file extensions (e.g., `.py,.md`)
+- `--exclude-pattern`: exclude paths by gitignore-style pattern (repeatable; `.js` → `**/*.js`)
 - `--top/-k`: number of results
 - `--include-hidden`: include dotfiles
 - `--no-respect-gitignore`: include ignored files
@@ -65,7 +66,13 @@ vexor search "user authentication flow" --path docs --mode outline --ext .md --f
 vexor search "config loader" --path . --mode code --ext .py
 ```
 
+```bash
+# Exclude tests and JavaScript files
+vexor search "config loader" --path . --exclude-pattern tests/** --exclude-pattern .js
+```
+
 ## Tips
 
 - First time search will index files (may take a minute). Subsequent searches are fast.
 - Results return similarity ranking, exact file location, line numbers, and matching snippet preview.
+- Combine `--ext` with `--exclude-pattern` to focus on a subset (exclude rules apply on top).

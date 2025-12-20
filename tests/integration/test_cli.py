@@ -651,6 +651,7 @@ def test_index_clear_option(tmp_path, monkeypatch):
         respect_gitignore,
         mode,
         recursive,
+        exclude_patterns=None,
         model=None,
         extensions=None,
     ):
@@ -693,6 +694,7 @@ def test_index_clear_honors_no_recursive(tmp_path, monkeypatch):
         respect_gitignore,
         mode,
         recursive,
+        exclude_patterns=None,
         model=None,
         extensions=None,
     ):

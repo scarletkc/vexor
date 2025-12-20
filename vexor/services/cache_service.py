@@ -12,6 +12,7 @@ def is_cache_current(
     cached_files: Sequence[dict],
     *,
     recursive: bool,
+    exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
     current_files=None,
 ) -> bool:
@@ -26,6 +27,7 @@ def is_cache_current(
         include_hidden,
         cached_files,
         recursive=recursive,
+        exclude_patterns=exclude_patterns,
         extensions=extensions,
         current_files=current_files,
         respect_gitignore=respect_gitignore,
@@ -39,6 +41,7 @@ def load_index_metadata_safe(
     respect_gitignore: bool,
     mode: str,
     recursive: bool,
+    exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
 ):
     """Load index metadata when present, returning None if missing."""
@@ -52,6 +55,7 @@ def load_index_metadata_safe(
             include_hidden,
             mode,
             recursive,
+            exclude_patterns,
             extensions,
             respect_gitignore=respect_gitignore,
         )

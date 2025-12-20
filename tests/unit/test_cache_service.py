@@ -29,6 +29,7 @@ def test_is_cache_current_delegates_to_compare_snapshot(tmp_path: Path, monkeypa
         cached_files,
         *,
         recursive: bool,
+        exclude_patterns,
         extensions,
         current_files,
         respect_gitignore: bool,
@@ -37,6 +38,7 @@ def test_is_cache_current_delegates_to_compare_snapshot(tmp_path: Path, monkeypa
         calls["include_hidden"] = include_hidden
         calls["cached_files"] = cached_files
         calls["recursive"] = recursive
+        calls["exclude_patterns"] = exclude_patterns
         calls["extensions"] = extensions
         calls["current_files"] = current_files
         calls["respect_gitignore"] = respect_gitignore
@@ -88,6 +90,7 @@ def test_load_index_metadata_safe_passes_flags(tmp_path: Path, monkeypatch) -> N
         include_hidden: bool,
         mode: str,
         recursive: bool,
+        exclude_patterns,
         extensions,
         *,
         respect_gitignore: bool,
@@ -97,6 +100,7 @@ def test_load_index_metadata_safe_passes_flags(tmp_path: Path, monkeypatch) -> N
         calls["include_hidden"] = include_hidden
         calls["mode"] = mode
         calls["recursive"] = recursive
+        calls["exclude_patterns"] = exclude_patterns
         calls["extensions"] = extensions
         calls["respect_gitignore"] = respect_gitignore
         return {"ok": True}
@@ -115,4 +119,3 @@ def test_load_index_metadata_safe_passes_flags(tmp_path: Path, monkeypatch) -> N
     assert meta == {"ok": True}
     assert calls["mode"] == "auto"
     assert calls["respect_gitignore"] is False
-

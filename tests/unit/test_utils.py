@@ -29,6 +29,14 @@ def test_normalize_extensions():
     assert utils.normalize_extensions([".", " ", None]) == ()
 
 
+def test_normalize_exclude_patterns():
+    assert utils.normalize_exclude_patterns(None) == ()
+    assert utils.normalize_exclude_patterns([]) == ()
+    assert utils.normalize_exclude_patterns(["tests/**", " tests/** "]) == ("tests/**",)
+    assert utils.normalize_exclude_patterns([".js"]) == ("**/*.js",)
+    assert utils.normalize_exclude_patterns([".js,.md"]) == ("**/*.js", "**/*.md")
+
+
 def test_scope_gitignore_line_variants():
     assert utils._scope_gitignore_line("", "base") is None
     assert utils._scope_gitignore_line("# comment", "base") is None
@@ -197,3 +205,25 @@ def test_collect_files_non_recursive_respects_gitignore_and_filters(tmp_path):
         extensions=[".py"],
     )
     assert [path.name for path in py_only] == ["kept.py"]
+
+
+def test_collect_files_exclude_patterns(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "keep.py").write_text("ok", encoding="utf-8")
+    (root / "skip.js").write_text("no", encoding="utf-8")
+    sub = root / "tests"
+    sub.mkdir()
+    (sub / "test_keep.py").write_text("no", encoding="utf-8")
+
+    files = utils.collect_files(
+        root,
+        include_hidden=True,
+        recursive=True,
+        respect_gitignore=False,
+        exclude_patterns=["tests/**", ".js"],
+    )
+    names = [path.name for path in files]
+    assert "keep.py" in names
+    assert "skip.js" not in names
+    assert "test_keep.py" not in names

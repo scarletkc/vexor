@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Sequence
 
 from ..config import DEFAULT_EMBED_CONCURRENCY
+from ..utils import build_exclude_spec, is_excluded_path, normalize_exclude_patterns
 from .cache_service import is_cache_current
 
 
@@ -25,6 +26,7 @@ class SearchRequest:
     base_url: str | None
     api_key: str | None
     local_cuda: bool
+    exclude_patterns: tuple[str, ...]
     extensions: tuple[str, ...]
     auto_index: bool = True
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY
@@ -63,6 +65,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             index_extensions,
             index_root,
             index_recursive,
+            index_excludes,
         ) = _load_index_vectors_for_request(
             request,
             load_index_vectors=load_index_vectors,
@@ -84,6 +87,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             base_url=request.base_url,
             api_key=request.api_key,
             local_cuda=request.local_cuda,
+            exclude_patterns=request.exclude_patterns,
             extensions=request.extensions,
         )
         if result.status == IndexStatus.EMPTY:
@@ -102,11 +106,14 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             index_extensions,
             index_root,
             index_recursive,
+            index_excludes,
         ) = _load_index_vectors_for_request(
             request,
             load_index_vectors=load_index_vectors,
             list_cache_entries=list_cache_entries,
         )
+
+    exclude_spec = build_exclude_spec(request.exclude_patterns)
 
     if index_root != request.directory:
         paths, file_vectors, metadata = _filter_index_by_directory(
@@ -125,6 +132,14 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             metadata,
             ext_filter,
         )
+    if exclude_spec is not None:
+        paths, file_vectors, metadata = _filter_index_by_exclude_patterns(
+            paths,
+            file_vectors,
+            metadata,
+            request.directory,
+            exclude_spec,
+        )
 
     file_snapshot = metadata.get("files", [])
     chunk_entries = metadata.get("chunks", [])
@@ -134,6 +149,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         request.respect_gitignore,
         file_snapshot,
         recursive=request.recursive,
+        exclude_patterns=request.exclude_patterns,
         extensions=request.extensions,
     )
 
@@ -151,6 +167,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             base_url=request.base_url,
             api_key=request.api_key,
             local_cuda=request.local_cuda,
+            exclude_patterns=index_excludes,
             extensions=index_extensions,
         )
         if result.status == IndexStatus.EMPTY:
@@ -169,6 +186,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             index_extensions,
             index_root,
             index_recursive,
+            index_excludes,
         ) = _load_index_vectors_for_request(
             request,
             load_index_vectors=load_index_vectors,
@@ -190,6 +208,14 @@ def perform_search(request: SearchRequest) -> SearchResponse:
                 metadata,
                 ext_filter,
             )
+        if exclude_spec is not None:
+            paths, file_vectors, metadata = _filter_index_by_exclude_patterns(
+                paths,
+                file_vectors,
+                metadata,
+                request.directory,
+                exclude_spec,
+            )
         file_snapshot = metadata.get("files", [])
         chunk_entries = metadata.get("chunks", [])
         stale = bool(file_snapshot) and not is_cache_current(
@@ -198,6 +224,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             request.respect_gitignore,
             file_snapshot,
             recursive=request.recursive,
+            exclude_patterns=request.exclude_patterns,
             extensions=request.extensions,
         )
 
@@ -298,6 +325,7 @@ def _load_index_vectors_for_request(
     tuple[str, ...],
     Path,
     bool,
+    tuple[str, ...],
 ]:
     try:
         paths, file_vectors, metadata = load_index_vectors(
@@ -306,6 +334,7 @@ def _load_index_vectors_for_request(
             request.include_hidden,
             request.mode,
             request.recursive,
+            request.exclude_patterns,
             request.extensions,
             respect_gitignore=request.respect_gitignore,
         )
@@ -317,6 +346,7 @@ def _load_index_vectors_for_request(
             request.extensions,
             request.directory,
             request.recursive,
+            request.exclude_patterns,
         )
     except FileNotFoundError as exc:
         missing_exc = exc
@@ -326,12 +356,14 @@ def _load_index_vectors_for_request(
     superset_root = Path(superset_entry.get("root_path", "")).expanduser().resolve()
     superset_recursive = bool(superset_entry.get("recursive"))
     superset_extensions = tuple(superset_entry.get("extensions") or ())
+    superset_excludes = tuple(superset_entry.get("exclude_patterns") or ())
     paths, file_vectors, metadata = load_index_vectors(
         superset_root,
         request.model_name,
         request.include_hidden,
         request.mode,
         superset_recursive,
+        superset_excludes,
         superset_extensions,
         respect_gitignore=request.respect_gitignore,
     )
@@ -346,6 +378,7 @@ def _load_index_vectors_for_request(
         superset_extensions,
         superset_root,
         superset_recursive,
+        superset_excludes,
     )
 
 
@@ -354,8 +387,10 @@ def _select_cache_superset(
     list_cache_entries,
 ) -> dict | None:
     requested = set(request.extensions or ())
+    requested_excludes = normalize_exclude_patterns(request.exclude_patterns or ())
+    requested_exclude_set = set(requested_excludes)
     root = request.directory.resolve()
-    candidates: list[tuple[int, int, int, dict]] = []
+    candidates: list[tuple[int, int, int, int, int, dict]] = []
     for entry in list_cache_entries():
         entry_root = Path(entry.get("root_path", "")).expanduser().resolve()
         try:
@@ -373,6 +408,13 @@ def _select_cache_superset(
             continue
         if entry.get("mode") != request.mode:
             continue
+        cached_excludes = tuple(entry.get("exclude_patterns") or ())
+        cached_exclude_set = set(normalize_exclude_patterns(cached_excludes))
+        if requested_exclude_set:
+            if cached_exclude_set and not cached_exclude_set.issubset(requested_exclude_set):
+                continue
+        elif cached_exclude_set:
+            continue
         cached_exts = tuple(entry.get("extensions") or ())
         if not requested:
             if cached_exts:
@@ -386,11 +428,14 @@ def _select_cache_superset(
         if file_count <= 0:
             file_count = 1_000_000_000
         ext_count = len(cached_exts)
-        candidates.append((distance, recursive_mismatch, file_count, ext_count, entry))
+        exclude_gap = len(requested_exclude_set) - len(cached_exclude_set)
+        candidates.append(
+            (distance, recursive_mismatch, file_count, ext_count, exclude_gap, entry)
+        )
     if not candidates:
         return None
-    candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
-    return candidates[0][4]
+    candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4]))
+    return candidates[0][5]
 
 
 def _filter_index_by_extensions(
@@ -426,6 +471,50 @@ def _filter_index_by_extensions(
     filtered_metadata["files"] = _filter_file_snapshot(
         metadata.get("files", []),
         ext_set,
+    )
+    filtered_metadata["chunks"] = filtered_chunks
+    return filtered_paths, filtered_vectors, filtered_metadata
+
+
+def _filter_index_by_exclude_patterns(
+    paths: Sequence[Path],
+    file_vectors,
+    metadata: dict,
+    root: Path,
+    exclude_spec,
+) -> tuple[list[Path], Sequence[Sequence[float]], dict]:
+    if exclude_spec is None:
+        return list(paths), file_vectors, metadata
+    keep_indices: list[int] = []
+    filtered_paths: list[Path] = []
+    root_resolved = root.resolve()
+    for idx, path in enumerate(paths):
+        try:
+            rel = path.resolve().relative_to(root_resolved).as_posix()
+        except ValueError:
+            rel = path.as_posix()
+        if is_excluded_path(exclude_spec, rel, is_dir=False):
+            continue
+        keep_indices.append(idx)
+        filtered_paths.append(path)
+    if not keep_indices:
+        filtered_vectors = file_vectors[:0]
+        filtered_metadata = dict(metadata)
+        filtered_metadata["files"] = _filter_file_snapshot_by_exclude_patterns(
+            metadata.get("files", []),
+            exclude_spec,
+        )
+        filtered_metadata["chunks"] = []
+        return [], filtered_vectors, filtered_metadata
+    filtered_vectors = file_vectors[keep_indices]
+    chunk_entries = metadata.get("chunks", [])
+    filtered_chunks = [
+        chunk_entries[idx] for idx in keep_indices if idx < len(chunk_entries)
+    ]
+    filtered_metadata = dict(metadata)
+    filtered_metadata["files"] = _filter_file_snapshot_by_exclude_patterns(
+        metadata.get("files", []),
+        exclude_spec,
     )
     filtered_metadata["chunks"] = filtered_chunks
     return filtered_paths, filtered_vectors, filtered_metadata
@@ -491,6 +580,22 @@ def _filter_file_snapshot(
         rel_path = entry.get("path", "")
         if Path(rel_path).suffix.lower() in extensions:
             filtered.append(entry)
+    return filtered
+
+
+def _filter_file_snapshot_by_exclude_patterns(
+    entries: Sequence[dict],
+    spec,
+) -> list[dict]:
+    if spec is None:
+        return list(entries)
+    filtered: list[dict] = []
+    for entry in entries:
+        rel_path = entry.get("path", "")
+        rel_posix = Path(rel_path).as_posix() if rel_path else ""
+        if is_excluded_path(spec, rel_posix, is_dir=False):
+            continue
+        filtered.append(entry)
     return filtered
 
 

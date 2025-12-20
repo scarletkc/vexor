@@ -77,6 +77,7 @@ def test_store_and_load_index(tmp_path, monkeypatch):
     assert np.allclose(loaded_vectors, embeddings)
     assert meta["model"] == "test-model"
     assert meta["chunks"][0]["preview"] == "preview-a.txt"
+    assert meta["exclude_patterns"] == ()
     assert meta["extensions"] == ()
 
 

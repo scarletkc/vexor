@@ -55,7 +55,15 @@ from .services.skill_service import (
 )
 from .providers.local import LocalEmbeddingBackend, resolve_fastembed_cache_dir
 from .text import Messages, Styles
-from .utils import resolve_directory, format_path, ensure_positive, normalize_extensions
+from .utils import (
+    resolve_directory,
+    format_path,
+    ensure_positive,
+    build_exclude_spec,
+    is_excluded_path,
+    normalize_extensions,
+    normalize_exclude_patterns,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .search import SearchResult
@@ -112,6 +120,12 @@ def _format_extensions_display(values: Sequence[str] | None) -> str:
     return ", ".join(values)
 
 
+def _format_patterns_display(values: Sequence[str] | None) -> str:
+    if not values:
+        return "none"
+    return ", ".join(values)
+
+
 def _filter_snapshot_by_directory(
     entries: Sequence[dict],
     relative_dir: Path,
@@ -148,6 +162,22 @@ def _filter_snapshot_by_extensions(
     return filtered
 
 
+def _filter_snapshot_by_exclude_patterns(
+    entries: Sequence[dict],
+    exclude_spec,
+) -> list[dict]:
+    if exclude_spec is None:
+        return list(entries)
+    filtered: list[dict] = []
+    for entry in entries:
+        rel_path = entry.get("path", "")
+        rel_posix = Path(rel_path).as_posix() if rel_path else ""
+        if is_excluded_path(exclude_spec, rel_posix, is_dir=False):
+            continue
+        filtered.append(entry)
+    return filtered
+
+
 def _should_index_before_search(request: SearchRequest) -> bool:
     metadata = load_index_metadata_safe(
         request.directory,
@@ -156,6 +186,7 @@ def _should_index_before_search(request: SearchRequest) -> bool:
         request.respect_gitignore,
         request.mode,
         request.recursive,
+        exclude_patterns=request.exclude_patterns,
         extensions=request.extensions,
     )
     file_snapshot = metadata.get("files", []) if metadata else []
@@ -166,6 +197,7 @@ def _should_index_before_search(request: SearchRequest) -> bool:
         superset_root = Path(superset_entry.get("root_path", "")).expanduser().resolve()
         superset_recursive = bool(superset_entry.get("recursive"))
         superset_extensions = tuple(superset_entry.get("extensions") or ())
+        superset_excludes = tuple(superset_entry.get("exclude_patterns") or ())
         superset_metadata = load_index_metadata_safe(
             superset_root,
             request.model_name,
@@ -173,6 +205,7 @@ def _should_index_before_search(request: SearchRequest) -> bool:
             request.respect_gitignore,
             request.mode,
             superset_recursive,
+            exclude_patterns=superset_excludes,
             extensions=superset_extensions,
         )
         if not superset_metadata:
@@ -188,14 +221,18 @@ def _should_index_before_search(request: SearchRequest) -> bool:
                 relative_dir,
                 recursive=request.recursive,
             )
-        if request.extensions:
-            file_snapshot = _filter_snapshot_by_extensions(file_snapshot, request.extensions)
+    if request.extensions:
+        file_snapshot = _filter_snapshot_by_extensions(file_snapshot, request.extensions)
+    exclude_spec = build_exclude_spec(request.exclude_patterns)
+    if exclude_spec is not None:
+        file_snapshot = _filter_snapshot_by_exclude_patterns(file_snapshot, exclude_spec)
     if file_snapshot and not is_cache_current(
         request.directory,
         request.include_hidden,
         request.respect_gitignore,
         file_snapshot,
         recursive=request.recursive,
+        exclude_patterns=request.exclude_patterns,
         extensions=request.extensions,
     ):
         return True
@@ -256,6 +293,11 @@ def search(
         "-e",
         help=Messages.HELP_EXTENSIONS,
     ),
+    exclude_patterns: list[str] | None = typer.Option(
+        None,
+        "--exclude-pattern",
+        help=Messages.HELP_EXCLUDE_PATTERNS,
+    ),
     output_format: SearchOutputFormat = typer.Option(
         SearchOutputFormat.rich,
         "--format",
@@ -286,6 +328,7 @@ def search(
     mode_value = _validate_mode(mode)
     recursive = not no_recursive
     normalized_exts = normalize_extensions(extensions)
+    normalized_excludes = normalize_exclude_patterns(exclude_patterns)
     if extensions and not normalized_exts:
         raise typer.BadParameter(Messages.ERROR_EXTENSIONS_EMPTY)
     request = SearchRequest(
@@ -303,6 +346,7 @@ def search(
         base_url=base_url,
         api_key=api_key,
         local_cuda=bool(config.local_cuda),
+        exclude_patterns=normalized_excludes,
         extensions=normalized_exts,
         auto_index=auto_index,
     )
@@ -407,6 +451,11 @@ def index(
         "-e",
         help=Messages.HELP_EXTENSIONS,
     ),
+    exclude_patterns: list[str] | None = typer.Option(
+        None,
+        "--exclude-pattern",
+        help=Messages.HELP_EXCLUDE_PATTERNS,
+    ),
 ) -> None:
     """Create or refresh the cached index for the given directory."""
     config = load_config()
@@ -422,6 +471,7 @@ def index(
     recursive = not no_recursive
     respect_gitignore = not no_respect_gitignore
     normalized_exts = normalize_extensions(extensions)
+    normalized_excludes = normalize_exclude_patterns(exclude_patterns)
     if extensions and not normalized_exts:
         raise typer.BadParameter(Messages.ERROR_EXTENSIONS_EMPTY)
     if clear and show_cache:
@@ -435,6 +485,7 @@ def index(
             respect_gitignore,
             mode_value,
             recursive,
+            exclude_patterns=normalized_excludes,
             extensions=normalized_exts,
         )
         if not metadata:
@@ -456,6 +507,7 @@ def index(
             hidden="yes" if metadata.get("include_hidden") else "no",
             recursive="yes" if metadata.get("recursive") else "no",
             gitignore="yes" if metadata.get("respect_gitignore", True) else "no",
+            exclude_patterns=_format_patterns_display(metadata.get("exclude_patterns")),
             extensions=_format_extensions_display(metadata.get("extensions")),
             files=len(files),
             dimension=metadata.get("dimension"),
@@ -472,6 +524,7 @@ def index(
             respect_gitignore=respect_gitignore,
             mode=mode_value,
             recursive=recursive,
+            exclude_patterns=normalized_excludes,
             extensions=normalized_exts,
         )
         if removed:
@@ -510,6 +563,7 @@ def index(
             base_url=base_url,
             api_key=api_key,
             local_cuda=bool(config.local_cuda),
+            exclude_patterns=normalized_excludes,
             extensions=normalized_exts,
         )
     except RuntimeError as exc:
@@ -748,6 +802,7 @@ def config(
             table.add_column(Messages.TABLE_INDEX_HEADER_HIDDEN, justify="center")
             table.add_column(Messages.TABLE_INDEX_HEADER_RECURSIVE, justify="center")
             table.add_column(Messages.TABLE_INDEX_HEADER_GITIGNORE, justify="center")
+            table.add_column(Messages.TABLE_INDEX_HEADER_EXCLUDES)
             table.add_column(Messages.TABLE_INDEX_HEADER_EXTENSIONS)
             table.add_column(Messages.TABLE_INDEX_HEADER_FILES, justify="right")
             table.add_column(Messages.TABLE_INDEX_HEADER_GENERATED, overflow="fold")
@@ -759,6 +814,7 @@ def config(
                     "yes" if entry["include_hidden"] else "no",
                     "yes" if entry["recursive"] else "no",
                     "yes" if entry.get("respect_gitignore", True) else "no",
+                    _format_patterns_display(entry.get("exclude_patterns")),
                     _format_extensions_display(entry.get("extensions")),
                     str(entry["file_count"]),
                     str(entry["generated_at"]),

@@ -49,6 +49,7 @@ def build_index(
     base_url: str | None,
     api_key: str | None,
     local_cuda: bool = False,
+    exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
 ) -> IndexResult:
     """Create or refresh the cached index for *directory*."""
@@ -62,6 +63,7 @@ def build_index(
         include_hidden=include_hidden,
         recursive=recursive,
         extensions=extensions,
+        exclude_patterns=exclude_patterns,
         respect_gitignore=respect_gitignore,
     )
     if not files:
@@ -75,6 +77,7 @@ def build_index(
         respect_gitignore,
         mode,
         recursive,
+        exclude_patterns=exclude_patterns,
         extensions=extensions,
     )
     cached_files = existing_meta.get("files", []) if existing_meta else []
@@ -115,6 +118,7 @@ def build_index(
                     mode=mode,
                     recursive=recursive,
                     updates=updates,
+                    exclude_patterns=exclude_patterns,
                     extensions=extensions,
                 )
                 return IndexResult(
@@ -131,6 +135,7 @@ def build_index(
                     mode=mode,
                     recursive=recursive,
                     updates=[],
+                    exclude_patterns=exclude_patterns,
                     extensions=extensions,
                 )
                 return IndexResult(
@@ -179,6 +184,7 @@ def build_index(
                 cached_label_map=cached_label_map,
                 searcher=searcher,
                 apply_fn=apply_index_updates,
+                exclude_patterns=exclude_patterns,
                 extensions=extensions,
                 stat_cache=stat_cache,
             )
@@ -199,6 +205,7 @@ def build_index(
                     mode=mode,
                     recursive=recursive,
                     updates=updates,
+                    exclude_patterns=exclude_patterns,
                     extensions=extensions,
                 )
             return IndexResult(
@@ -224,6 +231,7 @@ def build_index(
         mode=mode,
         recursive=recursive,
         entries=entries,
+        exclude_patterns=exclude_patterns,
         extensions=extensions,
     )
     return IndexResult(
@@ -241,6 +249,7 @@ def clear_index_entries(
     mode: str,
     recursive: bool,
     model: str | None = None,
+    exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
 ) -> int:
     """Remove cached entries for *directory* and return number removed."""
@@ -254,6 +263,7 @@ def clear_index_entries(
         mode=mode,
         recursive=recursive,
         model=model,
+        exclude_patterns=exclude_patterns,
         extensions=extensions,
     )
 
@@ -354,6 +364,7 @@ def _apply_incremental_update(
     cached_label_map: dict[str, dict[int, str]] | None,
     searcher,
     apply_fn,
+    exclude_patterns: Sequence[str] | None,
     extensions: Sequence[str] | None,
     stat_cache: MutableMapping[Path, os.stat_result] | None = None,
 ) -> Path:
@@ -402,6 +413,7 @@ def _apply_incremental_update(
         changed_entries=changed_entries,
         touched_entries=touched_entries,
         removed_rel_paths=sorted(removed_rel_paths),
+        exclude_patterns=exclude_patterns,
         extensions=extensions,
     )
     return cache_path
