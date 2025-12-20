@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Sequence
 
@@ -77,6 +78,83 @@ def test_store_and_load_index(tmp_path, monkeypatch):
     assert meta["model"] == "test-model"
     assert meta["chunks"][0]["preview"] == "preview-a.txt"
     assert meta["extensions"] == ()
+
+
+def test_embedding_cache_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+
+    text_hash = cache.embedding_cache_key("hello")
+    vector = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    cache.store_embedding_cache(model="model", embeddings={text_hash: vector})
+
+    loaded = cache.load_embedding_cache("model", [text_hash])
+    assert text_hash in loaded
+    assert np.allclose(loaded[text_hash], vector)
+    assert cache.load_embedding_cache("other-model", [text_hash]) == {}
+
+
+def test_embedding_cache_prunes_by_ttl_and_capacity(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(cache, "EMBED_CACHE_TTL_DAYS", 1)
+    monkeypatch.setattr(cache, "EMBED_CACHE_MAX_ENTRIES", 2)
+
+    db_path = cache.cache_db_path()
+    conn = cache._connect(db_path)
+    try:
+        cache._ensure_schema(conn)
+        now = datetime.now(timezone.utc)
+        entries = [
+            (
+                "model",
+                cache.embedding_cache_key("old"),
+                np.array([1.0], dtype=np.float32).tobytes(),
+                (now - timedelta(days=2)).isoformat(),
+            ),
+            (
+                "model",
+                cache.embedding_cache_key("mid"),
+                np.array([2.0], dtype=np.float32).tobytes(),
+                (now - timedelta(hours=1)).isoformat(),
+            ),
+            (
+                "model",
+                cache.embedding_cache_key("new"),
+                np.array([3.0], dtype=np.float32).tobytes(),
+                (now - timedelta(minutes=1)).isoformat(),
+            ),
+        ]
+        with conn:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO embedding_cache (
+                    model,
+                    text_hash,
+                    vector_blob,
+                    created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                entries,
+            )
+    finally:
+        conn.close()
+
+    extra_hash = cache.embedding_cache_key("extra")
+    cache.store_embedding_cache(
+        model="model",
+        embeddings={extra_hash: np.array([4.0], dtype=np.float32)},
+    )
+
+    hashes = [
+        cache.embedding_cache_key("old"),
+        cache.embedding_cache_key("mid"),
+        cache.embedding_cache_key("new"),
+        extra_hash,
+    ]
+    loaded = cache.load_embedding_cache("model", hashes)
+    assert cache.embedding_cache_key("old") not in loaded
+    assert cache.embedding_cache_key("mid") not in loaded
+    assert cache.embedding_cache_key("new") in loaded
+    assert extra_hash in loaded
 
 
 def test_cache_file_missing(tmp_path, monkeypatch):

@@ -68,8 +68,7 @@ def test_build_index_runs_incremental_update(tmp_path, monkeypatch):
         **kwargs,
     )
     assert second.status == IndexStatus.STORED
-    assert len(DummySearcher.calls) == 1
-    assert len(DummySearcher.calls[0]) == 1  # only a.txt re-embedded
+    assert DummySearcher.calls == []
 
     DummySearcher.calls = []
     file_c = root / "c.txt"
@@ -92,6 +91,31 @@ def test_build_index_runs_incremental_update(tmp_path, monkeypatch):
     assert sorted(p.name for p in paths) == ["a.txt", "b.txt", "c.txt"]
 
 
+def test_embed_labels_with_cache_reuses_embeddings(tmp_path, monkeypatch):
+    _patch_cache_dir(tmp_path, monkeypatch)
+    DummySearcher.calls = []
+    searcher = DummySearcher()
+    labels = ["alpha", "beta"]
+
+    first = index_service._embed_labels_with_cache(  # type: ignore[attr-defined]
+        searcher=searcher,
+        model_name="model",
+        labels=labels,
+    )
+
+    assert len(DummySearcher.calls) == 1
+    DummySearcher.calls = []
+
+    second = index_service._embed_labels_with_cache(  # type: ignore[attr-defined]
+        searcher=searcher,
+        model_name="model",
+        labels=labels,
+    )
+
+    assert DummySearcher.calls == []
+    assert np.allclose(first, second)
+
+
 def test_build_index_falls_back_to_full_rebuild(tmp_path, monkeypatch):
     _patch_cache_dir(tmp_path, monkeypatch)
     monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
@@ -112,8 +136,7 @@ def test_build_index_falls_back_to_full_rebuild(tmp_path, monkeypatch):
         file.write_text(file.read_text() + "!")
 
     build_index(root, include_hidden=False, mode="name", recursive=True, model_name="model", batch_size=0, provider="gemini", base_url=None, api_key=None)
-    assert len(DummySearcher.calls) == 1
-    assert len(DummySearcher.calls[0]) == 4  # full rebuild embeds every file
+    assert DummySearcher.calls == []
 
 
 def test_build_index_backfills_line_metadata_when_missing(tmp_path, monkeypatch):

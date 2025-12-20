@@ -8,6 +8,8 @@ from enum import Enum
 from pathlib import Path
 from typing import MutableMapping, Sequence
 
+import numpy as np
+
 from .cache_service import load_index_metadata_safe
 from .content_extract_service import TEXT_EXTENSIONS
 from .js_parser import JSTS_EXTENSIONS
@@ -205,7 +207,11 @@ def build_index(
 
     payloads = strategy.payloads_for_files(files)
     file_labels = [payload.label for payload in payloads]
-    embeddings = searcher.embed_texts(file_labels)
+    embeddings = _embed_labels_with_cache(
+        searcher=searcher,
+        model_name=model_name,
+        labels=file_labels,
+    )
     entries = _build_index_entries(payloads, embeddings, directory, stat_cache=stat_cache)
 
     cache_path = store_index(
@@ -358,7 +364,11 @@ def _apply_incremental_update(
     )
     if changed_payloads:
         labels = [payload.label for payload in changed_payloads]
-        embeddings = searcher.embed_texts(labels)
+        embeddings = _embed_labels_with_cache(
+            searcher=searcher,
+            model_name=model_name,
+            labels=labels,
+        )
         changed_entries = _build_index_entries(
             changed_payloads,
             embeddings,
@@ -381,6 +391,40 @@ def _apply_incremental_update(
         extensions=extensions,
     )
     return cache_path
+
+
+def _embed_labels_with_cache(
+    *,
+    searcher,
+    model_name: str,
+    labels: Sequence[str],
+) -> np.ndarray:
+    if not labels:
+        return np.empty((0, 0), dtype=np.float32)
+    from ..cache import embedding_cache_key, load_embedding_cache, store_embedding_cache
+
+    hashes = [embedding_cache_key(label) for label in labels]
+    cached = load_embedding_cache(model_name, hashes)
+    missing: dict[str, str] = {}
+    for label, text_hash in zip(labels, hashes):
+        vector = cached.get(text_hash)
+        if vector is None or vector.size == 0:
+            if text_hash not in missing:
+                missing[text_hash] = label
+
+    if missing:
+        missing_items = list(missing.items())
+        missing_labels = [label for _, label in missing_items]
+        new_vectors = searcher.embed_texts(missing_labels)
+        stored: dict[str, np.ndarray] = {}
+        for idx, (text_hash, _) in enumerate(missing_items):
+            vector = np.asarray(new_vectors[idx], dtype=np.float32)
+            cached[text_hash] = vector
+            stored[text_hash] = vector
+        store_embedding_cache(model=model_name, embeddings=stored)
+
+    vectors = [cached[text_hash] for text_hash in hashes]
+    return np.vstack([np.asarray(vector, dtype=np.float32) for vector in vectors])
 
 
 def _relative_to_root(path: Path, root: Path) -> str:

@@ -6,9 +6,9 @@ import hashlib
 import os
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
@@ -17,6 +17,8 @@ from .utils import collect_files
 CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CACHE_VERSION = 5
 DB_FILENAME = "index.db"
+EMBED_CACHE_TTL_DAYS = 30
+EMBED_CACHE_MAX_ENTRIES = 50_000
 
 
 @dataclass(slots=True)
@@ -69,6 +71,13 @@ def query_cache_key(query: str, model: str) -> str:
     return hashlib.sha1(base.encode("utf-8")).hexdigest()
 
 
+def embedding_cache_key(text: str) -> str:
+    """Return a stable hash for embedding cache lookups."""
+
+    clean_text = text or ""
+    return hashlib.sha1(clean_text.encode("utf-8")).hexdigest()
+
+
 def _serialize_extensions(extensions: Sequence[str] | None) -> str:
     if not extensions:
         return ""
@@ -80,6 +89,11 @@ def _deserialize_extensions(value: str | None) -> tuple[str, ...]:
         return ()
     parts = [part for part in value.split(",") if part]
     return tuple(parts)
+
+
+def _chunk_values(values: Sequence[str], size: int) -> Iterable[Sequence[str]]:
+    for idx in range(0, len(values), size):
+        yield values[idx : idx + size]
 
 
 def ensure_cache_dir() -> Path:
@@ -155,11 +169,23 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             UNIQUE(index_id, query_hash)
         );
 
+        CREATE TABLE IF NOT EXISTS embedding_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model TEXT NOT NULL,
+            text_hash TEXT NOT NULL,
+            vector_blob BLOB NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(model, text_hash)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_indexed_file_order
             ON indexed_file(index_id, position);
 
         CREATE INDEX IF NOT EXISTS idx_query_cache_lookup
             ON query_cache(index_id, query_hash);
+
+        CREATE INDEX IF NOT EXISTS idx_embedding_cache_lookup
+            ON embedding_cache(model, text_hash);
         """
     )
     try:
@@ -889,6 +915,126 @@ def store_query_vector(
     finally:
         if owns_connection:
             connection.close()
+
+
+def load_embedding_cache(
+    model: str,
+    text_hashes: Sequence[str],
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, np.ndarray]:
+    """Load cached embeddings keyed by (model, text_hash)."""
+
+    unique_hashes = list(dict.fromkeys([value for value in text_hashes if value]))
+    if not unique_hashes:
+        return {}
+    db_path = cache_db_path()
+    owns_connection = conn is None
+    connection = conn or _connect(db_path)
+    try:
+        _ensure_schema(connection)
+        results: dict[str, np.ndarray] = {}
+        for chunk in _chunk_values(unique_hashes, 900):
+            placeholders = ", ".join("?" for _ in chunk)
+            rows = connection.execute(
+                f"""
+                SELECT text_hash, vector_blob
+                FROM embedding_cache
+                WHERE model = ? AND text_hash IN ({placeholders})
+                """,
+                (model, *chunk),
+            ).fetchall()
+            for row in rows:
+                blob = row["vector_blob"]
+                if not blob:
+                    continue
+                vector = np.frombuffer(blob, dtype=np.float32)
+                if vector.size == 0:
+                    continue
+                results[row["text_hash"]] = vector
+        return results
+    finally:
+        if owns_connection:
+            connection.close()
+
+
+def store_embedding_cache(
+    *,
+    model: str,
+    embeddings: Mapping[str, np.ndarray],
+    conn: sqlite3.Connection | None = None,
+) -> None:
+    """Store embedding vectors keyed by (model, text_hash)."""
+
+    if not embeddings:
+        return
+    db_path = cache_db_path()
+    owns_connection = conn is None
+    connection = conn or _connect(db_path)
+    try:
+        _ensure_schema(connection)
+        created_at = datetime.now(timezone.utc).isoformat()
+        rows = [
+            (
+                model,
+                text_hash,
+                np.asarray(vector, dtype=np.float32).tobytes(),
+                created_at,
+            )
+            for text_hash, vector in embeddings.items()
+        ]
+        with connection:
+            connection.executemany(
+                """
+                INSERT OR REPLACE INTO embedding_cache (
+                    model,
+                    text_hash,
+                    vector_blob,
+                    created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                rows,
+            )
+            _prune_embedding_cache(
+                connection,
+                ttl_days=EMBED_CACHE_TTL_DAYS,
+                max_entries=EMBED_CACHE_MAX_ENTRIES,
+            )
+    finally:
+        if owns_connection:
+            connection.close()
+
+
+def _prune_embedding_cache(
+    conn: sqlite3.Connection,
+    *,
+    ttl_days: int,
+    max_entries: int,
+    now: datetime | None = None,
+) -> None:
+    if ttl_days > 0:
+        cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=ttl_days)
+        conn.execute(
+            "DELETE FROM embedding_cache WHERE created_at < ?",
+            (cutoff.isoformat(),),
+        )
+    if max_entries > 0:
+        row = conn.execute(
+            "SELECT COUNT(*) AS total FROM embedding_cache"
+        ).fetchone()
+        total = int(row["total"] if row is not None else 0)
+        overflow = total - max_entries
+        if overflow > 0:
+            conn.execute(
+                """
+                DELETE FROM embedding_cache
+                WHERE id IN (
+                    SELECT id FROM embedding_cache
+                    ORDER BY created_at ASC, id ASC
+                    LIMIT ?
+                )
+                """,
+                (overflow,),
+            )
 
 
 def clear_index(
