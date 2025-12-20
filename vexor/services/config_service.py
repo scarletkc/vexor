@@ -10,6 +10,7 @@ from ..config import (
     set_api_key,
     set_base_url,
     set_batch_size,
+    set_embed_concurrency,
     set_auto_index,
     set_local_cuda,
     set_model,
@@ -23,6 +24,7 @@ class ConfigUpdateResult:
     api_key_cleared: bool = False
     model_set: bool = False
     batch_size_set: bool = False
+    embed_concurrency_set: bool = False
     provider_set: bool = False
     base_url_set: bool = False
     base_url_cleared: bool = False
@@ -37,6 +39,7 @@ class ConfigUpdateResult:
                 self.api_key_cleared,
                 self.model_set,
                 self.batch_size_set,
+                self.embed_concurrency_set,
                 self.provider_set,
                 self.base_url_set,
                 self.base_url_cleared,
@@ -52,6 +55,7 @@ def apply_config_updates(
     clear_api_key: bool = False,
     model: str | None = None,
     batch_size: int | None = None,
+    embed_concurrency: int | None = None,
     provider: str | None = None,
     base_url: str | None = None,
     clear_base_url: bool = False,
@@ -73,6 +77,9 @@ def apply_config_updates(
     if batch_size is not None:
         set_batch_size(batch_size)
         result.batch_size_set = True
+    if embed_concurrency is not None:
+        set_embed_concurrency(embed_concurrency)
+        result.embed_concurrency_set = True
     if provider is not None:
         set_provider(provider)
         result.provider_set = True

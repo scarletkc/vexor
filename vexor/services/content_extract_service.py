@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import codecs
 from bisect import bisect_left
 import re
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ HEAD_CHAR_LIMIT = 1000
 FULL_CHAR_LIMIT = 200_000
 DEFAULT_CHUNK_SIZE = 1000
 DEFAULT_CHUNK_OVERLAP = 100
+UTF8_BYTE_MULTIPLIER = 4
 
 
 class HeadExtractor(Protocol):
@@ -667,6 +669,10 @@ def extract_outline_chunks(
 def _read_text_head(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None:
     """Return the first *char_limit* characters of a text-like file."""
 
+    text = _read_text_utf8(path, char_limit=char_limit)
+    if text is not None:
+        return _cleanup_snippet(text)
+
     try:
         result = from_path(path)
     except Exception:
@@ -686,6 +692,10 @@ def _read_text_head(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None
 def _read_text_full(path: Path, char_limit: int = FULL_CHAR_LIMIT) -> str | None:
     """Return up to *char_limit* characters from a text-like file."""
 
+    text = _read_text_utf8(path, char_limit=char_limit)
+    if text is not None:
+        return text
+
     try:
         result = from_path(path)
     except Exception:
@@ -697,6 +707,25 @@ def _read_text_full(path: Path, char_limit: int = FULL_CHAR_LIMIT) -> str | None
         return None
     text = str(best)
     if not text:
+        return None
+    if char_limit > 0:
+        return text[:char_limit]
+    return text
+
+
+def _read_text_utf8(path: Path, *, char_limit: int) -> str | None:
+    try:
+        if char_limit > 0:
+            byte_limit = char_limit * UTF8_BYTE_MULTIPLIER
+            with path.open("rb") as handle:
+                data = handle.read(byte_limit)
+        else:
+            data = path.read_bytes()
+        decoder = codecs.getincrementaldecoder("utf-8")()
+        text = decoder.decode(data, final=False)
+    except (OSError, UnicodeDecodeError):
+        return None
+    if text == "":
         return None
     if char_limit > 0:
         return text[:char_limit]

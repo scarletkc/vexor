@@ -14,6 +14,7 @@ DEFAULT_MODEL = "text-embedding-3-small"
 DEFAULT_GEMINI_MODEL = "gemini-embedding-001"
 DEFAULT_LOCAL_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_BATCH_SIZE = 0
+DEFAULT_EMBED_CONCURRENCY = 2
 DEFAULT_PROVIDER = "openai"
 SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER, "gemini", "custom", "local")
 ENV_API_KEY = "VEXOR_API_KEY"
@@ -26,6 +27,7 @@ class Config:
     api_key: str | None = None
     model: str = DEFAULT_MODEL
     batch_size: int = DEFAULT_BATCH_SIZE
+    embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY
     provider: str = DEFAULT_PROVIDER
     base_url: str | None = None
     auto_index: bool = True
@@ -40,6 +42,7 @@ def load_config() -> Config:
         api_key=raw.get("api_key") or None,
         model=raw.get("model") or DEFAULT_MODEL,
         batch_size=int(raw.get("batch_size", DEFAULT_BATCH_SIZE)),
+        embed_concurrency=int(raw.get("embed_concurrency", DEFAULT_EMBED_CONCURRENCY)),
         provider=raw.get("provider") or DEFAULT_PROVIDER,
         base_url=raw.get("base_url") or None,
         auto_index=bool(raw.get("auto_index", True)),
@@ -55,6 +58,7 @@ def save_config(config: Config) -> None:
     if config.model:
         data["model"] = config.model
     data["batch_size"] = config.batch_size
+    data["embed_concurrency"] = config.embed_concurrency
     if config.provider:
         data["provider"] = config.provider
     if config.base_url:
@@ -83,6 +87,12 @@ def set_model(value: str) -> None:
 def set_batch_size(value: int) -> None:
     config = load_config()
     config.batch_size = value
+    save_config(config)
+
+
+def set_embed_concurrency(value: int) -> None:
+    config = load_config()
+    config.embed_concurrency = value
     save_config(config)
 
 

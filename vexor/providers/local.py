@@ -80,10 +80,12 @@ class LocalEmbeddingBackend:
         *,
         model_name: str,
         chunk_size: int | None = None,
+        concurrency: int = 1,
         cuda: bool = False,
     ) -> None:
         self.model_name = model_name
         self.chunk_size = chunk_size if chunk_size and chunk_size > 0 else None
+        self.concurrency = max(int(concurrency or 1), 1)
         self.cuda = bool(cuda)
         TextEmbedding = _load_fastembed()
         cache_dir = resolve_fastembed_cache_dir()

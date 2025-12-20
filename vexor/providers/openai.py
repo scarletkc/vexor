@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterator, Sequence
 
 import numpy as np
@@ -20,11 +21,13 @@ class OpenAIEmbeddingBackend:
         model_name: str,
         api_key: str | None,
         chunk_size: int | None = None,
+        concurrency: int = 1,
         base_url: str | None = None,
     ) -> None:
         load_dotenv()
         self.model_name = model_name
         self.chunk_size = chunk_size if chunk_size and chunk_size > 0 else None
+        self.concurrency = max(int(concurrency or 1), 1)
         self.api_key = api_key
         if not self.api_key:
             raise RuntimeError(Messages.ERROR_API_KEY_MISSING)
@@ -36,24 +39,44 @@ class OpenAIEmbeddingBackend:
     def embed(self, texts: Sequence[str]) -> np.ndarray:
         if not texts:
             return np.empty((0, 0), dtype=np.float32)
-        vectors: list[np.ndarray] = []
-        for chunk in _chunk(texts, self.chunk_size):
-            try:
-                response = self._client.embeddings.create(
-                    model=self.model_name,
-                    input=list(chunk),
-                )
-            except Exception as exc:  # pragma: no cover - API client variations
-                raise RuntimeError(_format_openai_error(exc)) from exc
-            data = getattr(response, "data", None) or []
-            if not data:
-                raise RuntimeError(Messages.ERROR_NO_EMBEDDINGS)
-            for item in data:
-                embedding = getattr(item, "embedding", None)
-                if embedding is None:
-                    continue
-                vectors.append(np.asarray(embedding, dtype=np.float32))
+        batches = list(_chunk(texts, self.chunk_size))
+        if self.concurrency > 1 and len(batches) > 1:
+            vectors_by_batch: list[list[np.ndarray] | None] = [None] * len(batches)
+            with ThreadPoolExecutor(max_workers=min(self.concurrency, len(batches))) as executor:
+                future_map = {
+                    executor.submit(self._embed_batch, batch): idx
+                    for idx, batch in enumerate(batches)
+                }
+                for future in as_completed(future_map):
+                    idx = future_map[future]
+                    vectors_by_batch[idx] = future.result()
+            vectors = [vec for batch in vectors_by_batch if batch for vec in batch]
+        else:
+            vectors = []
+            for batch in batches:
+                vectors.extend(self._embed_batch(batch))
+        if not vectors:
+            raise RuntimeError(Messages.ERROR_NO_EMBEDDINGS)
         return np.vstack(vectors)
+
+    def _embed_batch(self, batch: Sequence[str]) -> list[np.ndarray]:
+        try:
+            response = self._client.embeddings.create(
+                model=self.model_name,
+                input=list(batch),
+            )
+        except Exception as exc:  # pragma: no cover - API client variations
+            raise RuntimeError(_format_openai_error(exc)) from exc
+        data = getattr(response, "data", None) or []
+        if not data:
+            raise RuntimeError(Messages.ERROR_NO_EMBEDDINGS)
+        vectors: list[np.ndarray] = []
+        for item in data:
+            embedding = getattr(item, "embedding", None)
+            if embedding is None:
+                continue
+            vectors.append(np.asarray(embedding, dtype=np.float32))
+        return vectors
 
 
 def _chunk(items: Sequence[str], size: int | None) -> Iterator[Sequence[str]]:

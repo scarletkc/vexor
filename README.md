@@ -68,6 +68,7 @@ Useful for CI warmup or when `auto_index` is disabled.
 vexor config --set-provider openai          # default; also supports gemini/custom/local
 vexor config --set-model text-embedding-3-small
 vexor config --set-batch-size 0             # 0 = single request
+vexor config --set-embed-concurrency 2       # parallel embedding requests
 vexor config --set-auto-index true          # auto-index before search (default)
 vexor config --set-base-url https://proxy.example.com  # optional proxy
 vexor config --clear-base-url               # reset to official endpoint

@@ -20,6 +20,7 @@ def test_load_config_defaults(tmp_path, monkeypatch):
     assert cfg.base_url is None
     assert cfg.auto_index is True
     assert cfg.local_cuda is False
+    assert cfg.embed_concurrency == config_module.DEFAULT_EMBED_CONCURRENCY
 
 
 def test_resolve_default_model_gemini_defaults() -> None:
@@ -63,6 +64,14 @@ def test_save_and_load_local_cuda(tmp_path, monkeypatch):
     config_module.save_config(config_module.Config(local_cuda=True))
     cfg = config_module.load_config()
     assert cfg.local_cuda is True
+
+
+def test_save_and_load_embed_concurrency(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+
+    config_module.save_config(config_module.Config(embed_concurrency=4))
+    cfg = config_module.load_config()
+    assert cfg.embed_concurrency == 4
 
 
 def test_resolve_api_key_prefers_config(monkeypatch):

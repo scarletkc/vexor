@@ -763,6 +763,8 @@ def test_config_set_and_show(tmp_path):
             "custom-model",
             "--set-batch-size",
             "42",
+            "--set-embed-concurrency",
+            "3",
             "--set-provider",
             "gemini",
             "--set-base-url",
@@ -776,6 +778,7 @@ def test_config_set_and_show(tmp_path):
     assert data["api_key"] == "abc123"
     assert data["model"] == "custom-model"
     assert data["batch_size"] == 42
+    assert data["embed_concurrency"] == 3
     assert data["provider"] == "gemini"
     assert data["base_url"] == "https://proxy.example.com"
     assert data["auto_index"] is True
@@ -783,6 +786,7 @@ def test_config_set_and_show(tmp_path):
 
     result_show = runner.invoke(app, ["config", "--show"])
     assert "custom-model" in result_show.stdout
+    assert "Embedding concurrency: 3" in strip_ansi(result_show.stdout)
 
 
 def test_config_custom_requires_model_and_base_url(tmp_path):

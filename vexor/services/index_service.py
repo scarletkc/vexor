@@ -12,6 +12,7 @@ from .cache_service import load_index_metadata_safe
 from .content_extract_service import TEXT_EXTENSIONS
 from .js_parser import JSTS_EXTENSIONS
 from ..cache import CACHE_VERSION, IndexedChunk, backfill_chunk_lines
+from ..config import DEFAULT_EMBED_CONCURRENCY
 from ..modes import get_strategy, ModePayload
 
 INCREMENTAL_CHANGE_THRESHOLD = 0.5
@@ -41,6 +42,7 @@ def build_index(
     recursive: bool,
     model_name: str,
     batch_size: int,
+    embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY,
     provider: str,
     base_url: str | None,
     api_key: str | None,
@@ -79,6 +81,7 @@ def build_index(
     searcher = VexorSearcher(
         model_name=model_name,
         batch_size=batch_size,
+        embed_concurrency=embed_concurrency,
         provider=provider,
         base_url=base_url,
         api_key=api_key,

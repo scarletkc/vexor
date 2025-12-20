@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from vexor.config import DEFAULT_EMBED_CONCURRENCY
 from vexor.search import SearchResult, VexorSearcher
 
 
@@ -30,7 +31,7 @@ def test_vexor_searcher_encode_normalizes():
     assert searcher.device == "dummy-device"
 
     empty = searcher.embed_texts([])
-    assert empty.shape == (0, 2)
+    assert empty.shape == (0, 0)
 
 
 def test_vexor_searcher_search_ranks(monkeypatch, tmp_path):
@@ -78,6 +79,7 @@ def test_vexor_searcher_creates_gemini_backend(monkeypatch):
     assert "Gemini" in searcher.device
     assert created["model_name"] == "m"
     assert created["chunk_size"] == 2
+    assert created["concurrency"] == DEFAULT_EMBED_CONCURRENCY
 
 
 def test_vexor_searcher_creates_openai_backend(monkeypatch):
@@ -94,6 +96,7 @@ def test_vexor_searcher_creates_openai_backend(monkeypatch):
     searcher = VexorSearcher(model_name="m", provider="openai", api_key="k")
     assert "OpenAI" in searcher.device
     assert created["model_name"] == "m"
+    assert created["concurrency"] == DEFAULT_EMBED_CONCURRENCY
 
 
 def test_vexor_searcher_creates_custom_backend(monkeypatch):
@@ -115,6 +118,7 @@ def test_vexor_searcher_creates_custom_backend(monkeypatch):
     )
     assert "OpenAI-compatible" in searcher.device
     assert created["base_url"] == "https://example.com"
+    assert created["concurrency"] == DEFAULT_EMBED_CONCURRENCY
 
 
 def test_vexor_searcher_creates_local_backend(monkeypatch):
@@ -131,6 +135,7 @@ def test_vexor_searcher_creates_local_backend(monkeypatch):
     searcher = VexorSearcher(model_name="m", provider="local")
     assert "local" in searcher.device.lower()
     assert created["model_name"] == "m"
+    assert created["concurrency"] == DEFAULT_EMBED_CONCURRENCY
 
 
 def test_vexor_searcher_custom_requires_base_url():

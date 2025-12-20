@@ -177,6 +177,7 @@ def search(
     provider = (config.provider or DEFAULT_PROVIDER).lower()
     model_name = resolve_default_model(provider, config.model)
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
+    embed_concurrency = config.embed_concurrency
     base_url = config.base_url
     api_key = config.api_key
     auto_index = bool(config.auto_index)
@@ -239,6 +240,7 @@ def search(
         top_k=top,
         model_name=model_name,
         batch_size=batch_size,
+        embed_concurrency=embed_concurrency,
         provider=provider,
         base_url=base_url,
         api_key=api_key,
@@ -343,6 +345,7 @@ def index(
     provider = (config.provider or DEFAULT_PROVIDER).lower()
     model_name = resolve_default_model(provider, config.model)
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
+    embed_concurrency = config.embed_concurrency
     base_url = config.base_url
     api_key = config.api_key
 
@@ -434,6 +437,7 @@ def index(
             recursive=recursive,
             model_name=model_name,
             batch_size=batch_size,
+            embed_concurrency=embed_concurrency,
             provider=provider,
             base_url=base_url,
             api_key=api_key,
@@ -477,6 +481,11 @@ def config(
         "--set-batch-size",
         help=Messages.HELP_SET_BATCH,
     ),
+    set_embed_concurrency_option: int | None = typer.Option(
+        None,
+        "--set-embed-concurrency",
+        help=Messages.HELP_SET_EMBED_CONCURRENCY,
+    ),
     set_provider_option: str | None = typer.Option(
         None,
         "--set-provider",
@@ -516,6 +525,8 @@ def config(
     """Manage Vexor configuration stored in ~/.vexor/config.json."""
     if set_batch_option is not None and set_batch_option < 0:
         raise typer.BadParameter(Messages.ERROR_BATCH_NEGATIVE)
+    if set_embed_concurrency_option is not None and set_embed_concurrency_option < 1:
+        raise typer.BadParameter(Messages.ERROR_CONCURRENCY_INVALID)
     if set_base_url_option and clear_base_url:
         raise typer.BadParameter(Messages.ERROR_BASE_URL_CONFLICT)
     if set_provider_option is not None:
@@ -572,6 +583,7 @@ def config(
         clear_api_key=clear_api_key,
         model=set_model_option,
         batch_size=set_batch_option,
+        embed_concurrency=set_embed_concurrency_option,
         provider=set_provider_option,
         base_url=set_base_url_option,
         clear_base_url=clear_base_url,
@@ -589,6 +601,13 @@ def config(
     if updates.batch_size_set and set_batch_option is not None:
         console.print(
             _styled(Messages.INFO_BATCH_SET.format(value=set_batch_option), Styles.SUCCESS)
+        )
+    if updates.embed_concurrency_set and set_embed_concurrency_option is not None:
+        console.print(
+            _styled(
+                Messages.INFO_EMBED_CONCURRENCY_SET.format(value=set_embed_concurrency_option),
+                Styles.SUCCESS,
+            )
         )
     if updates.provider_set and set_provider_option is not None:
         console.print(
@@ -639,6 +658,7 @@ def config(
                     provider=provider,
                     model=resolve_default_model(provider, cfg.model),
                     batch=cfg.batch_size if cfg.batch_size is not None else DEFAULT_BATCH_SIZE,
+                    concurrency=cfg.embed_concurrency,
                     auto_index="yes" if cfg.auto_index else "no",
                     local_cuda="yes" if cfg.local_cuda else "no",
                     base_url=cfg.base_url or "none",
@@ -929,13 +949,13 @@ def doctor(
 
     results.extend(
         run_all_doctor_checks(
-        provider=provider,
-        model=model,
-        api_key=config.api_key,
-        base_url=config.base_url,
-        skip_api_test=skip_api_test,
-        local_cuda=bool(config.local_cuda),
-    )
+            provider=provider,
+            model=model,
+            api_key=config.api_key,
+            base_url=config.base_url,
+            skip_api_test=skip_api_test,
+            local_cuda=bool(config.local_cuda),
+        )
     )
 
     has_failure = False

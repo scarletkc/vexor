@@ -137,10 +137,10 @@ def test_extract_full_chunks_returns_empty_for_unknown_or_empty(tmp_path, monkey
     empty.write_text("", encoding="utf-8")
     assert extract_full_chunks(empty) == []
 
-    # from_path failure should return no chunks
+    # from_path failure should return no chunks for non-UTF8 payloads
     monkeypatch.setattr(ces, "from_path", lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("boom")))
     text_path = tmp_path / "boom.txt"
-    text_path.write_text("hello", encoding="utf-8")
+    text_path.write_bytes(b"\xff\xfe\xfd")
     assert extract_full_chunks(text_path) == []
 
 

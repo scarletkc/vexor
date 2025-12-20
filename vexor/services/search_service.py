@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
+from ..config import DEFAULT_EMBED_CONCURRENCY
 from .cache_service import is_cache_current
 
 
@@ -26,6 +27,7 @@ class SearchRequest:
     local_cuda: bool
     extensions: tuple[str, ...]
     auto_index: bool = True
+    embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY
 
 
 @dataclass(slots=True)
@@ -74,6 +76,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             recursive=request.recursive,
             model_name=request.model_name,
             batch_size=request.batch_size,
+            embed_concurrency=request.embed_concurrency,
             provider=request.provider,
             base_url=request.base_url,
             api_key=request.api_key,
@@ -140,6 +143,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             recursive=index_recursive,
             model_name=request.model_name,
             batch_size=request.batch_size,
+            embed_concurrency=request.embed_concurrency,
             provider=request.provider,
             base_url=request.base_url,
             api_key=request.api_key,
@@ -208,6 +212,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
     searcher = VexorSearcher(
         model_name=request.model_name,
         batch_size=request.batch_size,
+        embed_concurrency=request.embed_concurrency,
         provider=request.provider,
         base_url=request.base_url,
         api_key=request.api_key,
@@ -296,11 +301,11 @@ def _load_index_vectors_for_request(
             request.directory,
             request.recursive,
         )
-    except FileNotFoundError:
-        pass
+    except FileNotFoundError as exc:
+        missing_exc = exc
     superset_entry = _select_cache_superset(request, list_cache_entries)
     if superset_entry is None:
-        raise
+        raise missing_exc
     superset_root = Path(superset_entry.get("root_path", "")).expanduser().resolve()
     superset_recursive = bool(superset_entry.get("recursive"))
     superset_extensions = tuple(superset_entry.get("extensions") or ())

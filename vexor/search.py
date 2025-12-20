@@ -9,7 +9,13 @@ from typing import List, Protocol, Sequence
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-from .config import DEFAULT_MODEL, DEFAULT_PROVIDER, SUPPORTED_PROVIDERS, resolve_api_key
+from .config import (
+    DEFAULT_EMBED_CONCURRENCY,
+    DEFAULT_MODEL,
+    DEFAULT_PROVIDER,
+    SUPPORTED_PROVIDERS,
+    resolve_api_key,
+)
 from .providers.gemini import GeminiEmbeddingBackend
 from .providers.local import LocalEmbeddingBackend
 from .providers.openai import OpenAIEmbeddingBackend
@@ -45,6 +51,7 @@ class VexorSearcher:
         *,
         backend: EmbeddingBackend | None = None,
         batch_size: int = 0,
+        embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY,
         provider: str = DEFAULT_PROVIDER,
         base_url: str | None = None,
         api_key: str | None = None,
@@ -52,6 +59,7 @@ class VexorSearcher:
     ) -> None:
         self.model_name = model_name
         self.batch_size = max(batch_size, 0)
+        self.embed_concurrency = max(int(embed_concurrency or 1), 1)
         self.provider = (provider or DEFAULT_PROVIDER).lower()
         self.base_url = base_url
         self.api_key = resolve_api_key(api_key, self.provider)
@@ -68,7 +76,19 @@ class VexorSearcher:
         return self._device
 
     def _encode(self, texts: Sequence[str]) -> np.ndarray:
-        embeddings = self._backend.embed(texts)
+        if not texts:
+            return np.empty((0, 0), dtype=np.float32)
+        unique_texts, inverse = self._dedupe_texts(texts)
+        embeddings = self._backend.embed(unique_texts)
+        if embeddings.size == 0:
+            return embeddings
+        if embeddings.shape[0] != len(unique_texts):
+            embeddings = self._backend.embed(texts)
+            if embeddings.size == 0:
+                return embeddings
+        else:
+            if len(unique_texts) != len(texts):
+                embeddings = embeddings[inverse]
         if embeddings.size == 0:
             return embeddings
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
@@ -110,6 +130,7 @@ class VexorSearcher:
             return GeminiEmbeddingBackend(
                 model_name=self.model_name,
                 chunk_size=self.batch_size,
+                concurrency=self.embed_concurrency,
                 base_url=self.base_url,
                 api_key=self.api_key,
             )
@@ -118,6 +139,7 @@ class VexorSearcher:
             return LocalEmbeddingBackend(
                 model_name=self.model_name,
                 chunk_size=self.batch_size,
+                concurrency=self.embed_concurrency,
                 cuda=self.local_cuda,
             )
         if self.provider == "custom":
@@ -130,6 +152,7 @@ class VexorSearcher:
             return OpenAIEmbeddingBackend(
                 model_name=self.model_name,
                 chunk_size=self.batch_size,
+                concurrency=self.embed_concurrency,
                 base_url=base_url,
                 api_key=self.api_key,
             )
@@ -138,6 +161,7 @@ class VexorSearcher:
             return OpenAIEmbeddingBackend(
                 model_name=self.model_name,
                 chunk_size=self.batch_size,
+                concurrency=self.embed_concurrency,
                 base_url=self.base_url,
                 api_key=self.api_key,
             )
@@ -145,3 +169,17 @@ class VexorSearcher:
         raise RuntimeError(
             Messages.ERROR_PROVIDER_INVALID.format(value=self.provider, allowed=allowed)
         )
+
+    @staticmethod
+    def _dedupe_texts(texts: Sequence[str]) -> tuple[list[str], list[int]]:
+        unique_texts: list[str] = []
+        index_map: dict[str, int] = {}
+        inverse: list[int] = []
+        for text in texts:
+            position = index_map.get(text)
+            if position is None:
+                position = len(unique_texts)
+                unique_texts.append(text)
+                index_map[text] = position
+            inverse.append(position)
+        return unique_texts, inverse
