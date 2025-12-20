@@ -144,6 +144,7 @@ def build_index(
         if change_ratio <= INCREMENTAL_CHANGE_THRESHOLD:
             cached_chunks = existing_meta.get("chunks", []) if existing_meta else []
             cached_chunk_map = _cached_chunk_map(cached_chunks)
+            cached_label_map = _cached_label_map(cached_chunks)
             removed_rel_paths = set(diff.removed)
             changed_rel_paths = {
                 _relative_to_root(path, directory) for path in diff.changed_paths()
@@ -175,6 +176,7 @@ def build_index(
                 changed_payloads=changed_payloads,
                 removed_rel_paths=removed_rel_paths,
                 cached_chunk_map=cached_chunk_map,
+                cached_label_map=cached_label_map,
                 searcher=searcher,
                 apply_fn=apply_index_updates,
                 extensions=extensions,
@@ -349,12 +351,18 @@ def _apply_incremental_update(
     changed_payloads: Sequence[ModePayload],
     removed_rel_paths: set[str],
     cached_chunk_map: dict[str, list[int]],
+    cached_label_map: dict[str, dict[int, str]] | None,
     searcher,
     apply_fn,
     extensions: Sequence[str] | None,
     stat_cache: MutableMapping[Path, os.stat_result] | None = None,
 ) -> Path:
-    changed_payloads_by_rel = _payloads_by_rel_path(changed_payloads, directory)
+    payloads_to_embed, payloads_to_touch = _split_payloads_by_label(
+        changed_payloads,
+        cached_label_map or {},
+        directory,
+    )
+    changed_payloads_by_rel = _payloads_by_rel_path(payloads_to_embed, directory)
     ordered_entries = _build_ordered_entries(
         files=files,
         root=directory,
@@ -362,21 +370,26 @@ def _apply_incremental_update(
         changed_payloads_by_rel=changed_payloads_by_rel,
         removed_rel_paths=removed_rel_paths,
     )
-    if changed_payloads:
-        labels = [payload.label for payload in changed_payloads]
+    if payloads_to_embed:
+        labels = [payload.label for payload in payloads_to_embed]
         embeddings = _embed_labels_with_cache(
             searcher=searcher,
             model_name=model_name,
             labels=labels,
         )
         changed_entries = _build_index_entries(
-            changed_payloads,
+            payloads_to_embed,
             embeddings,
             directory,
             stat_cache=stat_cache,
         )
     else:
         changed_entries = []
+    touched_entries = _build_touched_entries(
+        payloads_to_touch,
+        directory,
+        stat_cache=stat_cache,
+    )
 
     cache_path = apply_fn(
         root=directory,
@@ -387,6 +400,7 @@ def _apply_incremental_update(
         recursive=recursive,
         ordered_entries=ordered_entries,
         changed_entries=changed_entries,
+        touched_entries=touched_entries,
         removed_rel_paths=sorted(removed_rel_paths),
         extensions=extensions,
     )
@@ -449,6 +463,23 @@ def _cached_chunk_map(chunk_entries: Sequence[dict]) -> dict[str, list[int]]:
     return chunk_map
 
 
+def _cached_label_map(chunk_entries: Sequence[dict]) -> dict[str, dict[int, str]]:
+    label_map: dict[str, dict[int, str]] = {}
+    for entry in chunk_entries:
+        rel_path = entry.get("path")
+        if not isinstance(rel_path, str):
+            continue
+        label_hash = entry.get("label_hash")
+        if not isinstance(label_hash, str) or not label_hash:
+            continue
+        try:
+            chunk_index = int(entry.get("chunk_index", 0))
+        except (TypeError, ValueError):
+            chunk_index = 0
+        label_map.setdefault(rel_path, {})[chunk_index] = label_hash
+    return label_map
+
+
 def _payloads_by_rel_path(
     payloads: Sequence[ModePayload],
     root: Path,
@@ -458,6 +489,70 @@ def _payloads_by_rel_path(
         rel_path = _relative_to_root(payload.file, root)
         payload_map.setdefault(rel_path, []).append(payload)
     return payload_map
+
+
+def _split_payloads_by_label(
+    payloads: Sequence[ModePayload],
+    cached_label_map: dict[str, dict[int, str]],
+    root: Path,
+) -> tuple[list[ModePayload], list[ModePayload]]:
+    if not payloads:
+        return [], []
+    from ..cache import embedding_cache_key  # local import
+
+    payloads_by_rel = _payloads_by_rel_path(payloads, root)
+    to_embed: list[ModePayload] = []
+    to_touch: list[ModePayload] = []
+    for rel_path, file_payloads in payloads_by_rel.items():
+        cached_chunks = cached_label_map.get(rel_path)
+        if not cached_chunks:
+            to_embed.extend(file_payloads)
+            continue
+        if len(file_payloads) != len(cached_chunks):
+            to_embed.extend(file_payloads)
+            continue
+        matched = True
+        for payload in file_payloads:
+            cached_hash = cached_chunks.get(payload.chunk_index)
+            if not cached_hash:
+                matched = False
+                break
+            if cached_hash != embedding_cache_key(payload.label):
+                matched = False
+                break
+        if matched:
+            to_touch.extend(file_payloads)
+        else:
+            to_embed.extend(file_payloads)
+    return to_embed, to_touch
+
+
+def _build_touched_entries(
+    payloads: Sequence[ModePayload],
+    root: Path,
+    *,
+    stat_cache: MutableMapping[Path, os.stat_result] | None = None,
+) -> list[tuple[str, int, int, float, str | None, int | None, int | None, str]]:
+    if not payloads:
+        return []
+    from ..cache import embedding_cache_key  # local import
+
+    entries: list[tuple[str, int, int, float, str | None, int | None, int | None, str]] = []
+    for payload in payloads:
+        stat = _stat_for_path(payload.file, stat_cache)
+        entries.append(
+            (
+                _relative_to_root(payload.file, root),
+                payload.chunk_index,
+                stat.st_size,
+                stat.st_mtime,
+                payload.preview,
+                payload.start_line,
+                payload.end_line,
+                embedding_cache_key(payload.label),
+            )
+        )
+    return entries
 
 
 def _build_ordered_entries(
@@ -575,6 +670,7 @@ def _build_index_entries(
     stat_cache: MutableMapping[Path, os.stat_result] | None = None,
 ) -> list[IndexedChunk]:
     entries: list[IndexedChunk] = []
+    from ..cache import embedding_cache_key  # local import
     for idx, payload in enumerate(payloads):
         stat = _stat_for_path(payload.file, stat_cache)
         entries.append(
@@ -584,6 +680,7 @@ def _build_index_entries(
                 chunk_index=payload.chunk_index,
                 preview=payload.preview or "",
                 embedding=embeddings[idx],
+                label_hash=embedding_cache_key(payload.label),
                 size_bytes=stat.st_size,
                 mtime=stat.st_mtime,
                 start_line=payload.start_line,

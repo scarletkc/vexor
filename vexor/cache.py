@@ -28,6 +28,7 @@ class IndexedChunk:
     chunk_index: int
     preview: str
     embedding: Sequence[float]
+    label_hash: str = ""
     size_bytes: int | None = None
     mtime: float | None = None
     start_line: int | None = None
@@ -116,6 +117,10 @@ def cache_file(root: Path, model: str, include_hidden: bool) -> Path:  # pragma:
 def _connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
+    conn.execute("PRAGMA temp_store = MEMORY;")
+    conn.execute("PRAGMA busy_timeout = 5000;")
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
@@ -148,6 +153,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             mtime REAL NOT NULL,
             position INTEGER NOT NULL,
             preview TEXT DEFAULT '',
+            label_hash TEXT DEFAULT '',
             chunk_index INTEGER NOT NULL DEFAULT 0,
             start_line INTEGER,
             end_line INTEGER,
@@ -214,6 +220,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass
     try:
+        conn.execute(
+            "ALTER TABLE indexed_file ADD COLUMN label_hash TEXT DEFAULT ''"
+        )
+    except sqlite3.OperationalError:
+        pass
+    try:
         conn.execute("ALTER TABLE indexed_file ADD COLUMN start_line INTEGER")
     except sqlite3.OperationalError:
         pass
@@ -251,6 +263,7 @@ def _upgrade_indexed_file_with_chunk(conn: sqlite3.Connection) -> None:
             mtime REAL NOT NULL,
             position INTEGER NOT NULL,
             preview TEXT DEFAULT '',
+            label_hash TEXT DEFAULT '',
             chunk_index INTEGER NOT NULL DEFAULT 0,
             start_line INTEGER,
             end_line INTEGER,
@@ -272,6 +285,7 @@ def _upgrade_indexed_file_with_chunk(conn: sqlite3.Connection) -> None:
             mtime,
             position,
             preview,
+            label_hash,
             chunk_index,
             start_line,
             end_line
@@ -285,6 +299,7 @@ def _upgrade_indexed_file_with_chunk(conn: sqlite3.Connection) -> None:
             mtime,
             position,
             preview,
+            '',
             0,
             NULL,
             NULL
@@ -381,6 +396,7 @@ def store_index(
                         mtime,
                         position,
                         entry.preview,
+                        entry.label_hash,
                         entry.chunk_index,
                         entry.start_line,
                         entry.end_line,
@@ -400,10 +416,11 @@ def store_index(
                     mtime,
                     position,
                     preview,
+                    label_hash,
                     chunk_index,
                     start_line,
                     end_line
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 file_rows,
             )
@@ -435,6 +452,9 @@ def apply_index_updates(
     recursive: bool,
     ordered_entries: Sequence[tuple[str, int]],
     changed_entries: Sequence[IndexedChunk],
+    touched_entries: Sequence[
+        tuple[str, int, int, float, str | None, int | None, int | None, str]
+    ] = (),
     removed_rel_paths: Sequence[str],
     extensions: Sequence[str] | None = None,
 ) -> Path:
@@ -508,6 +528,7 @@ def apply_index_updates(
                                 mtime,
                                 0,
                                 chunk.preview,
+                                chunk.label_hash,
                                 chunk.chunk_index,
                                 chunk.start_line,
                                 chunk.end_line,
@@ -525,10 +546,11 @@ def apply_index_updates(
                             mtime,
                             position,
                             preview,
+                            label_hash,
                             chunk_index,
                             start_line,
                             end_line
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         file_rows,
                     )
@@ -548,6 +570,29 @@ def apply_index_updates(
                             for idx, row in enumerate(inserted_ids)
                         ),
                     )
+
+            if touched_entries:
+                conn.executemany(
+                    """
+                    UPDATE indexed_file
+                    SET size_bytes = ?, mtime = ?, preview = ?, start_line = ?, end_line = ?, label_hash = ?
+                    WHERE index_id = ? AND rel_path = ? AND chunk_index = ?
+                    """,
+                    (
+                        (
+                            size_bytes,
+                            mtime,
+                            preview or "",
+                            start_line,
+                            end_line,
+                            label_hash or "",
+                            index_id,
+                            rel_path,
+                            chunk_index,
+                        )
+                        for rel_path, chunk_index, size_bytes, mtime, preview, start_line, end_line, label_hash in touched_entries
+                    ),
+                )
 
             for position, (rel_path, chunk_index) in enumerate(ordered_entries):
                 conn.execute(
@@ -673,7 +718,7 @@ def load_index(
 
         rows = conn.execute(
             """
-            SELECT rel_path, abs_path, size_bytes, mtime, preview, chunk_index, start_line, end_line
+            SELECT rel_path, abs_path, size_bytes, mtime, preview, label_hash, chunk_index, start_line, end_line
             FROM indexed_file
             WHERE index_id = ?
             ORDER BY position ASC
@@ -693,6 +738,7 @@ def load_index(
                     "mtime": row["mtime"],
                     "size": row["size_bytes"],
                     "preview": row["preview"],
+                    "label_hash": row["label_hash"],
                     "chunk_index": chunk_index,
                     "start_line": row["start_line"],
                     "end_line": row["end_line"],
@@ -790,7 +836,7 @@ def load_index_vectors(
 
         cursor = conn.execute(
             """
-            SELECT f.rel_path, f.abs_path, f.size_bytes, f.mtime, f.preview, f.chunk_index, f.start_line, f.end_line, e.vector_blob
+            SELECT f.rel_path, f.abs_path, f.size_bytes, f.mtime, f.preview, f.label_hash, f.chunk_index, f.start_line, f.end_line, e.vector_blob
             FROM indexed_file AS f
             JOIN file_embedding AS e ON e.file_id = f.id
             WHERE f.index_id = ?
@@ -816,6 +862,7 @@ def load_index_vectors(
                     "mtime": row["mtime"],
                     "size": row["size_bytes"],
                     "preview": row["preview"],
+                    "label_hash": row["label_hash"],
                     "chunk_index": chunk_index,
                     "start_line": row["start_line"],
                     "end_line": row["end_line"],
