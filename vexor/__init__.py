@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-__all__ = ["__version__", "get_version"]
+from .api import VexorError, clear_index, index, search
+
+__all__ = [
+    "__version__",
+    "VexorError",
+    "clear_index",
+    "get_version",
+    "index",
+    "search",
+]
 
 __version__ = "0.14.0"
 

@@ -62,6 +62,23 @@ vexor index --path ~/projects/demo --mode code
 ```
 Useful for CI warmup or when `auto_index` is disabled.
 
+## Python API
+
+Vexor can also be imported and used directly from Python:
+
+```python
+from vexor import index, search
+
+index(path=".", mode="head")
+response = search("config loader", path=".", mode="name")
+
+for hit in response.results:
+    print(hit.path, hit.score)
+```
+
+By default it reads `~/.vexor/config.json`. To ignore config and pass everything explicitly,
+set `use_config=False`.
+
 ## Configuration
 
 ```bash
