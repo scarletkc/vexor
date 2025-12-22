@@ -105,6 +105,17 @@ FlashRank requires `pip install "vexor[flashrank]"` and caches models under `~/.
 
 Config stored in `~/.vexor/config.json`.
 
+### Rerank
+
+Rerank reorders the semantic results with a secondary ranker. It uses 2x the requested
+`--top` as candidates (e.g., top 10 reranked to show 5).
+
+Recommended defaults:
+- Keep `off` unless you want extra precision.
+- Use `bm25` for lightweight lexical boosts; it is fast and dependency-free.
+- Use `flashrank` for stronger reranking (requires `pip install "vexor[flashrank]"` and
+  downloads a model to `~/.vexor/flashrank`).
+
 ### Providers: Remote vs Local
 
 Vexor supports both remote API providers (`openai`, `gemini`, `custom`) and a local provider (`local`):
