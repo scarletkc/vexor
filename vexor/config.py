@@ -18,7 +18,7 @@ DEFAULT_EMBED_CONCURRENCY = 2
 DEFAULT_PROVIDER = "openai"
 DEFAULT_RERANK = "off"
 SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER, "gemini", "custom", "local")
-SUPPORTED_RERANKERS: tuple[str, ...] = ("off", "bm25")
+SUPPORTED_RERANKERS: tuple[str, ...] = ("off", "bm25", "flashrank")
 ENV_API_KEY = "VEXOR_API_KEY"
 LEGACY_GEMINI_ENV = "GOOGLE_GENAI_API_KEY"
 OPENAI_ENV = "OPENAI_API_KEY"
@@ -78,6 +78,13 @@ def save_config(config: Config) -> None:
 
 def local_model_dir() -> Path:
     return CONFIG_DIR / "models"
+
+
+def flashrank_cache_dir(*, create: bool = True) -> Path:
+    cache_dir = CONFIG_DIR / "flashrank"
+    if create:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
 
 
 def set_api_key(value: str | None) -> None:

@@ -983,6 +983,53 @@ def test_config_rejects_unknown_provider(tmp_path):
     assert "Unsupported provider" in result.stderr
 
 
+def test_config_rejects_flashrank_when_missing(tmp_path, monkeypatch):
+    runner = CliRunner()
+    import importlib.util
+
+    real_find_spec = importlib.util.find_spec
+
+    def fake_find_spec(name, *args, **kwargs):
+        if name == "flashrank":
+            return None
+        return real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
+
+    result = runner.invoke(app, ["config", "--rerank", "flashrank"])
+
+    assert result.exit_code != 0
+    assert "FlashRank reranker is not installed" in result.stderr
+
+
+def test_config_sets_flashrank_and_prefetches(tmp_path, monkeypatch):
+    runner = CliRunner()
+    import importlib.util
+
+    real_find_spec = importlib.util.find_spec
+
+    def fake_find_spec(name, *args, **kwargs):
+        if name == "flashrank":
+            return object()
+        return real_find_spec(name, *args, **kwargs)
+
+    called = {"ok": False}
+
+    def fake_prepare_flashrank_model():
+        called["ok"] = True
+
+    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
+    monkeypatch.setattr("vexor.cli._prepare_flashrank_model", fake_prepare_flashrank_model)
+
+    result = runner.invoke(app, ["config", "--rerank", "flashrank"])
+
+    assert result.exit_code == 0
+    assert called["ok"] is True
+    config_path = tmp_path / "config" / "config.json"
+    data = json.loads(config_path.read_text())
+    assert data["rerank"] == "flashrank"
+
+
 def test_config_without_args_opens_editor(tmp_path, monkeypatch):
     runner = CliRunner()
     captured = {}

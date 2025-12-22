@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 import math
 from pathlib import Path
 import re
@@ -124,6 +125,58 @@ def _apply_bm25_rerank(query: str, results: Sequence[SearchResult]) -> list[Sear
         fused.append(result)
     fused.sort(key=lambda item: item.score, reverse=True)
     return fused
+
+
+@lru_cache(maxsize=1)
+def _get_flashranker():
+    from flashrank import Ranker
+    from ..config import flashrank_cache_dir
+
+    cache_dir = flashrank_cache_dir()
+    return Ranker(max_length=128, cache_dir=str(cache_dir))
+
+
+def _apply_flashrank_rerank(query: str, results: Sequence[SearchResult]) -> list[SearchResult]:
+    if not results:
+        return []
+    try:
+        from flashrank import RerankRequest
+    except ImportError as exc:
+        from ..text import Messages
+
+        raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
+    try:
+        ranker = _get_flashranker()
+    except ImportError as exc:
+        from ..text import Messages
+
+        raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
+    passages = []
+    for idx, result in enumerate(results):
+        text = _build_rerank_document(result) or result.path.as_posix()
+        passages.append({"id": idx, "text": text})
+    rerank_request = RerankRequest(query=query, passages=passages)
+    reranked = ranker.rerank(rerank_request)
+    id_to_result = {idx: result for idx, result in enumerate(results)}
+    ordered: list[SearchResult] = []
+    seen: set[int] = set()
+    for item in reranked:
+        idx = item.get("id")
+        if idx is None:
+            continue
+        result = id_to_result.get(idx)
+        if result is None:
+            continue
+        score = item.get("score")
+        if score is not None:
+            result.score = float(score)
+        ordered.append(result)
+        seen.add(idx)
+    if len(ordered) < len(results):
+        for idx, result in enumerate(results):
+            if idx not in seen:
+                ordered.append(result)
+    return ordered
 
 
 def perform_search(request: SearchRequest) -> SearchResponse:
@@ -387,12 +440,20 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             )
         )
     scored.sort(key=lambda item: item.score, reverse=True)
-    results = scored[: request.top_k]
     reranker = None
     rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
-    if rerank == "bm25":
-        results = _apply_bm25_rerank(request.query, results)
-        reranker = "bm25"
+    if rerank in {"bm25", "flashrank"}:
+        candidate_count = min(len(scored), request.top_k * 2)
+        candidates = scored[:candidate_count]
+        if rerank == "bm25":
+            candidates = _apply_bm25_rerank(request.query, candidates)
+            reranker = "bm25"
+        else:
+            candidates = _apply_flashrank_rerank(request.query, candidates)
+            reranker = "flashrank"
+        results = candidates[: request.top_k]
+    else:
+        results = scored[: request.top_k]
     return SearchResponse(
         base_path=request.directory,
         backend=searcher.device,

@@ -706,7 +706,10 @@ def test_perform_search_reranks_with_bm25(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr("vexor.cache.load_index_vectors", fake_load_index_vectors)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
-    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    import importlib
+
+    search_module = importlib.import_module("vexor.search")
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
 
     request = SearchRequest(
         query="alpha",
@@ -715,7 +718,7 @@ def test_perform_search_reranks_with_bm25(monkeypatch, tmp_path: Path) -> None:
         respect_gitignore=True,
         mode="name",
         recursive=True,
-        top_k=2,
+        top_k=1,
         model_name="model",
         batch_size=0,
         provider="gemini",
@@ -730,4 +733,5 @@ def test_perform_search_reranks_with_bm25(monkeypatch, tmp_path: Path) -> None:
     response = perform_search(request)
 
     assert response.reranker == "bm25"
+    assert len(response.results) == 1
     assert response.results[0].path.name == "b.txt"

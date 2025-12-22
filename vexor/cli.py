@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shlex
@@ -30,6 +31,7 @@ from .config import (
     DEFAULT_RERANK,
     SUPPORTED_PROVIDERS,
     SUPPORTED_RERANKERS,
+    flashrank_cache_dir,
     load_config,
     resolve_default_model,
 )
@@ -152,6 +154,18 @@ def _parse_boolean(value: str) -> bool:
     if token in {"0", "false", "f", "no", "n", "off"}:
         return False
     raise ValueError(Messages.ERROR_BOOLEAN_INVALID.format(value=value))
+
+
+def _prepare_flashrank_model() -> None:
+    try:
+        from flashrank import Ranker
+    except ImportError as exc:
+        raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
+    cache_dir = flashrank_cache_dir()
+    try:
+        Ranker(max_length=128, cache_dir=str(cache_dir))
+    except Exception as exc:
+        raise RuntimeError(Messages.ERROR_FLASHRANK_SETUP.format(reason=str(exc))) from exc
 
 
 def _format_extensions_display(values: Sequence[str] | None) -> str:
@@ -719,6 +733,9 @@ def config(
                     value=set_rerank_option, allowed=allowed
                 )
             )
+        if normalized_rerank == "flashrank":
+            if importlib.util.find_spec("flashrank") is None:
+                raise typer.BadParameter(Messages.ERROR_FLASHRANK_MISSING)
         set_rerank_option = normalized_rerank
 
     config_snapshot = load_config()
@@ -808,6 +825,14 @@ def config(
         console.print(
             _styled(Messages.INFO_RERANK_SET.format(value=set_rerank_option), Styles.SUCCESS)
         )
+        if set_rerank_option == "flashrank":
+            console.print(_styled(Messages.INFO_FLASHRANK_SETUP_START, Styles.INFO))
+            try:
+                _prepare_flashrank_model()
+            except RuntimeError as exc:
+                console.print(_styled(str(exc), Styles.ERROR))
+                raise typer.Exit(code=1)
+            console.print(_styled(Messages.INFO_FLASHRANK_SETUP_DONE, Styles.SUCCESS))
 
     if clear_index_all:
         removed = clear_all_cache()

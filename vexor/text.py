@@ -60,7 +60,7 @@ class Messages:
     HELP_SET_BASE_URL = "Override the provider's base URL (leave unset for official endpoints)."
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
     HELP_SET_AUTO_INDEX = "Enable/disable automatic indexing before search (default: enabled)."
-    HELP_SET_RERANK = "Set the rerank strategy (off, bm25)."
+    HELP_SET_RERANK = "Set the rerank strategy (off, bm25, flashrank)."
     HELP_SHOW_CONFIG = "Show current configuration."
     HELP_SHOW_INDEX_ALL = "Show metadata for every cached index regardless of path."
     HELP_CLEAR_INDEX_ALL = "Delete all cached indexes stored under ~/.vexor."
@@ -107,6 +107,10 @@ class Messages:
     ERROR_MODE_INVALID = "Unsupported mode '{value}'. Allowed values: {allowed}."
     ERROR_PROVIDER_INVALID = "Unsupported provider '{value}'. Allowed values: {allowed}."
     ERROR_RERANK_INVALID = "Unsupported rerank value '{value}'. Allowed values: {allowed}."
+    ERROR_FLASHRANK_MISSING = (
+        "FlashRank reranker is not installed. Install with `pip install \"vexor\\[flashrank]\"`."
+    )
+    ERROR_FLASHRANK_SETUP = "Failed to prepare FlashRank model ({reason})."
     ERROR_BASE_URL_CONFLICT = "Cannot set and clear the base URL in the same command."
     ERROR_EXTENSIONS_EMPTY = "Provide at least one valid file extension when using --ext."
     ERROR_BOOLEAN_INVALID = "Unsupported boolean value '{value}'. Use true/false, yes/no, 1/0, on/off."
@@ -160,6 +164,8 @@ class Messages:
     INFO_LOCAL_SETUP_DONE = "Local model ready: {model}. Provider set to local."
     INFO_LOCAL_CUDA_ENABLED = "Local embeddings will use CUDA."
     INFO_LOCAL_CUDA_DISABLED = "Local embeddings will use CPU."
+    INFO_FLASHRANK_SETUP_START = "Preparing FlashRank model..."
+    INFO_FLASHRANK_SETUP_DONE = "FlashRank model ready."
     DOCTOR_LOCAL_CUDA_MISSING = "CUDA provider not available for local embeddings"
     DOCTOR_LOCAL_CUDA_IMPORT_FAILED = "Unable to import onnxruntime (CUDA check failed)"
     DOCTOR_LOCAL_CUDA_MISSING_DETAIL = (
