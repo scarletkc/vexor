@@ -51,7 +51,7 @@ function runVexorCommand({ cliPath, args, input }) {
   return new Promise((resolve) => {
     const resolvedPath = resolveCliPath(cliPath);
     const child = spawn(resolvedPath, args, {
-      env: process.env,
+      env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
       windowsHide: true
     });
     let stdout = "";
@@ -127,7 +127,7 @@ app.whenReady().then(() => {
     const resolvedPath = resolveCliPath(cliPath);
     const initId = nextInitId++;
     const child = spawn(resolvedPath, ["init"], {
-      env: process.env,
+      env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
       windowsHide: true
     });
     initSessions.set(initId, child);

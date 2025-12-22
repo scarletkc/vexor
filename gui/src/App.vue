@@ -185,7 +185,7 @@
 
             <div class="field">
               <label>API Key (leave blank to keep current)</label>
-              <input v-model="configForm.apiKey" placeholder="sk-..." />
+              <input v-model="configForm.apiKey" type="password" placeholder="sk-..." autocomplete="off" />
             </div>
 
             <div class="field">
@@ -251,7 +251,7 @@
               </div>
               <div class="field">
                 <label>Remote Rerank API Key</label>
-                <input v-model="configForm.remoteRerankApiKey" placeholder="rk-..." />
+                <input v-model="configForm.remoteRerankApiKey" type="password" placeholder="rk-..." autocomplete="off" />
               </div>
             </div>
 
