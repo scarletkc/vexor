@@ -20,6 +20,8 @@ FULL_CHAR_LIMIT = 200_000
 DEFAULT_CHUNK_SIZE = 1000
 DEFAULT_CHUNK_OVERLAP = 100
 UTF8_BYTE_MULTIPLIER = 4
+DOC_COMMENT_MAX_LINES = 10
+DOC_COMMENT_MAX_CHARS = 500
 
 
 class HeadExtractor(Protocol):
@@ -270,6 +272,34 @@ def _extract_python_chunks(
     lines = source.splitlines(keepends=True)
     max_line = len(lines)
 
+    def _extend_start_with_comment(start: int) -> int:
+        if start <= 1:
+            return start
+        idx = start - 2
+        if idx < 0:
+            return start
+        comment_lines: list[str] = []
+        total_chars = 0
+        while idx >= 0:
+            line = lines[idx].rstrip("\n")
+            stripped = line.strip()
+            if not stripped:
+                break
+            if not stripped.startswith("#"):
+                break
+            lowered = stripped.lower()
+            if stripped.startswith("#!") or lowered.startswith("# coding") or lowered.startswith("# -*- coding"):
+                break
+            comment_lines.append(line)
+            total_chars += len(line) + 1
+            if len(comment_lines) >= DOC_COMMENT_MAX_LINES or total_chars >= DOC_COMMENT_MAX_CHARS:
+                break
+            idx -= 1
+        if not comment_lines:
+            return start
+        comment_lines.reverse()
+        return start - len(comment_lines)
+
     def clamp_line(value: int) -> int:
         if value < 1:
             return 1
@@ -328,7 +358,8 @@ def _extract_python_chunks(
     symbols: list[tuple[int, int, object]] = []
     for node in module.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            symbols.append((node_start_line(node), node_end_line(node), node))
+            start_line = _extend_start_with_comment(node_start_line(node))
+            symbols.append((start_line, node_end_line(node), node))
     symbols.sort(key=lambda item: item[0])
 
     def add_module_chunk(start: int, end: int, *, prelude: bool) -> None:
@@ -418,7 +449,7 @@ def _extract_python_chunks(
             for child in node.body:
                 if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
-                child_start = node_start_line(child)
+                child_start = _extend_start_with_comment(node_start_line(child))
                 child_end = node_end_line(child)
                 text = slice_lines(child_start, child_end)
                 if not text:

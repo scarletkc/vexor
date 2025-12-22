@@ -203,6 +203,22 @@ def test_extract_code_chunks_non_python_returns_empty(tmp_path):
     assert extract_code_chunks(text_path) == []
 
 
+def test_extract_code_chunks_includes_leading_comments(tmp_path):
+    py_path = tmp_path / "sample.py"
+    py_path.write_text(
+        """# Adds two numbers
+# Returns the sum
+def add(a, b):
+    return a + b
+"""
+    )
+
+    chunks = extract_code_chunks(py_path)
+    func_chunk = next(chunk for chunk in chunks if chunk.kind == "function")
+    assert "# Adds two numbers" in func_chunk.text
+    assert func_chunk.start_line == 1
+
+
 def test_extract_outline_chunks_from_markdown(tmp_path):
     md_path = tmp_path / "doc.md"
     md_path.write_text(

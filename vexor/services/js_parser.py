@@ -5,7 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .content_extract_service import CodeChunk, FULL_CHAR_LIMIT
+from .content_extract_service import (
+    CodeChunk,
+    DOC_COMMENT_MAX_CHARS,
+    DOC_COMMENT_MAX_LINES,
+    FULL_CHAR_LIMIT,
+)
 
 if TYPE_CHECKING:
     from tree_sitter import Node
@@ -104,6 +109,68 @@ def _get_first_line(text: str) -> str:
     return text[:80] if text else ""
 
 
+def _trim_doc_comment(lines: list[str]) -> str | None:
+    if not lines:
+        return None
+    trimmed = lines
+    if len(trimmed) > DOC_COMMENT_MAX_LINES:
+        trimmed = trimmed[:DOC_COMMENT_MAX_LINES]
+    text = "\n".join(line.rstrip("\n") for line in trimmed).strip()
+    if not text:
+        return None
+    if len(text) > DOC_COMMENT_MAX_CHARS:
+        text = text[:DOC_COMMENT_MAX_CHARS].rstrip()
+    return text or None
+
+
+def _collect_line_comment_block(lines: list[str], start_line: int) -> tuple[int, str] | None:
+    idx = start_line - 2
+    if idx < 0:
+        return None
+    if not lines[idx].strip():
+        return None
+    while idx >= 0 and lines[idx].strip().startswith("//"):
+        idx -= 1
+    start_idx = idx + 1
+    if start_idx >= start_line - 1:
+        return None
+    comment_text = _trim_doc_comment(lines[start_idx:start_line - 1])
+    if not comment_text:
+        return None
+    return start_idx + 1, comment_text
+
+
+def _collect_block_comment(lines: list[str], start_line: int) -> tuple[int, str] | None:
+    idx = start_line - 2
+    if idx < 0:
+        return None
+    line = lines[idx].strip()
+    if not line or "*/" not in line:
+        return None
+    start_idx = idx
+    while start_idx >= 0:
+        if "/*" in lines[start_idx]:
+            break
+        start_idx -= 1
+    if start_idx < 0:
+        return None
+    if not lines[start_idx].lstrip().startswith("/*"):
+        return None
+    comment_text = _trim_doc_comment(lines[start_idx:start_line - 1])
+    if not comment_text:
+        return None
+    return start_idx + 1, comment_text
+
+
+def _extract_doc_comment(lines: list[str], start_line: int) -> tuple[int, str] | None:
+    if start_line <= 1:
+        return None
+    line_comment = _collect_line_comment_block(lines, start_line)
+    if line_comment is not None:
+        return line_comment
+    return _collect_block_comment(lines, start_line)
+
+
 def _collect_method_names(class_body: "Node", source: bytes) -> list[str]:
     """Collect all method names from a class body."""
     method_names = []
@@ -170,18 +237,27 @@ def extract_js_chunks(
     chunks: list[CodeChunk] = []
     symbols: list[tuple[int, int, str, str, str, str]] = []  # (start, end, kind, name, display, text)
 
+    def _with_doc_comment(start_line: int, raw_text: str) -> tuple[int, str, str | None]:
+        doc_comment = _extract_doc_comment(lines, start_line)
+        if not doc_comment:
+            return start_line, raw_text, None
+        comment_start, comment_text = doc_comment
+        combined = f"{comment_text}\n{raw_text}"
+        return comment_start, combined, comment_text
+
     def process_node(node: "Node", class_name: str | None = None) -> None:
         """Process a single AST node and extract symbols."""
         node_type = node.type
         start_line = to_line_number(node.start_byte)
         end_line = to_line_number(node.end_byte)
-        text = _node_text(node, source)
+        raw_text = _node_text(node, source)
 
         # Function declaration
         if node_type == "function_declaration":
             name = _get_function_name(node, source) or "anonymous"
-            display = _get_first_line(text)
-            symbols.append((start_line, end_line, "function", name, display, text))
+            display = _get_first_line(raw_text)
+            comment_start, text, _ = _with_doc_comment(start_line, raw_text)
+            symbols.append((comment_start, end_line, "function", name, display, text))
             return
 
         # Arrow function in variable declaration (lexical_declaration or variable_declaration)
@@ -189,8 +265,9 @@ def extract_js_chunks(
             for child in node.children:
                 if child.type == "variable_declarator" and _is_arrow_function_variable(child):
                     name = _get_variable_declarator_name(child, source) or "anonymous"
-                    display = _get_first_line(text)
-                    symbols.append((start_line, end_line, "function", name, display, text))
+                    display = _get_first_line(raw_text)
+                    comment_start, text, _ = _with_doc_comment(start_line, raw_text)
+                    symbols.append((comment_start, end_line, "function", name, display, text))
                     return
             return
 
@@ -211,12 +288,15 @@ def extract_js_chunks(
                 method_names = _collect_method_names(class_body, source)
 
             # Build class chunk text (class header + methods list)
-            class_text_parts = [_get_first_line(text)]
+            comment_start, _, doc_text = _with_doc_comment(start_line, raw_text)
+            class_text_parts = []
+            if doc_text:
+                class_text_parts.append(doc_text)
+            class_text_parts.append(_get_first_line(raw_text))
             if method_names:
                 class_text_parts.append("Methods: " + ", ".join(method_names))
             class_text = "\n".join(class_text_parts)
-
-            symbols.append((start_line, end_line, "class", name, display, class_text))
+            symbols.append((comment_start, end_line, "class", name, display, class_text))
 
             # Process methods
             if class_body:
@@ -228,8 +308,9 @@ def extract_js_chunks(
                             method_end = to_line_number(child.end_byte)
                             method_text = _node_text(child, source)
                             method_display = f"{name}.{method_name}"
+                            comment_start, method_text, _ = _with_doc_comment(method_start, method_text)
                             symbols.append((
-                                method_start,
+                                comment_start,
                                 method_end,
                                 "method",
                                 f"{name}.{method_name}",
@@ -248,14 +329,15 @@ def extract_js_chunks(
                     "variable_declaration",
                 ):
                     # Use parent's line range for exported symbols
-                    inner_text = _node_text(node, source)
+                    inner_raw = _node_text(node, source)
                     inner_start = start_line
                     inner_end = end_line
 
                     if child.type == "function_declaration":
                         fname = _get_function_name(child, source) or "anonymous"
-                        display = _get_first_line(inner_text)
-                        symbols.append((inner_start, inner_end, "function", fname, display, inner_text))
+                        display = _get_first_line(inner_raw)
+                        comment_start, inner_text, _ = _with_doc_comment(inner_start, inner_raw)
+                        symbols.append((comment_start, inner_end, "function", fname, display, inner_text))
                     elif child.type == "class_declaration":
                         cname = _get_class_name(child, source) or "AnonymousClass"
                         display = f"export class {cname}"
@@ -267,11 +349,15 @@ def extract_js_chunks(
                                 break
 
                         method_names = _collect_method_names(class_body, source) if class_body else []
-                        class_text_parts = [_get_first_line(inner_text)]
+                        comment_start, _, doc_text = _with_doc_comment(inner_start, inner_raw)
+                        class_text_parts = []
+                        if doc_text:
+                            class_text_parts.append(doc_text)
+                        class_text_parts.append(_get_first_line(inner_raw))
                         if method_names:
                             class_text_parts.append("Methods: " + ", ".join(method_names))
 
-                        symbols.append((inner_start, inner_end, "class", cname, display, "\n".join(class_text_parts)))
+                        symbols.append((comment_start, inner_end, "class", cname, display, "\n".join(class_text_parts)))
 
                         if class_body:
                             for mc in class_body.children:
@@ -281,13 +367,15 @@ def extract_js_chunks(
                                         mstart = to_line_number(mc.start_byte)
                                         mend = to_line_number(mc.end_byte)
                                         mtext = _node_text(mc, source)
-                                        symbols.append((mstart, mend, "method", f"{cname}.{mname}", f"{cname}.{mname}", mtext))
+                                        comment_start, mtext, _ = _with_doc_comment(mstart, mtext)
+                                        symbols.append((comment_start, mend, "method", f"{cname}.{mname}", f"{cname}.{mname}", mtext))
                     elif child.type in ("lexical_declaration", "variable_declaration"):
                         for vc in child.children:
                             if vc.type == "variable_declarator" and _is_arrow_function_variable(vc):
                                 vname = _get_variable_declarator_name(vc, source) or "anonymous"
-                                display = _get_first_line(inner_text)
-                                symbols.append((inner_start, inner_end, "function", vname, display, inner_text))
+                                display = _get_first_line(inner_raw)
+                                comment_start, inner_text, _ = _with_doc_comment(inner_start, inner_raw)
+                                symbols.append((comment_start, inner_end, "function", vname, display, inner_text))
                     return
             return
 

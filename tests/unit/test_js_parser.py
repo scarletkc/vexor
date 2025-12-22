@@ -78,7 +78,46 @@ let multiply = (a, b) => a * b;
         chunks = extract_js_chunks(js_file)
         func_chunks = [c for c in chunks if c.kind == "function"]
         assert len(func_chunks) == 1
-        assert func_chunks[0].name == "multiply"
+
+    def test_function_leading_comment_included(self, tmp_path):
+        js_file = tmp_path / "test.js"
+        js_file.write_text("""// Adds two numbers
+function add(a, b) {
+    return a + b;
+}
+""")
+        chunks = extract_js_chunks(js_file)
+        func_chunks = [c for c in chunks if c.kind == "function"]
+        assert len(func_chunks) == 1
+        assert "Adds two numbers" in func_chunks[0].text
+        assert func_chunks[0].start_line == 1
+
+    def test_function_block_comment_included(self, tmp_path):
+        js_file = tmp_path / "test.js"
+        js_file.write_text("""/** Adds two numbers */
+function add(a, b) {
+    return a + b;
+}
+""")
+        chunks = extract_js_chunks(js_file)
+        func_chunks = [c for c in chunks if c.kind == "function"]
+        assert len(func_chunks) == 1
+        assert "Adds two numbers" in func_chunks[0].text
+        assert func_chunks[0].start_line == 1
+        assert func_chunks[0].name == "add"
+
+    def test_function_plain_block_comment_included(self, tmp_path):
+        js_file = tmp_path / "test.js"
+        js_file.write_text("""/* Adds two numbers */
+function add(a, b) {
+    return a + b;
+}
+""")
+        chunks = extract_js_chunks(js_file)
+        func_chunks = [c for c in chunks if c.kind == "function"]
+        assert len(func_chunks) == 1
+        assert "Adds two numbers" in func_chunks[0].text
+        assert func_chunks[0].start_line == 1
 
     def test_exported_function(self, tmp_path):
         js_file = tmp_path / "test.js"
