@@ -142,6 +142,7 @@ cython_debug/
 *.swo
 *~
 .DS_Store
+node_modules/
 
 # SentenceTransformers cache
 .cache/
