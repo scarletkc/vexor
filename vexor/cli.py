@@ -675,9 +675,15 @@ def index(
 
 
 @app.command(help=Messages.HELP_INIT)
-def init() -> None:
+def init(
+    dry: bool = typer.Option(
+        False,
+        "--dry",
+        help=Messages.HELP_INIT_DRY,
+    ),
+) -> None:
     """Run the interactive setup wizard."""
-    run_init_wizard()
+    run_init_wizard(dry_run=dry)
 
 
 @app.command()

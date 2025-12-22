@@ -18,8 +18,11 @@ from rich.text import Text
 
 from .. import __version__, config as config_module
 from ..config import (
+    DEFAULT_FLASHRANK_MAX_LENGTH,
+    DEFAULT_FLASHRANK_MODEL,
     DEFAULT_LOCAL_MODEL,
     DEFAULT_PROVIDER,
+    flashrank_cache_dir,
     load_config,
     normalize_remote_rerank_url,
     resolve_api_key,
@@ -74,19 +77,22 @@ def should_auto_run_init(
     return True
 
 
-def run_init_wizard() -> None:
+def run_init_wizard(*, dry_run: bool = False) -> None:
     """Run the interactive onboarding flow and persist configuration."""
     _print_welcome_banner()
     console.print()
 
-    provider_updates = _collect_provider_settings()
-    rerank_updates = _collect_rerank_settings()
+    provider_updates = _collect_provider_settings(dry_run=dry_run)
+    rerank_updates = _collect_rerank_settings(dry_run=dry_run)
 
-    apply_config_updates(**provider_updates, **rerank_updates)
+    if not dry_run:
+        apply_config_updates(**provider_updates, **rerank_updates)
 
-    _prompt_alias_setup()
-    _prompt_skill_install()
-    _prompt_doctor_check()
+    _prompt_alias_setup(dry_run=dry_run)
+    _prompt_skill_install(dry_run=dry_run)
+    _prompt_doctor_check(dry_run=dry_run)
+    if dry_run:
+        console.print(_styled(Messages.INIT_DRY_RUN_NOTICE, Styles.INFO))
     console.print(_styled(Messages.INIT_CONFIG_HINT, Styles.INFO))
     _print_next_steps()
 
@@ -124,7 +130,7 @@ def _print_option(key: str, name: str, desc: str) -> None:
     console.print(f"  [cyan]{key})[/cyan] [bold]{name}[/bold] [dim]- {desc}[/dim]")
 
 
-def _collect_provider_settings() -> dict[str, object]:
+def _collect_provider_settings(*, dry_run: bool) -> dict[str, object]:
     _print_step_header("1", Messages.INIT_STEP_RUN_MODE)
     _print_option("A", Messages.INIT_OPTION_LOCAL, Messages.INIT_OPTION_LOCAL_DESC)
     _print_option("B", Messages.INIT_OPTION_REMOTE, Messages.INIT_OPTION_REMOTE_DESC)
@@ -142,14 +148,14 @@ def _collect_provider_settings() -> dict[str, object]:
     )
     console.print()
     if run_mode == "local":
-        local_updates = _collect_local_settings()
+        local_updates = _collect_local_settings(dry_run=dry_run)
         if local_updates is not None:
             return local_updates
         # Fall back to remote if requested.
     return _collect_remote_settings()
 
 
-def _collect_local_settings() -> dict[str, object] | None:
+def _collect_local_settings(*, dry_run: bool) -> dict[str, object] | None:
     _print_step_header("1a", Messages.INIT_STEP_LOCAL_HARDWARE)
     _print_option("A", Messages.INIT_OPTION_CPU, Messages.INIT_OPTION_CPU_DESC)
     _print_option("B", Messages.INIT_OPTION_CUDA, Messages.INIT_OPTION_CUDA_DESC)
@@ -180,7 +186,7 @@ def _collect_local_settings() -> dict[str, object] | None:
             default=True,
         ):
             extras = "local-cuda" if use_cuda else "local"
-            if not _install_extras(extras):
+            if not _install_extras(extras, dry_run=dry_run):
                 if typer.confirm(Messages.INIT_CONFIRM_SWITCH_REMOTE, default=True):
                     return None
         else:
@@ -194,7 +200,11 @@ def _collect_local_settings() -> dict[str, object] | None:
         Messages.INIT_CONFIRM_RUN_LOCAL_SETUP,
         default=True,
     ):
-        if not _prepare_local_model(DEFAULT_LOCAL_MODEL, use_cuda):
+        if not _prepare_local_model(
+            DEFAULT_LOCAL_MODEL,
+            use_cuda,
+            dry_run=dry_run,
+        ):
             if typer.confirm(Messages.INIT_CONFIRM_SWITCH_REMOTE, default=True):
                 return None
 
@@ -207,9 +217,21 @@ def _collect_local_settings() -> dict[str, object] | None:
 
 def _collect_remote_settings() -> dict[str, object]:
     _print_step_header("1b", Messages.INIT_STEP_PROVIDER)
-    _print_option("A", Messages.INIT_OPTION_PROVIDER_OPENAI, Messages.INIT_OPTION_PROVIDER_OPENAI_DESC)
-    _print_option("B", Messages.INIT_OPTION_PROVIDER_GEMINI, Messages.INIT_OPTION_PROVIDER_GEMINI_DESC)
-    _print_option("C", Messages.INIT_OPTION_PROVIDER_CUSTOM, Messages.INIT_OPTION_PROVIDER_CUSTOM_DESC)
+    _print_option(
+        "A",
+        Messages.INIT_OPTION_PROVIDER_OPENAI,
+        Messages.INIT_OPTION_PROVIDER_OPENAI_DESC,
+    )
+    _print_option(
+        "B",
+        Messages.INIT_OPTION_PROVIDER_GEMINI,
+        Messages.INIT_OPTION_PROVIDER_GEMINI_DESC,
+    )
+    _print_option(
+        "C",
+        Messages.INIT_OPTION_PROVIDER_CUSTOM,
+        Messages.INIT_OPTION_PROVIDER_CUSTOM_DESC,
+    )
     console.print()
     provider = _prompt_choice(
         Messages.INIT_PROMPT_PROVIDER,
@@ -248,11 +270,15 @@ def _collect_remote_settings() -> dict[str, object]:
     return updates
 
 
-def _collect_rerank_settings() -> dict[str, object]:
+def _collect_rerank_settings(*, dry_run: bool) -> dict[str, object]:
     _print_step_header("2", Messages.INIT_STEP_RERANK)
     _print_option("1", Messages.INIT_OPTION_RERANK_OFF, Messages.INIT_OPTION_RERANK_OFF_DESC)
     _print_option("2", Messages.INIT_OPTION_RERANK_BM25, Messages.INIT_OPTION_RERANK_BM25_DESC)
-    _print_option("3", Messages.INIT_OPTION_RERANK_FLASHRANK, Messages.INIT_OPTION_RERANK_FLASHRANK_DESC)
+    _print_option(
+        "3",
+        Messages.INIT_OPTION_RERANK_FLASHRANK,
+        Messages.INIT_OPTION_RERANK_FLASHRANK_DESC,
+    )
     _print_option("4", Messages.INIT_OPTION_RERANK_REMOTE, Messages.INIT_OPTION_RERANK_REMOTE_DESC)
     console.print()
     rerank_choice = _prompt_choice(
@@ -274,7 +300,7 @@ def _collect_rerank_settings() -> dict[str, object]:
     console.print()
 
     if rerank_choice == "flashrank":
-        if not _ensure_flashrank_available():
+        if not _ensure_flashrank_available(dry_run=dry_run):
             fallback = _prompt_choice(
                 Messages.INIT_PROMPT_RERANK_FALLBACK,
                 {
@@ -287,6 +313,7 @@ def _collect_rerank_settings() -> dict[str, object]:
                 allowed="bm25/off",
             )
             return {"rerank": fallback}
+        _maybe_prepare_flashrank_model(dry_run=dry_run)
         return {"rerank": "flashrank"}
 
     if rerank_choice == "remote":
@@ -310,9 +337,13 @@ def _collect_rerank_settings() -> dict[str, object]:
     return {"rerank": rerank_choice}
 
 
-def _prompt_alias_setup() -> None:
+def _prompt_alias_setup(*, dry_run: bool) -> None:
     _print_step_header("3", Messages.INIT_STEP_ALIAS)
     if not typer.confirm(Messages.INIT_CONFIRM_ALIAS, default=False):
+        console.print()
+        return
+    if dry_run:
+        _note_dry_run("writing shell alias")
         console.print()
         return
     shell_name = _detect_shell_name()
@@ -357,9 +388,13 @@ def _prompt_alias_setup() -> None:
     console.print()
 
 
-def _prompt_skill_install() -> None:
+def _prompt_skill_install(*, dry_run: bool) -> None:
     _print_step_header("4", Messages.INIT_STEP_SKILLS)
     if not typer.confirm(Messages.INIT_CONFIRM_SKILLS_INSTALL, default=False):
+        console.print()
+        return
+    if dry_run:
+        _note_dry_run("installing skills")
         console.print()
         return
     console.print(f"  [bold]{Messages.INIT_STEP_SKILLS_TARGET}[/bold]")
@@ -388,9 +423,13 @@ def _prompt_skill_install() -> None:
     console.print()
 
 
-def _prompt_doctor_check() -> None:
+def _prompt_doctor_check(*, dry_run: bool) -> None:
     _print_step_header("5", Messages.INIT_STEP_DOCTOR)
     if not typer.confirm(Messages.INIT_CONFIRM_DOCTOR, default=True):
+        console.print()
+        return
+    if dry_run:
+        _note_dry_run("running doctor checks")
         console.print()
         return
     _run_doctor_checks()
@@ -612,7 +651,10 @@ def _is_flashrank_available() -> bool:
     return importlib.util.find_spec("flashrank") is not None
 
 
-def _prepare_local_model(model: str, use_cuda: bool) -> bool:
+def _prepare_local_model(model: str, use_cuda: bool, *, dry_run: bool) -> bool:
+    if dry_run:
+        _note_dry_run("downloading local model")
+        return True
     console.print(
         _styled(Messages.INFO_LOCAL_SETUP_START.format(model=model), Styles.INFO)
     )
@@ -631,18 +673,57 @@ def _prepare_local_model(model: str, use_cuda: bool) -> bool:
     return True
 
 
-def _ensure_flashrank_available() -> bool:
+def _ensure_flashrank_available(*, dry_run: bool) -> bool:
     if _is_flashrank_available():
         return True
     console.print(_styled(Messages.INIT_FLASHRANK_MISSING, Styles.WARNING))
+    if dry_run:
+        _note_dry_run("installing extras (flashrank)")
+        return True
     if not typer.confirm(Messages.INIT_CONFIRM_INSTALL_FLASHRANK, default=True):
         return False
-    if not _install_extras("flashrank"):
+    if not _install_extras("flashrank", dry_run=dry_run):
         return False
     return _is_flashrank_available()
 
 
-def _install_extras(extras: str) -> bool:
+def _maybe_prepare_flashrank_model(*, dry_run: bool) -> None:
+    if not typer.confirm(Messages.INIT_CONFIRM_FLASHRANK_DOWNLOAD, default=True):
+        return
+    if dry_run:
+        _note_dry_run("downloading FlashRank model")
+        return
+    console.print(_styled(Messages.INFO_FLASHRANK_SETUP_START, Styles.INFO))
+    try:
+        _prepare_flashrank_model(DEFAULT_FLASHRANK_MODEL)
+    except RuntimeError as exc:
+        console.print(_styled(str(exc), Styles.ERROR))
+        return
+    console.print(_styled(Messages.INFO_FLASHRANK_SETUP_DONE, Styles.SUCCESS))
+
+
+def _prepare_flashrank_model(model_name: str | None) -> None:
+    try:
+        from flashrank import Ranker
+    except ImportError as exc:
+        raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
+    cache_dir = flashrank_cache_dir()
+    try:
+        effective_model = model_name or DEFAULT_FLASHRANK_MODEL
+        kwargs = {
+            "max_length": DEFAULT_FLASHRANK_MAX_LENGTH,
+            "cache_dir": str(cache_dir),
+            "model_name": effective_model,
+        }
+        Ranker(**kwargs)
+    except Exception as exc:
+        raise RuntimeError(Messages.ERROR_FLASHRANK_SETUP.format(reason=str(exc))) from exc
+
+
+def _install_extras(extras: str, *, dry_run: bool) -> bool:
+    if dry_run:
+        _note_dry_run(f"installing extras ({extras})")
+        return True
     install_info = detect_install_method()
     if install_info.method == InstallMethod.STANDALONE:
         console.print(_styled(Messages.INIT_INSTALL_STANDALONE, Styles.WARNING))
@@ -711,6 +792,12 @@ def _print_next_steps() -> None:
         )
     )
     console.print(f"  [bold green]$[/bold green] {Messages.INIT_NEXT_STEP_SEARCH}")
+
+
+def _note_dry_run(action: str) -> None:
+    console.print(
+        _styled(Messages.INIT_DRY_RUN_SKIPPED.format(action=action), Styles.INFO)
+    )
 
 
 def _detect_shell_name() -> str | None:
