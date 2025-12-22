@@ -308,8 +308,8 @@ function foo() {
         chunks = extract_js_chunks(js_file)
         func_chunks = [c for c in chunks if c.kind == "function"]
         assert len(func_chunks) == 1
-        # Function starts at line 3
-        assert func_chunks[0].start_line == 3
+        # Function start includes leading doc comments
+        assert func_chunks[0].start_line == 1
         assert func_chunks[0].end_line == 5
 
 
