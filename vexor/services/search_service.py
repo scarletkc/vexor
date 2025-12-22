@@ -10,7 +10,11 @@ from pathlib import Path
 import re
 from typing import Sequence
 
-from ..config import DEFAULT_EMBED_CONCURRENCY, DEFAULT_RERANK
+from ..config import (
+    DEFAULT_EMBED_CONCURRENCY,
+    DEFAULT_FLASHRANK_MAX_LENGTH,
+    DEFAULT_RERANK,
+)
 from ..utils import build_exclude_spec, is_excluded_path, normalize_exclude_patterns
 from .cache_service import is_cache_current
 
@@ -35,6 +39,7 @@ class SearchRequest:
     auto_index: bool = True
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY
     rerank: str = DEFAULT_RERANK
+    flashrank_model: str | None = None
 
 
 @dataclass(slots=True)
@@ -127,16 +132,23 @@ def _apply_bm25_rerank(query: str, results: Sequence[SearchResult]) -> list[Sear
     return fused
 
 
-@lru_cache(maxsize=1)
-def _get_flashranker():
+@lru_cache(maxsize=4)
+def _get_flashranker(model_name: str | None, max_length: int):
     from flashrank import Ranker
     from ..config import flashrank_cache_dir
 
     cache_dir = flashrank_cache_dir()
-    return Ranker(max_length=128, cache_dir=str(cache_dir))
+    kwargs = {"max_length": max_length, "cache_dir": str(cache_dir)}
+    if model_name:
+        kwargs["model_name"] = model_name
+    return Ranker(**kwargs)
 
 
-def _apply_flashrank_rerank(query: str, results: Sequence[SearchResult]) -> list[SearchResult]:
+def _apply_flashrank_rerank(
+    query: str,
+    results: Sequence[SearchResult],
+    model_name: str | None,
+) -> list[SearchResult]:
     if not results:
         return []
     try:
@@ -146,7 +158,7 @@ def _apply_flashrank_rerank(query: str, results: Sequence[SearchResult]) -> list
 
         raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
     try:
-        ranker = _get_flashranker()
+        ranker = _get_flashranker(model_name, DEFAULT_FLASHRANK_MAX_LENGTH)
     except ImportError as exc:
         from ..text import Messages
 
@@ -449,7 +461,11 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             candidates = _apply_bm25_rerank(request.query, candidates)
             reranker = "bm25"
         else:
-            candidates = _apply_flashrank_rerank(request.query, candidates)
+            candidates = _apply_flashrank_rerank(
+                request.query,
+                candidates,
+                request.flashrank_model,
+            )
             reranker = "flashrank"
         results = candidates[: request.top_k]
     else:

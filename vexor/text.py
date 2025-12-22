@@ -61,6 +61,7 @@ class Messages:
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
     HELP_SET_AUTO_INDEX = "Enable/disable automatic indexing before search (default: enabled)."
     HELP_SET_RERANK = "Set the rerank strategy (off, bm25, flashrank)."
+    HELP_SET_FLASHRANK_MODEL = "Set the FlashRank model name."
     HELP_CLEAR_FLASHRANK = "Delete cached FlashRank reranker models."
     HELP_SHOW_CONFIG = "Show current configuration."
     HELP_SHOW_INDEX_ALL = "Show metadata for every cached index regardless of path."
@@ -111,6 +112,7 @@ class Messages:
     ERROR_FLASHRANK_MISSING = (
         "FlashRank reranker is not installed. Install with `pip install \"vexor\\[flashrank]\"`."
     )
+    ERROR_FLASHRANK_MODEL_EMPTY = "FlashRank model name cannot be empty."
     ERROR_FLASHRANK_CLEAR_CONFLICT = (
         "Use --clear-flashrank without combining it with other config options."
     )
@@ -163,6 +165,7 @@ class Messages:
     INFO_BASE_URL_CLEARED = "Base URL override cleared."
     INFO_AUTO_INDEX_SET = "Auto index {value}."
     INFO_RERANK_SET = "Rerank strategy set to {value}."
+    INFO_FLASHRANK_MODEL_SET = "FlashRank model set to {value}."
     INFO_LOCAL_SETUP_START = "Preparing local model {model}..."
     INFO_LOCAL_SETUP_HINT = "Use `vexor local --help` to configure a local embedding model."
     INFO_LOCAL_CACHE_DIR = "Local model cache: {path}"
@@ -194,9 +197,11 @@ class Messages:
         "Embedding concurrency: {concurrency}\n"
         "Auto index: {auto_index}\n"
         "Rerank: {rerank}\n"
+        "{flashrank_line}"
         "Local CUDA: {local_cuda}\n"
         "Custom base URL: {base_url}"
     )
+    INFO_FLASHRANK_MODEL_SUMMARY = "FlashRank model: {value}"
     INFO_SEARCH_RUNNING = "Searching cached index under {path}..."
     INFO_DOCTOR_CHECKING = "Checking if `vexor` is on PATH..."
     INFO_DOCTOR_FOUND = "`vexor` command is available at {path}."

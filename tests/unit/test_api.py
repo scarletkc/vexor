@@ -18,6 +18,7 @@ def test_search_uses_config_defaults(tmp_path, monkeypatch) -> None:
         auto_index=False,
         local_cuda=True,
         rerank="bm25",
+        flashrank_model="ms-marco-MultiBERT-L-12",
     )
     monkeypatch.setattr(api_module, "load_config", lambda: cfg)
     captured: dict[str, object] = {}
@@ -48,6 +49,7 @@ def test_search_uses_config_defaults(tmp_path, monkeypatch) -> None:
     assert req.auto_index is False
     assert req.local_cuda is True
     assert req.rerank == "bm25"
+    assert req.flashrank_model == "ms-marco-MultiBERT-L-12"
 
 
 def test_search_overrides_config(tmp_path, monkeypatch) -> None:

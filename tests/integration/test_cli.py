@@ -813,6 +813,8 @@ def test_config_set_and_show(tmp_path):
             "https://proxy.example.com",
             "--rerank",
             "bm25",
+            "--set-flashrank-model",
+            "ms-marco-MultiBERT-L-12",
         ],
     )
 
@@ -828,11 +830,13 @@ def test_config_set_and_show(tmp_path):
     assert data["auto_index"] is True
     assert data["local_cuda"] is False
     assert data["rerank"] == "bm25"
+    assert data["flashrank_model"] == "ms-marco-MultiBERT-L-12"
 
     result_show = runner.invoke(app, ["config", "--show"])
     assert "custom-model" in result_show.stdout
     assert "Embedding concurrency: 3" in strip_ansi(result_show.stdout)
     assert "Rerank: bm25" in strip_ansi(result_show.stdout)
+    assert "FlashRank model" not in strip_ansi(result_show.stdout)
 
 
 def test_config_custom_requires_model_and_base_url(tmp_path):
@@ -1036,7 +1040,7 @@ def test_config_sets_flashrank_and_prefetches(tmp_path, monkeypatch):
 
     called = {"ok": False}
 
-    def fake_prepare_flashrank_model():
+    def fake_prepare_flashrank_model(_model_name=None):
         called["ok"] = True
 
     monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
@@ -1049,6 +1053,13 @@ def test_config_sets_flashrank_and_prefetches(tmp_path, monkeypatch):
     config_path = tmp_path / "config" / "config.json"
     data = json.loads(config_path.read_text())
     assert data["rerank"] == "flashrank"
+
+    result_show = runner.invoke(app, ["config", "--show"])
+    assert "Rerank: flashrank" in strip_ansi(result_show.stdout)
+    assert (
+        "FlashRank model: default (ms-marco-TinyBERT-L-2-v2)"
+        in strip_ansi(result_show.stdout)
+    )
 
 
 def test_config_without_args_opens_editor(tmp_path, monkeypatch):

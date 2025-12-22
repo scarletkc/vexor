@@ -12,6 +12,7 @@ from ..config import (
     set_batch_size,
     set_embed_concurrency,
     set_auto_index,
+    set_flashrank_model,
     set_local_cuda,
     set_model,
     set_provider,
@@ -32,6 +33,7 @@ class ConfigUpdateResult:
     auto_index_set: bool = False
     local_cuda_set: bool = False
     rerank_set: bool = False
+    flashrank_model_set: bool = False
 
     @property
     def changed(self) -> bool:
@@ -48,6 +50,7 @@ class ConfigUpdateResult:
                 self.auto_index_set,
                 self.local_cuda_set,
                 self.rerank_set,
+                self.flashrank_model_set,
             )
         )
 
@@ -65,6 +68,7 @@ def apply_config_updates(
     auto_index: bool | None = None,
     local_cuda: bool | None = None,
     rerank: str | None = None,
+    flashrank_model: str | None = None,
 ) -> ConfigUpdateResult:
     """Apply config mutations and report which fields were updated."""
 
@@ -102,6 +106,9 @@ def apply_config_updates(
     if rerank is not None:
         set_rerank(rerank)
         result.rerank_set = True
+    if flashrank_model is not None:
+        set_flashrank_model(flashrank_model)
+        result.flashrank_model_set = True
     return result
 
 

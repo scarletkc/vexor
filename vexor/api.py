@@ -42,6 +42,7 @@ class RuntimeSettings:
     local_cuda: bool
     auto_index: bool
     rerank: str
+    flashrank_model: str | None
 
 
 def search(
@@ -113,6 +114,7 @@ def search(
         extensions=normalized_exts,
         auto_index=settings.auto_index,
         rerank=settings.rerank,
+        flashrank_model=settings.flashrank_model,
     )
     return perform_search(request)
 
@@ -270,4 +272,5 @@ def _resolve_settings(
         local_cuda=bool(local_cuda if local_cuda is not None else config.local_cuda),
         auto_index=bool(auto_index if auto_index is not None else config.auto_index),
         rerank=rerank_value,
+        flashrank_model=config.flashrank_model,
     )

@@ -24,6 +24,8 @@ from . import __version__, config as config_module
 from .cache import clear_all_cache, list_cache_entries
 from .config import (
     DEFAULT_BATCH_SIZE,
+    DEFAULT_FLASHRANK_MODEL,
+    DEFAULT_FLASHRANK_MAX_LENGTH,
     DEFAULT_GEMINI_MODEL,
     DEFAULT_LOCAL_MODEL,
     DEFAULT_MODEL,
@@ -156,14 +158,17 @@ def _parse_boolean(value: str) -> bool:
     raise ValueError(Messages.ERROR_BOOLEAN_INVALID.format(value=value))
 
 
-def _prepare_flashrank_model() -> None:
+def _prepare_flashrank_model(model_name: str | None) -> None:
     try:
         from flashrank import Ranker
     except ImportError as exc:
         raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
     cache_dir = flashrank_cache_dir()
     try:
-        Ranker(max_length=128, cache_dir=str(cache_dir))
+        kwargs = {"max_length": DEFAULT_FLASHRANK_MAX_LENGTH, "cache_dir": str(cache_dir)}
+        if model_name:
+            kwargs["model_name"] = model_name
+        Ranker(**kwargs)
     except Exception as exc:
         raise RuntimeError(Messages.ERROR_FLASHRANK_SETUP.format(reason=str(exc))) from exc
 
@@ -367,6 +372,7 @@ def search(
     base_url = config.base_url
     api_key = config.api_key
     auto_index = bool(config.auto_index)
+    flashrank_model = config.flashrank_model
     rerank = (config.rerank or DEFAULT_RERANK).strip().lower()
     if rerank not in SUPPORTED_RERANKERS:
         rerank = DEFAULT_RERANK
@@ -407,6 +413,7 @@ def search(
         extensions=normalized_exts,
         auto_index=auto_index,
         rerank=rerank,
+        flashrank_model=flashrank_model,
     )
     if output_format == SearchOutputFormat.rich:
         should_index_first = _should_index_before_search(request) if auto_index else False
@@ -696,6 +703,11 @@ def config(
         "--rerank",
         help=Messages.HELP_SET_RERANK,
     ),
+    set_flashrank_model_option: str | None = typer.Option(
+        None,
+        "--set-flashrank-model",
+        help=Messages.HELP_SET_FLASHRANK_MODEL,
+    ),
     show: bool = typer.Option(
         False,
         "--show",
@@ -719,6 +731,8 @@ def config(
         raise typer.BadParameter(Messages.ERROR_CONCURRENCY_INVALID)
     if set_base_url_option and clear_base_url:
         raise typer.BadParameter(Messages.ERROR_BASE_URL_CONFLICT)
+    if set_flashrank_model_option is not None and not set_flashrank_model_option.strip():
+        raise typer.BadParameter(Messages.ERROR_FLASHRANK_MODEL_EMPTY)
     if clear_flashrank and any(
         (
             set_api_key_option is not None,
@@ -731,6 +745,7 @@ def config(
             clear_base_url,
             set_auto_index_option is not None,
             set_rerank_option is not None,
+            set_flashrank_model_option is not None,
             show,
             show_index_all,
             clear_index_all,
@@ -810,6 +825,7 @@ def config(
         clear_base_url=clear_base_url,
         auto_index=auto_index,
         rerank=set_rerank_option,
+        flashrank_model=set_flashrank_model_option,
     )
 
     if updates.api_key_set:
@@ -849,13 +865,25 @@ def config(
             _styled(Messages.INFO_RERANK_SET.format(value=set_rerank_option), Styles.SUCCESS)
         )
         if set_rerank_option == "flashrank":
+            flashrank_model = (
+                set_flashrank_model_option
+                if set_flashrank_model_option is not None
+                else get_config_snapshot().flashrank_model
+            )
             console.print(_styled(Messages.INFO_FLASHRANK_SETUP_START, Styles.INFO))
             try:
-                _prepare_flashrank_model()
+                _prepare_flashrank_model(flashrank_model)
             except RuntimeError as exc:
                 console.print(_styled(str(exc), Styles.ERROR))
                 raise typer.Exit(code=1)
             console.print(_styled(Messages.INFO_FLASHRANK_SETUP_DONE, Styles.SUCCESS))
+    if updates.flashrank_model_set and set_flashrank_model_option is not None:
+        console.print(
+            _styled(
+                Messages.INFO_FLASHRANK_MODEL_SET.format(value=set_flashrank_model_option),
+                Styles.SUCCESS,
+            )
+        )
 
     if clear_flashrank:
         cache_dir = flashrank_cache_dir(create=False)
@@ -909,6 +937,13 @@ def config(
     if show:
         cfg = get_config_snapshot()
         provider = (cfg.provider or DEFAULT_PROVIDER).lower()
+        rerank = (cfg.rerank or DEFAULT_RERANK).lower()
+        flashrank_line = ""
+        if rerank == "flashrank":
+            model_label = cfg.flashrank_model or f"default ({DEFAULT_FLASHRANK_MODEL})"
+            flashrank_line = (
+                f"{Messages.INFO_FLASHRANK_MODEL_SUMMARY.format(value=model_label)}\n"
+            )
         console.print(
             _styled(
                 Messages.INFO_CONFIG_SUMMARY.format(
@@ -918,7 +953,8 @@ def config(
                     batch=cfg.batch_size if cfg.batch_size is not None else DEFAULT_BATCH_SIZE,
                     concurrency=cfg.embed_concurrency,
                     auto_index="yes" if cfg.auto_index else "no",
-                    rerank=(cfg.rerank or DEFAULT_RERANK),
+                    rerank=rerank,
+                    flashrank_line=flashrank_line,
                     local_cuda="yes" if cfg.local_cuda else "no",
                     base_url=cfg.base_url or "none",
                 ),

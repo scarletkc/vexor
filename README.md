@@ -94,6 +94,7 @@ vexor config --set-embed-concurrency 2       # parallel embedding requests
 vexor config --set-auto-index true          # auto-index before search (default)
 vexor config --rerank bm25                  # optional BM25 rerank for top-k results
 vexor config --rerank flashrank             # FlashRank rerank (requires optional extra)
+vexor config --set-flashrank-model ms-marco-MultiBERT-L-12  # multilingual model
 vexor config --clear-flashrank              # remove cached FlashRank models
 vexor config --set-base-url https://proxy.example.com  # optional proxy
 vexor config --clear-base-url               # reset to official endpoint
@@ -115,6 +116,8 @@ Recommended defaults:
 - Use `bm25` for lightweight lexical boosts; it is fast and dependency-free.
 - Use `flashrank` for stronger reranking (requires `pip install "vexor[flashrank]"` and
   downloads a model to `~/.vexor/flashrank`).
+- For Chinese or multi-language content, set `--set-flashrank-model ms-marco-MultiBERT-L-12`.
+- If unset, FlashRank defaults to `ms-marco-TinyBERT-L-2-v2`.
 
 Thanks to the FlashRank project: https://github.com/PrithivirajDamodaran/FlashRank
 

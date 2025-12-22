@@ -17,6 +17,8 @@ DEFAULT_BATCH_SIZE = 0
 DEFAULT_EMBED_CONCURRENCY = 2
 DEFAULT_PROVIDER = "openai"
 DEFAULT_RERANK = "off"
+DEFAULT_FLASHRANK_MODEL = "ms-marco-TinyBERT-L-2-v2"
+DEFAULT_FLASHRANK_MAX_LENGTH = 256
 SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER, "gemini", "custom", "local")
 SUPPORTED_RERANKERS: tuple[str, ...] = ("off", "bm25", "flashrank")
 ENV_API_KEY = "VEXOR_API_KEY"
@@ -35,6 +37,7 @@ class Config:
     auto_index: bool = True
     local_cuda: bool = False
     rerank: str = DEFAULT_RERANK
+    flashrank_model: str | None = None
 
 
 def load_config() -> Config:
@@ -54,6 +57,7 @@ def load_config() -> Config:
         auto_index=bool(raw.get("auto_index", True)),
         local_cuda=bool(raw.get("local_cuda", False)),
         rerank=rerank,
+        flashrank_model=raw.get("flashrank_model") or None,
     )
 
 
@@ -73,6 +77,8 @@ def save_config(config: Config) -> None:
     data["auto_index"] = bool(config.auto_index)
     data["local_cuda"] = bool(config.local_cuda)
     data["rerank"] = config.rerank
+    if config.flashrank_model:
+        data["flashrank_model"] = config.flashrank_model
     CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -141,6 +147,13 @@ def set_rerank(value: str) -> None:
     if normalized not in SUPPORTED_RERANKERS:
         normalized = DEFAULT_RERANK
     config.rerank = normalized
+    save_config(config)
+
+
+def set_flashrank_model(value: str | None) -> None:
+    config = load_config()
+    clean_value = (value or "").strip()
+    config.flashrank_model = clean_value or None
     save_config(config)
 
 
