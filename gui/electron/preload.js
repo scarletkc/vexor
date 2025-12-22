@@ -3,6 +3,10 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("vexor", {
   selectDirectory: () => ipcRenderer.invoke("vexor:select-directory"),
   run: (payload) => ipcRenderer.invoke("vexor:run", payload),
+  getCliInfo: (payload) => ipcRenderer.invoke("vexor:cli-info", payload),
+  checkCliUpdate: () => ipcRenderer.invoke("vexor:cli-check-update"),
+  downloadCli: () => ipcRenderer.invoke("vexor:cli-download"),
+  openExternal: (url) => ipcRenderer.invoke("vexor:open-external", { url }),
   getConfigInfo: () => ipcRenderer.invoke("vexor:config-info"),
   initStart: (payload) => ipcRenderer.invoke("vexor:init:start", payload),
   initSend: (payload) => ipcRenderer.invoke("vexor:init:input", payload),
@@ -16,5 +20,10 @@ contextBridge.exposeInMainWorld("vexor", {
     const listener = (_event, data) => callback(data);
     ipcRenderer.on("vexor:init:exit", listener);
     return () => ipcRenderer.removeListener("vexor:init:exit", listener);
+  },
+  onCliDownloadProgress: (callback) => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on("vexor:cli-download-progress", listener);
+    return () => ipcRenderer.removeListener("vexor:cli-download-progress", listener);
   }
 });

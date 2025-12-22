@@ -1,6 +1,7 @@
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
+const https = require("https");
 const os = require("os");
 const path = require("path");
 
@@ -33,18 +34,56 @@ function createWindow() {
   }
 }
 
-function resolveCliPath(cliPath) {
+function getCliRootDir() {
+  return path.join(app.getPath("userData"), "vexor");
+}
+
+function getDownloadedCliPath() {
+  const filename = process.platform === "win32" ? "vexor.exe" : "vexor";
+  return path.join(getCliRootDir(), filename);
+}
+
+function _expandHome(value) {
+  if (value.startsWith("~")) {
+    return path.join(os.homedir(), value.slice(1));
+  }
+  return value;
+}
+
+function resolveCustomCliPath(cliPath) {
   if (!cliPath) {
-    return "vexor";
+    return null;
   }
   const trimmed = cliPath.trim();
   if (!trimmed) {
-    return "vexor";
+    return null;
   }
-  if (trimmed.startsWith("~")) {
-    return path.join(os.homedir(), trimmed.slice(1));
+  const expanded = _expandHome(trimmed);
+  const isPathLike =
+    expanded.includes("/") ||
+    expanded.includes("\\") ||
+    expanded.startsWith(".") ||
+    path.isAbsolute(expanded);
+  if (isPathLike) {
+    return fs.existsSync(expanded) ? expanded : null;
   }
-  return trimmed;
+  return expanded;
+}
+
+function resolveCliPathInfo(cliPath) {
+  const downloaded = getDownloadedCliPath();
+  if (fs.existsSync(downloaded)) {
+    return { path: downloaded, source: "downloaded" };
+  }
+  const custom = resolveCustomCliPath(cliPath);
+  if (custom) {
+    return { path: custom, source: "custom" };
+  }
+  return { path: "vexor", source: "path" };
+}
+
+function resolveCliPath(cliPath) {
+  return resolveCliPathInfo(cliPath).path;
 }
 
 function runVexorCommand({ cliPath, args, input }) {
@@ -87,6 +126,33 @@ function runVexorCommand({ cliPath, args, input }) {
   });
 }
 
+function parseCliVersion(output) {
+  if (!output) {
+    return null;
+  }
+  const match = output.match(/v(\d+\.\d+\.\d+(?:[a-z0-9.+-]+)?)/i);
+  if (!match) {
+    return null;
+  }
+  return match[1];
+}
+
+async function getCliInfo(cliPath) {
+  const info = resolveCliPathInfo(cliPath);
+  const result = await runVexorCommand({ cliPath, args: ["--version"] });
+  const text = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
+  const version = parseCliVersion(text);
+  const available = Boolean(version) && result.code === 0;
+  return {
+    appVersion: app.getVersion(),
+    cliPath: info.path,
+    cliSource: info.source,
+    cliAvailable: available,
+    cliVersion: version,
+    cliOutput: text
+  };
+}
+
 function getConfigInfo() {
   const configPath = path.join(os.homedir(), ".vexor", "config.json");
   const exists = fs.existsSync(configPath);
@@ -100,6 +166,164 @@ function getConfigInfo() {
     }
   }
   return { path: configPath, exists, config, parseError };
+}
+
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    https
+      .get(
+        url,
+        {
+          headers: {
+            "User-Agent": "vexor-desktop",
+            Accept: "application/vnd.github+json"
+          }
+        },
+        (res) => {
+          let body = "";
+          res.on("data", (chunk) => {
+            body += chunk.toString();
+          });
+          res.on("end", () => {
+            if (res.statusCode !== 200) {
+              reject(new Error(`HTTP ${res.statusCode}`));
+              return;
+            }
+            try {
+              resolve(JSON.parse(body));
+            } catch (error) {
+              reject(error);
+            }
+          });
+        }
+      )
+      .on("error", reject);
+  });
+}
+
+function getPlatformAssetSuffix() {
+  if (process.platform === "win32") {
+    return "windows.exe";
+  }
+  if (process.platform === "linux") {
+    return "linux";
+  }
+  return null;
+}
+
+async function fetchLatestRelease() {
+  const suffix = getPlatformAssetSuffix();
+  if (!suffix) {
+    return {
+      ok: false,
+      error: "Unsupported platform",
+      releaseUrl: "https://github.com/scarletkc/vexor/releases"
+    };
+  }
+  const data = await fetchJson(
+    "https://api.github.com/repos/scarletkc/vexor/releases/latest"
+  );
+  const tag = (data.tag_name || "").trim();
+  const version = tag.startsWith("v") ? tag.slice(1) : tag;
+  const assets = Array.isArray(data.assets) ? data.assets : [];
+  const expectedName = `vexor-${version}-${suffix}`;
+  const asset =
+    assets.find((item) => item.name === expectedName) ||
+    assets.find((item) => item.name.endsWith(suffix));
+  if (!asset) {
+    return {
+      ok: false,
+      error: `No release asset for ${process.platform}`,
+      releaseUrl: data.html_url || "https://github.com/scarletkc/vexor/releases"
+    };
+  }
+  return {
+    ok: true,
+    version,
+    tag,
+    releaseUrl: data.html_url || "https://github.com/scarletkc/vexor/releases",
+    assetName: asset.name,
+    assetUrl: asset.browser_download_url
+  };
+}
+
+function downloadWithRedirect(url, destination, onProgress) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      url,
+      { headers: { "User-Agent": "vexor-desktop" } },
+      (res) => {
+        if (res.statusCode && [301, 302, 303, 307, 308].includes(res.statusCode)) {
+          const redirect = res.headers.location;
+          if (!redirect) {
+            reject(new Error(`Redirect without location (HTTP ${res.statusCode})`));
+            return;
+          }
+          res.resume();
+          downloadWithRedirect(redirect, destination, onProgress)
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          reject(new Error(`Download failed (HTTP ${res.statusCode})`));
+          return;
+        }
+        const total = Number(res.headers["content-length"]) || 0;
+        const tempPath = `${destination}.download`;
+        const file = fs.createWriteStream(tempPath);
+        let received = 0;
+        res.on("data", (chunk) => {
+          received += chunk.length;
+          if (onProgress) {
+            onProgress({ received, total });
+          }
+        });
+        res.pipe(file);
+        file.on("finish", () => {
+          file.close(() => {
+            fs.renameSync(tempPath, destination);
+            if (process.platform !== "win32") {
+              fs.chmodSync(destination, 0o755);
+            }
+            resolve();
+          });
+        });
+        file.on("error", (error) => {
+          reject(error);
+        });
+      }
+    );
+    request.on("error", reject);
+  });
+}
+
+async function downloadLatestCli(sender) {
+  const info = await fetchLatestRelease();
+  if (!info.ok) {
+    return info;
+  }
+  const targetDir = getCliRootDir();
+  const targetPath = getDownloadedCliPath();
+  fs.mkdirSync(targetDir, { recursive: true });
+  sender.send("vexor:cli-download-progress", {
+    status: "starting",
+    received: 0,
+    total: 0
+  });
+  await downloadWithRedirect(info.assetUrl, targetPath, ({ received, total }) => {
+    sender.send("vexor:cli-download-progress", {
+      status: "downloading",
+      received,
+      total
+    });
+  });
+  sender.send("vexor:cli-download-progress", {
+    status: "done",
+    received: 0,
+    total: 0
+  });
+  return { ok: true, path: targetPath, info };
 }
 
 app.whenReady().then(() => {
@@ -117,6 +341,34 @@ app.whenReady().then(() => {
 
   ipcMain.handle("vexor:run", async (_event, payload) => {
     return runVexorCommand(payload);
+  });
+
+  ipcMain.handle("vexor:cli-info", async (_event, payload) => {
+    return getCliInfo(payload?.cliPath);
+  });
+
+  ipcMain.handle("vexor:cli-check-update", async () => {
+    try {
+      return await fetchLatestRelease();
+    } catch (error) {
+      return { ok: false, error: error.message || String(error) };
+    }
+  });
+
+  ipcMain.handle("vexor:cli-download", async (event) => {
+    try {
+      return await downloadLatestCli(event.sender);
+    } catch (error) {
+      return { ok: false, error: error.message || String(error) };
+    }
+  });
+
+  ipcMain.handle("vexor:open-external", async (_event, payload) => {
+    if (!payload?.url) {
+      return { ok: false };
+    }
+    await shell.openExternal(payload.url);
+    return { ok: true };
   });
 
   ipcMain.handle("vexor:config-info", async () => {

@@ -23,3 +23,8 @@ npm run start
 
 The UI calls the `vexor` CLI. If it is not on `PATH`, set a custom path
 in the Config screen (stored locally in the renderer).
+
+## CLI downloads
+
+The GUI can download the standalone CLI into the Electron user data folder:
+`app.getPath('userData')/vexor/` (auto-used when present).

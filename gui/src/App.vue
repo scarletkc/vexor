@@ -150,6 +150,48 @@
           </div>
         </div>
 
+        <div class="card">
+          <h2>Updates</h2>
+          <div class="inline">
+            <div class="field">
+              <label>GUI Version</label>
+              <input :value="guiVersionLabel" readonly />
+            </div>
+            <div class="field">
+              <label>CLI Version</label>
+              <input :value="cliVersionLabel" readonly />
+            </div>
+          </div>
+          <div class="field">
+            <label>CLI Source</label>
+            <div class="inline">
+              <span class="pill">{{ cliSourceLabel }}</span>
+              <span class="pill" v-if="cliInfo.cliPath">{{ cliInfo.cliPath }}</span>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="secondary" type="button" @click="checkCliUpdate" :disabled="busy">
+              Check CLI Update
+            </button>
+            <button
+              class="primary"
+              type="button"
+              @click="downloadCli"
+              :disabled="busy || downloadInfo.inProgress"
+            >
+              Download CLI
+            </button>
+            <button class="secondary" type="button" @click="openReleases">
+              Open GitHub Releases
+            </button>
+          </div>
+          <div v-if="updateMessage" class="notice">{{ updateMessage }}</div>
+          <div v-if="downloadInfo.inProgress" class="progress">
+            <div class="progress-bar" :style="{ width: downloadProgressPercent + '%' }"></div>
+            <div class="progress-meta">{{ downloadProgressLabel }}</div>
+          </div>
+        </div>
+
         <div class="card command-log">
           <h2>Command Log</h2>
           <div class="log">{{ logOutput || 'Waiting for command output...' }}</div>
@@ -163,7 +205,7 @@
             <div class="field">
               <label>CLI Path (optional)</label>
               <input v-model="cliPath" placeholder="e.g. /usr/local/bin/vexor" />
-              <small>Leave blank to use PATH.</small>
+              <small>Downloaded CLI takes priority; this is used when missing.</small>
             </div>
 
             <div class="inline">
@@ -337,7 +379,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 const view = ref("run");
 const runMode = ref("search");
@@ -346,6 +388,28 @@ const results = ref([]);
 const logOutput = ref("");
 const cliPath = ref(localStorage.getItem("vexorCliPath") || "");
 const configInfo = reactive({ path: "", exists: false, parseError: null, config: {} });
+const appVersion = ref("");
+const cliInfo = reactive({
+  cliPath: "",
+  cliSource: "",
+  cliAvailable: false,
+  cliVersion: "",
+  cliOutput: ""
+});
+const updateInfo = reactive({
+  checked: false,
+  latestVersion: "",
+  releaseUrl: "https://github.com/scarletkc/vexor/releases",
+  assetName: "",
+  assetUrl: "",
+  error: ""
+});
+const downloadInfo = reactive({
+  inProgress: false,
+  received: 0,
+  total: 0,
+  status: ""
+});
 
 const runForm = reactive({
   query: "",
@@ -384,13 +448,120 @@ const initLog = ref("");
 const initInput = ref("");
 let removeInitOutput = null;
 let removeInitExit = null;
+let removeCliDownloadProgress = null;
 
 watch(cliPath, (value) => {
   localStorage.setItem("vexorCliPath", value);
 });
 
+const guiVersionLabel = computed(() => {
+  return appVersion.value ? `v${appVersion.value}` : "unknown";
+});
+
+const cliVersionLabel = computed(() => {
+  return cliInfo.cliVersion ? `v${cliInfo.cliVersion}` : "not found";
+});
+
+const cliSourceLabel = computed(() => {
+  if (!cliInfo.cliSource) {
+    return "unknown";
+  }
+  if (cliInfo.cliSource === "downloaded") {
+    return "downloaded";
+  }
+  if (cliInfo.cliSource === "custom") {
+    return "custom";
+  }
+  if (cliInfo.cliSource === "path") {
+    return "path";
+  }
+  return cliInfo.cliSource;
+});
+
+const downloadProgressPercent = computed(() => {
+  if (!downloadInfo.total) {
+    return 0;
+  }
+  return Math.min(100, Math.round((downloadInfo.received / downloadInfo.total) * 100));
+});
+
+const downloadProgressLabel = computed(() => {
+  if (!downloadInfo.total) {
+    return "Downloading...";
+  }
+  return `${formatBytes(downloadInfo.received)} / ${formatBytes(downloadInfo.total)}`;
+});
+
+const updateMessage = computed(() => {
+  if (!updateInfo.checked) {
+    return "";
+  }
+  if (updateInfo.error) {
+    return `Update check failed: ${updateInfo.error}`;
+  }
+  if (!updateInfo.latestVersion) {
+    return "Unable to determine latest release.";
+  }
+  if (!cliInfo.cliVersion) {
+    return `Latest release: v${updateInfo.latestVersion}. CLI not installed. Use Download CLI.`;
+  }
+  const comparison = compareVersions(cliInfo.cliVersion, updateInfo.latestVersion);
+  if (comparison === null) {
+    return `Latest release: v${updateInfo.latestVersion}.`;
+  }
+  if (comparison < 0) {
+    return `Update available: v${updateInfo.latestVersion}. Use Download CLI or open GitHub Releases.`;
+  }
+  return "CLI is up to date.";
+});
+
 function stripAnsi(text) {
   return text.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+function formatBytes(value) {
+  if (!Number.isFinite(value)) {
+    return "0 B";
+  }
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  const units = ["KB", "MB", "GB"];
+  let size = value;
+  let idx = -1;
+  while (size >= 1024 && idx < units.length - 1) {
+    size /= 1024;
+    idx += 1;
+  }
+  return `${size.toFixed(1)} ${units[idx]}`;
+}
+
+function normalizeVersion(value) {
+  if (!value) {
+    return null;
+  }
+  const match = value.match(/(\d+)\.(\d+)\.(\d+)/);
+  if (!match) {
+    return null;
+  }
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareVersions(left, right) {
+  const a = normalizeVersion(left);
+  const b = normalizeVersion(right);
+  if (!a || !b) {
+    return null;
+  }
+  for (let idx = 0; idx < 3; idx += 1) {
+    if (a[idx] > b[idx]) {
+      return 1;
+    }
+    if (a[idx] < b[idx]) {
+      return -1;
+    }
+  }
+  return 0;
 }
 
 async function loadConfig(applyToForm) {
@@ -423,6 +594,16 @@ function applyConfigSnapshot(snapshot) {
     configForm.remoteRerankModel = "";
     configForm.remoteRerankApiKey = "";
   }
+}
+
+async function refreshCliInfo() {
+  const info = await window.vexor.getCliInfo({ cliPath: cliPath.value });
+  appVersion.value = info.appVersion || "";
+  cliInfo.cliPath = info.cliPath || "";
+  cliInfo.cliSource = info.cliSource || "";
+  cliInfo.cliAvailable = Boolean(info.cliAvailable);
+  cliInfo.cliVersion = info.cliVersion || "";
+  cliInfo.cliOutput = info.cliOutput || "";
 }
 
 async function pickDirectory() {
@@ -592,6 +773,7 @@ async function saveConfig() {
   const result = await window.vexor.run({ cliPath: cliPath.value, args });
   logOutput.value = buildLog(result, true);
   await loadConfig(true);
+  await refreshCliInfo();
   busy.value = false;
 }
 
@@ -603,6 +785,7 @@ async function runConfigAction(args) {
   const result = await window.vexor.run({ cliPath: cliPath.value, args });
   logOutput.value = buildLog(result, true);
   await loadConfig(true);
+  await refreshCliInfo();
   busy.value = false;
 }
 
@@ -658,6 +841,55 @@ async function clearApiKey() {
   await runConfigAction(["config", "--clear-api-key"]);
 }
 
+async function checkCliUpdate() {
+  if (busy.value) {
+    return;
+  }
+  busy.value = true;
+  updateInfo.checked = true;
+  updateInfo.error = "";
+  const result = await window.vexor.checkCliUpdate();
+  if (!result.ok) {
+    updateInfo.error = result.error || "Update check failed.";
+    updateInfo.latestVersion = "";
+    updateInfo.assetName = "";
+    updateInfo.assetUrl = "";
+    updateInfo.releaseUrl =
+      result.releaseUrl || "https://github.com/scarletkc/vexor/releases";
+  } else {
+    updateInfo.latestVersion = result.version || "";
+    updateInfo.assetName = result.assetName || "";
+    updateInfo.assetUrl = result.assetUrl || "";
+    updateInfo.releaseUrl =
+      result.releaseUrl || "https://github.com/scarletkc/vexor/releases";
+  }
+  await refreshCliInfo();
+  busy.value = false;
+}
+
+async function downloadCli() {
+  if (downloadInfo.inProgress || busy.value) {
+    return;
+  }
+  busy.value = true;
+  downloadInfo.inProgress = true;
+  downloadInfo.received = 0;
+  downloadInfo.total = 0;
+  const result = await window.vexor.downloadCli();
+  if (!result.ok) {
+    logOutput.value = `CLI download failed: ${result.error || "unknown error"}`;
+  }
+  downloadInfo.inProgress = false;
+  await refreshCliInfo();
+  busy.value = false;
+  await checkCliUpdate();
+}
+
+async function openReleases() {
+  const url = updateInfo.releaseUrl || "https://github.com/scarletkc/vexor/releases";
+  await window.vexor.openExternal(url);
+}
+
 async function openInitWizard() {
   initModalOpen.value = true;
   if (initSessionId.value) {
@@ -689,6 +921,7 @@ function closeInitWizard() {
 
 onMounted(async () => {
   await loadConfig(true);
+  await refreshCliInfo();
   removeInitOutput = window.vexor.onInitOutput((payload) => {
     if (!initSessionId.value || payload.id !== initSessionId.value) {
       return;
@@ -703,6 +936,12 @@ onMounted(async () => {
     initSessionId.value = null;
     loadConfig(true);
   });
+  removeCliDownloadProgress = window.vexor.onCliDownloadProgress((payload) => {
+    downloadInfo.status = payload.status || "";
+    downloadInfo.received = payload.received || 0;
+    downloadInfo.total = payload.total || 0;
+    downloadInfo.inProgress = payload.status === "downloading" || payload.status === "starting";
+  });
 });
 
 onBeforeUnmount(() => {
@@ -711,6 +950,9 @@ onBeforeUnmount(() => {
   }
   if (removeInitExit) {
     removeInitExit();
+  }
+  if (removeCliDownloadProgress) {
+    removeCliDownloadProgress();
   }
 });
 </script>

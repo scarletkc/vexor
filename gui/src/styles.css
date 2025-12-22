@@ -196,6 +196,11 @@ textarea {
   font-size: 0.95rem;
 }
 
+input[readonly] {
+  background: var(--surface-strong);
+  color: var(--ink-soft);
+}
+
 textarea {
   resize: vertical;
   min-height: 90px;
@@ -383,6 +388,29 @@ button.secondary:hover {
   color: #7a4c07;
   font-weight: 600;
   margin-bottom: 16px;
+}
+
+.progress {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progress-bar {
+  height: 10px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-warm));
+  border-radius: 999px;
+  width: 0%;
+  transition: width 0.2s ease;
+}
+
+.progress-meta {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
 }
 
 .modal {
