@@ -150,7 +150,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card command-log">
           <h2>Command Log</h2>
           <div class="log">{{ logOutput || 'Waiting for command output...' }}</div>
         </div>
@@ -308,7 +308,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card command-log">
           <h2>Command Log</h2>
           <div class="log">{{ logOutput || 'Waiting for command output...' }}</div>
         </div>

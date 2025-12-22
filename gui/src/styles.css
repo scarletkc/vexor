@@ -318,6 +318,7 @@ button.secondary:hover {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow: hidden;
 }
 
 .result-row {
@@ -330,6 +331,13 @@ button.secondary:hover {
   gap: 12px;
   align-items: center;
   font-size: 0.92rem;
+  overflow: hidden;
+}
+
+.result-row > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .result-row strong {
@@ -345,6 +353,9 @@ button.secondary:hover {
   background: var(--surface-strong);
   padding: 8px 10px;
   border-radius: 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow: hidden;
 }
 
 .log {
@@ -356,6 +367,12 @@ button.secondary:hover {
   padding: 16px;
   min-height: 120px;
   white-space: pre-wrap;
+  word-break: break-all;
+  overflow: auto;
+}
+
+.command-log {
+  margin-top: 20px;
 }
 
 .notice {
