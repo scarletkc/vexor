@@ -686,6 +686,11 @@ def config(
         "--set-auto-index",
         help=Messages.HELP_SET_AUTO_INDEX,
     ),
+    clear_flashrank: bool = typer.Option(
+        False,
+        "--clear-flashrank",
+        help=Messages.HELP_CLEAR_FLASHRANK,
+    ),
     set_rerank_option: str | None = typer.Option(
         None,
         "--rerank",
@@ -714,6 +719,24 @@ def config(
         raise typer.BadParameter(Messages.ERROR_CONCURRENCY_INVALID)
     if set_base_url_option and clear_base_url:
         raise typer.BadParameter(Messages.ERROR_BASE_URL_CONFLICT)
+    if clear_flashrank and any(
+        (
+            set_api_key_option is not None,
+            clear_api_key,
+            set_model_option is not None,
+            set_batch_option is not None,
+            set_embed_concurrency_option is not None,
+            set_provider_option is not None,
+            set_base_url_option is not None,
+            clear_base_url,
+            set_auto_index_option is not None,
+            set_rerank_option is not None,
+            show,
+            show_index_all,
+            clear_index_all,
+        )
+    ):
+        raise typer.BadParameter(Messages.ERROR_FLASHRANK_CLEAR_CONFLICT)
     if set_provider_option is not None:
         normalized_provider = set_provider_option.strip().lower()
         if normalized_provider not in SUPPORTED_PROVIDERS:
@@ -834,6 +857,29 @@ def config(
                 raise typer.Exit(code=1)
             console.print(_styled(Messages.INFO_FLASHRANK_SETUP_DONE, Styles.SUCCESS))
 
+    if clear_flashrank:
+        cache_dir = flashrank_cache_dir(create=False)
+        if not cache_dir.exists():
+            console.print(
+                _styled(Messages.INFO_FLASHRANK_CACHE_EMPTY.format(path=cache_dir), Styles.INFO)
+            )
+        else:
+            try:
+                shutil.rmtree(cache_dir)
+            except OSError as exc:
+                console.print(
+                    _styled(
+                        Messages.ERROR_FLASHRANK_CACHE_CLEANUP.format(
+                            path=cache_dir, reason=str(exc)
+                        ),
+                        Styles.ERROR,
+                    )
+                )
+                raise typer.Exit(code=1)
+            console.print(
+                _styled(Messages.INFO_FLASHRANK_CACHE_CLEARED.format(path=cache_dir), Styles.SUCCESS)
+            )
+
     if clear_index_all:
         removed = clear_all_cache()
         if removed:
@@ -853,6 +899,7 @@ def config(
             show,
             show_index_all,
             clear_index_all,
+            clear_flashrank,
         )
     )
     if should_edit:

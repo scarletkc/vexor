@@ -974,6 +974,27 @@ def test_config_clear_base_url(tmp_path):
     assert "base_url" not in data
 
 
+def test_config_clear_flashrank_cache(tmp_path):
+    runner = CliRunner()
+    cache_dir = tmp_path / "config" / "flashrank"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "model.onnx").write_text("data", encoding="utf-8")
+
+    result = runner.invoke(app, ["config", "--clear-flashrank"])
+
+    assert result.exit_code == 0
+    assert not cache_dir.exists()
+
+
+def test_config_clear_flashrank_conflict(tmp_path):
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["config", "--clear-flashrank", "--show"])
+
+    assert result.exit_code != 0
+    assert "clear-flashrank" in result.stderr
+
+
 def test_config_rejects_unknown_provider(tmp_path):
     runner = CliRunner()
 

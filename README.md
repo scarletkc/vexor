@@ -94,6 +94,7 @@ vexor config --set-embed-concurrency 2       # parallel embedding requests
 vexor config --set-auto-index true          # auto-index before search (default)
 vexor config --rerank bm25                  # optional BM25 rerank for top-k results
 vexor config --rerank flashrank             # FlashRank rerank (requires optional extra)
+vexor config --clear-flashrank              # remove cached FlashRank models
 vexor config --set-base-url https://proxy.example.com  # optional proxy
 vexor config --clear-base-url               # reset to official endpoint
 vexor config --show                         # view current settings
@@ -171,6 +172,7 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 | `vexor search QUERY --path PATH` | Semantic search (auto-indexes if needed) |
 | `vexor index --path PATH` | Build/refresh index manually |
 | `vexor config --show` | Display current configuration |
+| `vexor config --clear-flashrank` | Remove cached FlashRank models under `~/.vexor/flashrank` |
 | `vexor local --setup [--model MODEL]` | Download a local model and set provider to `local` |
 | `vexor local --clean-up` | Remove local model cache under `~/.vexor/models` |
 | `vexor local --cuda` | Enable CUDA for local embeddings (requires `onnxruntime-gpu`) |

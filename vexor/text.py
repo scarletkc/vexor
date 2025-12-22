@@ -61,6 +61,7 @@ class Messages:
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
     HELP_SET_AUTO_INDEX = "Enable/disable automatic indexing before search (default: enabled)."
     HELP_SET_RERANK = "Set the rerank strategy (off, bm25, flashrank)."
+    HELP_CLEAR_FLASHRANK = "Delete cached FlashRank reranker models."
     HELP_SHOW_CONFIG = "Show current configuration."
     HELP_SHOW_INDEX_ALL = "Show metadata for every cached index regardless of path."
     HELP_CLEAR_INDEX_ALL = "Delete all cached indexes stored under ~/.vexor."
@@ -110,6 +111,10 @@ class Messages:
     ERROR_FLASHRANK_MISSING = (
         "FlashRank reranker is not installed. Install with `pip install \"vexor\\[flashrank]\"`."
     )
+    ERROR_FLASHRANK_CLEAR_CONFLICT = (
+        "Use --clear-flashrank without combining it with other config options."
+    )
+    ERROR_FLASHRANK_CACHE_CLEANUP = "Failed to remove FlashRank cache at {path} ({reason})."
     ERROR_FLASHRANK_SETUP = "Failed to prepare FlashRank model ({reason})."
     ERROR_BASE_URL_CONFLICT = "Cannot set and clear the base URL in the same command."
     ERROR_EXTENSIONS_EMPTY = "Provide at least one valid file extension when using --ext."
@@ -146,6 +151,8 @@ class Messages:
     INFO_INDEX_ALL_EMPTY = "No cached indexes found under ~/.vexor."
     INFO_INDEX_ALL_CLEARED = "Removed {count} cached index entr{plural} in total."
     INFO_INDEX_ALL_CLEAR_NONE = "Cache already empty; nothing to remove."
+    INFO_FLASHRANK_CACHE_EMPTY = "FlashRank cache already empty at {path}"
+    INFO_FLASHRANK_CACHE_CLEARED = "FlashRank cache removed at {path}"
     INFO_API_SAVED = "API key saved."
     INFO_API_CLEARED = "API key cleared."
     INFO_MODEL_SET = "Default model set to {value}."
