@@ -13,7 +13,7 @@ __all__ = [
     "search",
 ]
 
-__version__ = "0.18.0"
+__version__ = "0.18.1b1"
 
 
 def get_version() -> str:

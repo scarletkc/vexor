@@ -1,6 +1,6 @@
 {
   "name": "vexor",
-  "version": "0.18.0",
+  "version": "0.18.1b1",
   "description": "A vector-powered CLI for semantic search over files (Vexor skill bundle).",
   "author": {
     "name": "scarletkc"
