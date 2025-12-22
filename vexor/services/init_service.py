@@ -74,8 +74,7 @@ def should_auto_run_init(
 
 def run_init_wizard() -> None:
     """Run the interactive onboarding flow and persist configuration."""
-    console.print(_styled(Messages.INIT_TITLE, Styles.TITLE))
-    console.print(_styled(Messages.INIT_INTRO, Styles.INFO))
+    _print_welcome_banner()
     console.print()
 
     provider_updates = _collect_provider_settings()
@@ -90,10 +89,28 @@ def run_init_wizard() -> None:
     _print_next_steps()
 
 
+def _print_welcome_banner() -> None:
+    """Print the welcome header for the init wizard."""
+    console.print(_styled(Messages.INIT_TITLE, Styles.TITLE))
+    console.print(_styled(Messages.INIT_INTRO, Styles.INFO))
+    console.print(_styled(f"v{__version__}", Styles.INFO))
+
+
+def _print_step_header(step_num: str, title: str) -> None:
+    """Print a styled step header."""
+    console.print(f"[bold cyan]Step {step_num}:[/bold cyan] [bold]{title}[/bold]")
+
+
+def _print_option(key: str, name: str, desc: str) -> None:
+    """Print a styled option line."""
+    console.print(f"  [cyan]{key})[/cyan] [bold]{name}[/bold] [dim]- {desc}[/dim]")
+
+
 def _collect_provider_settings() -> dict[str, object]:
-    console.print(Messages.INIT_STEP_RUN_MODE)
-    console.print(Messages.INIT_OPTION_LOCAL)
-    console.print(Messages.INIT_OPTION_REMOTE)
+    _print_step_header("1", Messages.INIT_STEP_RUN_MODE)
+    _print_option("A", Messages.INIT_OPTION_LOCAL, Messages.INIT_OPTION_LOCAL_DESC)
+    _print_option("B", Messages.INIT_OPTION_REMOTE, Messages.INIT_OPTION_REMOTE_DESC)
+    console.print()
     run_mode = _prompt_choice(
         Messages.INIT_PROMPT_RUN_MODE,
         {
@@ -115,9 +132,10 @@ def _collect_provider_settings() -> dict[str, object]:
 
 
 def _collect_local_settings() -> dict[str, object] | None:
-    console.print(Messages.INIT_STEP_LOCAL_HARDWARE)
-    console.print(Messages.INIT_OPTION_CPU)
-    console.print(Messages.INIT_OPTION_CUDA)
+    _print_step_header("1a", Messages.INIT_STEP_LOCAL_HARDWARE)
+    _print_option("A", Messages.INIT_OPTION_CPU, Messages.INIT_OPTION_CPU_DESC)
+    _print_option("B", Messages.INIT_OPTION_CUDA, Messages.INIT_OPTION_CUDA_DESC)
+    console.print()
     hardware = _prompt_choice(
         Messages.INIT_PROMPT_LOCAL_HARDWARE,
         {
@@ -170,10 +188,11 @@ def _collect_local_settings() -> dict[str, object] | None:
 
 
 def _collect_remote_settings() -> dict[str, object]:
-    console.print(Messages.INIT_STEP_PROVIDER)
-    console.print(Messages.INIT_OPTION_PROVIDER_OPENAI)
-    console.print(Messages.INIT_OPTION_PROVIDER_GEMINI)
-    console.print(Messages.INIT_OPTION_PROVIDER_CUSTOM)
+    _print_step_header("1b", Messages.INIT_STEP_PROVIDER)
+    _print_option("A", Messages.INIT_OPTION_PROVIDER_OPENAI, Messages.INIT_OPTION_PROVIDER_OPENAI_DESC)
+    _print_option("B", Messages.INIT_OPTION_PROVIDER_GEMINI, Messages.INIT_OPTION_PROVIDER_GEMINI_DESC)
+    _print_option("C", Messages.INIT_OPTION_PROVIDER_CUSTOM, Messages.INIT_OPTION_PROVIDER_CUSTOM_DESC)
+    console.print()
     provider = _prompt_choice(
         Messages.INIT_PROMPT_PROVIDER,
         {
@@ -212,11 +231,12 @@ def _collect_remote_settings() -> dict[str, object]:
 
 
 def _collect_rerank_settings() -> dict[str, object]:
-    console.print(Messages.INIT_STEP_RERANK)
-    console.print(Messages.INIT_OPTION_RERANK_OFF)
-    console.print(Messages.INIT_OPTION_RERANK_BM25)
-    console.print(Messages.INIT_OPTION_RERANK_FLASHRANK)
-    console.print(Messages.INIT_OPTION_RERANK_REMOTE)
+    _print_step_header("2", Messages.INIT_STEP_RERANK)
+    _print_option("1", Messages.INIT_OPTION_RERANK_OFF, Messages.INIT_OPTION_RERANK_OFF_DESC)
+    _print_option("2", Messages.INIT_OPTION_RERANK_BM25, Messages.INIT_OPTION_RERANK_BM25_DESC)
+    _print_option("3", Messages.INIT_OPTION_RERANK_FLASHRANK, Messages.INIT_OPTION_RERANK_FLASHRANK_DESC)
+    _print_option("4", Messages.INIT_OPTION_RERANK_REMOTE, Messages.INIT_OPTION_RERANK_REMOTE_DESC)
+    console.print()
     rerank_choice = _prompt_choice(
         Messages.INIT_PROMPT_RERANK,
         {
@@ -273,7 +293,7 @@ def _collect_rerank_settings() -> dict[str, object]:
 
 
 def _prompt_alias_setup() -> None:
-    console.print(Messages.INIT_STEP_ALIAS)
+    _print_step_header("3", Messages.INIT_STEP_ALIAS)
     if not typer.confirm(Messages.INIT_CONFIRM_ALIAS, default=False):
         console.print()
         return
@@ -320,15 +340,16 @@ def _prompt_alias_setup() -> None:
 
 
 def _prompt_skill_install() -> None:
-    console.print(Messages.INIT_STEP_SKILLS)
+    _print_step_header("4", Messages.INIT_STEP_SKILLS)
     if not typer.confirm(Messages.INIT_CONFIRM_SKILLS_INSTALL, default=False):
         console.print()
         return
-    console.print(Messages.INIT_STEP_SKILLS_TARGET)
-    console.print(Messages.INIT_OPTION_SKILLS_AUTO)
-    console.print(Messages.INIT_OPTION_SKILLS_CLAUDE)
-    console.print(Messages.INIT_OPTION_SKILLS_CODEX)
-    console.print(Messages.INIT_OPTION_SKILLS_CUSTOM)
+    console.print(f"  [bold]{Messages.INIT_STEP_SKILLS_TARGET}[/bold]")
+    _print_option("A", Messages.INIT_OPTION_SKILLS_AUTO, Messages.INIT_OPTION_SKILLS_AUTO_DESC)
+    _print_option("B", Messages.INIT_OPTION_SKILLS_CLAUDE, Messages.INIT_OPTION_SKILLS_CLAUDE_DESC)
+    _print_option("C", Messages.INIT_OPTION_SKILLS_CODEX, Messages.INIT_OPTION_SKILLS_CODEX_DESC)
+    _print_option("D", Messages.INIT_OPTION_SKILLS_CUSTOM, Messages.INIT_OPTION_SKILLS_CUSTOM_DESC)
+    console.print()
     target = _prompt_choice(
         Messages.INIT_PROMPT_SKILLS_TARGET,
         {
@@ -350,7 +371,7 @@ def _prompt_skill_install() -> None:
 
 
 def _prompt_doctor_check() -> None:
-    console.print(Messages.INIT_STEP_DOCTOR)
+    _print_step_header("5", Messages.INIT_STEP_DOCTOR)
     if not typer.confirm(Messages.INIT_CONFIRM_DOCTOR, default=True):
         console.print()
         return
@@ -398,9 +419,9 @@ def _run_doctor_checks() -> None:
     has_failure = False
     for result in results:
         if result.passed:
-            icon = "[green]✓[/green]"
+            icon = "[green]OK[/green]"
         else:
-            icon = "[red]✗[/red]"
+            icon = "[red]FAIL[/red]"
             has_failure = True
 
         console.print(f"  {icon} [bold]{result.name}:[/bold] {result.message}")

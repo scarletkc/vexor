@@ -1422,9 +1422,9 @@ def doctor(
     has_failure = False
     for result in results:
         if result.passed:
-            icon = "[green]✓[/green]"
+            icon = "[green]OK[/green]"
         else:
-            icon = "[red]✗[/red]"
+            icon = "[red]FAIL[/red]"
             has_failure = True
 
         console.print(f"  {icon} [bold]{result.name}:[/bold] {result.message}")
