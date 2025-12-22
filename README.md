@@ -116,6 +116,8 @@ Recommended defaults:
 - Use `flashrank` for stronger reranking (requires `pip install "vexor[flashrank]"` and
   downloads a model to `~/.vexor/flashrank`).
 
+Thanks to the FlashRank project: https://github.com/PrithivirajDamodaran/FlashRank
+
 ### Providers: Remote vs Local
 
 Vexor supports both remote API providers (`openai`, `gemini`, `custom`) and a local provider (`local`):
