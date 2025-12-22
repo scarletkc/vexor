@@ -13,7 +13,7 @@
           Config: {{ configInfo.exists ? 'ready' : 'missing' }}
         </span>
         <span class="pill">
-          CLI: {{ cliPath ? 'custom path' : 'PATH' }}
+          CLI: {{ cliSourceLabel }}
         </span>
       </div>
     </header>
