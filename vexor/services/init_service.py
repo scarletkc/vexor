@@ -13,6 +13,8 @@ from typing import Mapping, Sequence
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
 
 from .. import __version__, config as config_module
 from ..config import (
@@ -90,10 +92,26 @@ def run_init_wizard() -> None:
 
 
 def _print_welcome_banner() -> None:
-    """Print the welcome header for the init wizard."""
-    console.print(_styled(Messages.INIT_TITLE, Styles.TITLE))
-    console.print(_styled(Messages.INIT_INTRO, Styles.INFO))
-    console.print(_styled(f"v{__version__}", Styles.INFO))
+    """Print a styled welcome banner for the init wizard."""
+    title = Text()
+    title.append("🚀 ", style="bold")
+    title.append(Messages.INIT_TITLE, style="bold cyan")
+    title.append(f"  v{__version__}", style="dim")
+
+    intro = Text(Messages.INIT_INTRO, style="white")
+
+    banner_content = Text()
+    banner_content.append_text(title)
+    banner_content.append("\n")
+    banner_content.append_text(intro)
+
+    console.print(
+        Panel(
+            banner_content,
+            border_style="cyan",
+            padding=(0, 1),
+        )
+    )
 
 
 def _print_step_header(step_num: str, title: str) -> None:
@@ -419,9 +437,9 @@ def _run_doctor_checks() -> None:
     has_failure = False
     for result in results:
         if result.passed:
-            icon = "[green]OK[/green]"
+            icon = "[green]✓[/green]"
         else:
-            icon = "[red]FAIL[/red]"
+            icon = "[red]✗[/red]"
             has_failure = True
 
         console.print(f"  {icon} [bold]{result.name}:[/bold] {result.message}")
@@ -681,8 +699,18 @@ def _format_command(parts: Sequence[str]) -> str:
 
 
 def _print_next_steps() -> None:
-    console.print(_styled(Messages.INIT_NEXT_STEPS_TITLE, Styles.TITLE))
-    console.print(Messages.INIT_NEXT_STEP_SEARCH)
+    next_steps = Text()
+    next_steps.append("📋 ", style="bold")
+    next_steps.append(Messages.INIT_NEXT_STEPS_TITLE, style="bold cyan")
+
+    console.print(
+        Panel(
+            next_steps,
+            border_style="green",
+            padding=(0, 1),
+        )
+    )
+    console.print(f"  [bold green]$[/bold green] {Messages.INIT_NEXT_STEP_SEARCH}")
 
 
 def _detect_shell_name() -> str | None:
