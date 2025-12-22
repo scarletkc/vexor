@@ -31,13 +31,16 @@ def main(argv: list[str]) -> int:
     repo_root = Path(__file__).resolve().parents[1]
     package_init = repo_root / "vexor" / "__init__.py"
     plugin_manifest = repo_root / "plugins" / "vexor" / ".claude-plugin" / "plugin.json"
+    gui_package_json = repo_root / "gui" / "package.json"
 
     _set_python_version(package_init, raw)
     _set_plugin_version(plugin_manifest, raw)
+    _set_gui_version(gui_package_json, raw)
 
     print(f"Updated version to {raw}")
     print(f"- {package_init}")
     print(f"- {plugin_manifest}")
+    print(f"- {gui_package_json}")
     return 0
 
 
@@ -58,6 +61,12 @@ def _set_plugin_version(path: Path, version: str) -> None:
     manifest = json.loads(path.read_text(encoding="utf-8"))
     manifest["version"] = version
     path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _set_gui_version(path: Path, version: str) -> None:
+    package_json = json.loads(path.read_text(encoding="utf-8"))
+    package_json["version"] = version
+    path.write_text(json.dumps(package_json, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
