@@ -23,6 +23,7 @@ def test_load_config_defaults(tmp_path, monkeypatch):
     assert cfg.embed_concurrency == config_module.DEFAULT_EMBED_CONCURRENCY
     assert cfg.rerank == config_module.DEFAULT_RERANK
     assert cfg.flashrank_model is None
+    assert cfg.remote_rerank is None
 
 
 def test_resolve_default_model_gemini_defaults() -> None:
@@ -94,6 +95,25 @@ def test_save_and_load_flashrank_model(tmp_path, monkeypatch):
     assert cfg.flashrank_model == "ms-marco-MultiBERT-L-12"
 
 
+def test_save_and_load_remote_rerank(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+
+    config_module.save_config(
+        config_module.Config(
+            remote_rerank=config_module.RemoteRerankConfig(
+                base_url="https://api.example.test/v1/rerank",
+                api_key="remote-key",
+                model="rerank-model",
+            )
+        )
+    )
+    cfg = config_module.load_config()
+    assert cfg.remote_rerank is not None
+    assert cfg.remote_rerank.base_url == "https://api.example.test/v1/rerank"
+    assert cfg.remote_rerank.api_key == "remote-key"
+    assert cfg.remote_rerank.model == "rerank-model"
+
+
 def test_resolve_api_key_prefers_config(monkeypatch):
     assert config_module.resolve_api_key("cfg-key", "gemini") == "cfg-key"
 
@@ -125,3 +145,13 @@ def test_resolve_api_key_legacy_gemini_env(monkeypatch):
 def test_resolve_api_key_local_ignores_keys(monkeypatch):
     monkeypatch.setenv(config_module.ENV_API_KEY, "shared-key")
     assert config_module.resolve_api_key("cfg-key", "local") is None
+
+
+def test_resolve_remote_rerank_api_key_prefers_config(monkeypatch):
+    monkeypatch.setenv(config_module.REMOTE_RERANK_ENV, "env-key")
+    assert config_module.resolve_remote_rerank_api_key("cfg-key") == "cfg-key"
+
+
+def test_resolve_remote_rerank_api_key_env_fallback(monkeypatch):
+    monkeypatch.setenv(config_module.REMOTE_RERANK_ENV, "env-key")
+    assert config_module.resolve_remote_rerank_api_key(None) == "env-key"

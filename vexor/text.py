@@ -60,11 +60,17 @@ class Messages:
     HELP_SET_BASE_URL = "Override the provider's base URL (leave unset for official endpoints)."
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
     HELP_SET_AUTO_INDEX = "Enable/disable automatic indexing before search (default: enabled)."
-    HELP_SET_RERANK = "Set the rerank strategy (off, bm25, flashrank)."
+    HELP_SET_RERANK = "Set the rerank strategy (off, bm25, flashrank, remote)."
     HELP_SET_FLASHRANK_MODEL = (
         "Set the FlashRank model name (omit or empty resets to default)."
     )
     HELP_CLEAR_FLASHRANK = "Delete cached FlashRank reranker models."
+    HELP_SET_REMOTE_RERANK_URL = "Set the remote rerank endpoint URL."
+    HELP_SET_REMOTE_RERANK_MODEL = "Set the remote rerank model name."
+    HELP_SET_REMOTE_RERANK_API_KEY = (
+        "Set the remote rerank API key (or use VEXOR_REMOTE_RERANK_API_KEY)."
+    )
+    HELP_CLEAR_REMOTE_RERANK = "Clear remote rerank configuration."
     HELP_SHOW_CONFIG = "Show current configuration."
     HELP_SHOW_INDEX_ALL = "Show metadata for every cached index regardless of path."
     HELP_CLEAR_INDEX_ALL = "Delete all cached indexes stored under ~/.vexor."
@@ -115,6 +121,16 @@ class Messages:
         "FlashRank reranker is not installed. Install with `pip install \"vexor\\[flashrank]\"`."
     )
     ERROR_FLASHRANK_MODEL_EMPTY = "FlashRank model name cannot be empty."
+    ERROR_REMOTE_RERANK_INCOMPLETE = (
+        "Remote rerank requires base URL, model, and API key."
+    )
+    ERROR_REMOTE_RERANK_URL_EMPTY = "Remote rerank URL cannot be empty."
+    ERROR_REMOTE_RERANK_MODEL_EMPTY = "Remote rerank model name cannot be empty."
+    ERROR_REMOTE_RERANK_API_KEY_EMPTY = "Remote rerank API key cannot be empty."
+    ERROR_REMOTE_RERANK_CLEAR_CONFLICT = (
+        "Use --clear-remote-rerank without combining it with remote rerank options."
+    )
+    ERROR_REMOTE_RERANK_FAILED = "Remote rerank request failed ({reason})."
     ERROR_FLASHRANK_CLEAR_CONFLICT = (
         "Use --clear-flashrank without combining it with other config options."
     )
@@ -169,6 +185,10 @@ class Messages:
     INFO_RERANK_SET = "Rerank strategy set to {value}."
     INFO_FLASHRANK_MODEL_SET = "FlashRank model set to {value}."
     INFO_FLASHRANK_MODEL_RESET = "FlashRank model reset to default ({value})."
+    INFO_REMOTE_RERANK_URL_SET = "Remote rerank URL set to {value}."
+    INFO_REMOTE_RERANK_MODEL_SET = "Remote rerank model set to {value}."
+    INFO_REMOTE_RERANK_API_KEY_SET = "Remote rerank API key set."
+    INFO_REMOTE_RERANK_CLEARED = "Remote rerank configuration cleared."
     INFO_LOCAL_SETUP_START = "Preparing local model {model}..."
     INFO_LOCAL_SETUP_HINT = "Use `vexor local --help` to configure a local embedding model."
     INFO_LOCAL_CACHE_DIR = "Local model cache: {path}"
@@ -201,10 +221,12 @@ class Messages:
         "Auto index: {auto_index}\n"
         "Rerank: {rerank}\n"
         "{flashrank_line}"
+        "{remote_rerank_line}"
         "Local CUDA: {local_cuda}\n"
         "Custom base URL: {base_url}"
     )
     INFO_FLASHRANK_MODEL_SUMMARY = "FlashRank model: {value}"
+    INFO_REMOTE_RERANK_SUMMARY = "Remote rerank: {value}"
     INFO_SEARCH_RUNNING = "Searching cached index under {path}..."
     INFO_DOCTOR_CHECKING = "Checking if `vexor` is on PATH..."
     INFO_DOCTOR_FOUND = "`vexor` command is available at {path}."

@@ -864,6 +864,71 @@ def test_config_set_flashrank_model_empty_resets_to_default(tmp_path):
     assert "flashrank_model" not in data
 
 
+def test_config_sets_remote_rerank_and_shows_summary(tmp_path):
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "--rerank",
+            "remote",
+            "--set-remote-rerank-url",
+            "https://api.example.test/v1/rerank",
+            "--set-remote-rerank-model",
+            "rerank-model",
+            "--set-remote-rerank-api-key",
+            "remote-key",
+        ],
+    )
+    assert result.exit_code == 0
+    config_path = tmp_path / "config" / "config.json"
+    data = json.loads(config_path.read_text())
+    assert data["rerank"] == "remote"
+    assert data["remote_rerank"]["base_url"] == "https://api.example.test/v1/rerank"
+    assert data["remote_rerank"]["model"] == "rerank-model"
+    assert data["remote_rerank"]["api_key"] == "remote-key"
+
+    result_show = runner.invoke(app, ["config", "--show"])
+    output = strip_ansi(result_show.stdout)
+    assert "Rerank: remote" in output
+    assert "Remote rerank" in output
+    assert "api.example.test" in output
+
+
+def test_config_rejects_remote_rerank_missing_fields(tmp_path):
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["config", "--rerank", "remote"])
+    assert result.exit_code != 0
+    assert "Remote rerank requires" in result.stderr
+
+
+def test_config_allows_remote_rerank_api_key_env(monkeypatch, tmp_path):
+    runner = CliRunner()
+    monkeypatch.setenv("VEXOR_REMOTE_RERANK_API_KEY", "env-remote-key")
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "--rerank",
+            "remote",
+            "--set-remote-rerank-url",
+            "https://api.example.test/v1/rerank",
+            "--set-remote-rerank-model",
+            "rerank-model",
+        ],
+    )
+    assert result.exit_code == 0
+    config_path = tmp_path / "config" / "config.json"
+    data = json.loads(config_path.read_text())
+    assert data["rerank"] == "remote"
+    assert data["remote_rerank"]["base_url"] == "https://api.example.test/v1/rerank"
+    assert data["remote_rerank"]["model"] == "rerank-model"
+    assert "api_key" not in data["remote_rerank"]
+
+
 def test_config_custom_requires_model_and_base_url(tmp_path):
     runner = CliRunner()
 

@@ -94,9 +94,14 @@ vexor config --set-embed-concurrency 2       # parallel embedding requests
 vexor config --set-auto-index true          # auto-index before search (default)
 vexor config --rerank bm25                  # optional BM25 rerank for top-k results
 vexor config --rerank flashrank             # FlashRank rerank (requires optional extra)
+vexor config --rerank remote                # remote rerank via HTTP endpoint
 vexor config --set-flashrank-model ms-marco-MultiBERT-L-12  # multilingual model
 vexor config --set-flashrank-model          # reset FlashRank model to default
 vexor config --clear-flashrank              # remove cached FlashRank models
+vexor config --set-remote-rerank-url https://api.knox.chat/v1/rerank
+vexor config --set-remote-rerank-model rerank-2.5
+vexor config --set-remote-rerank-api-key $VEXOR_REMOTE_RERANK_API_KEY  # or env var
+vexor config --clear-remote-rerank          # clear remote rerank config
 vexor config --set-base-url https://proxy.example.com  # optional proxy
 vexor config --clear-base-url               # reset to official endpoint
 vexor config --show                         # view current settings
@@ -118,6 +123,8 @@ Recommended defaults:
 - BM25 uses a multilingual tokenizer (Bert pre-tokenizer), so it can handle CJK better.
 - Use `flashrank` for stronger reranking (requires `pip install "vexor[flashrank]"` and
   downloads a model to `~/.vexor/flashrank`).
+- Use `remote` to call a hosted reranker that accepts `{model, query, documents}` and
+  returns ranked indexes.
 - For Chinese or multi-language content, set `--set-flashrank-model ms-marco-MultiBERT-L-12`.
 - If unset, FlashRank defaults to `ms-marco-TinyBERT-L-2-v2`.
 

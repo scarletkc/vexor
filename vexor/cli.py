@@ -35,6 +35,7 @@ from .config import (
     SUPPORTED_RERANKERS,
     flashrank_cache_dir,
     load_config,
+    resolve_remote_rerank_api_key,
     resolve_default_model,
 )
 from .modes import available_modes, get_strategy
@@ -396,6 +397,7 @@ def search(
     api_key = config.api_key
     auto_index = bool(config.auto_index)
     flashrank_model = config.flashrank_model
+    remote_rerank = config.remote_rerank
     rerank = (config.rerank or DEFAULT_RERANK).strip().lower()
     if rerank not in SUPPORTED_RERANKERS:
         rerank = DEFAULT_RERANK
@@ -437,6 +439,7 @@ def search(
         auto_index=auto_index,
         rerank=rerank,
         flashrank_model=flashrank_model,
+        remote_rerank=remote_rerank,
     )
     if output_format == SearchOutputFormat.rich:
         should_index_first = _should_index_before_search(request) if auto_index else False
@@ -731,6 +734,26 @@ def config(
         "--set-flashrank-model",
         help=Messages.HELP_SET_FLASHRANK_MODEL,
     ),
+    set_remote_rerank_url_option: str | None = typer.Option(
+        None,
+        "--set-remote-rerank-url",
+        help=Messages.HELP_SET_REMOTE_RERANK_URL,
+    ),
+    set_remote_rerank_model_option: str | None = typer.Option(
+        None,
+        "--set-remote-rerank-model",
+        help=Messages.HELP_SET_REMOTE_RERANK_MODEL,
+    ),
+    set_remote_rerank_api_key_option: str | None = typer.Option(
+        None,
+        "--set-remote-rerank-api-key",
+        help=Messages.HELP_SET_REMOTE_RERANK_API_KEY,
+    ),
+    clear_remote_rerank: bool = typer.Option(
+        False,
+        "--clear-remote-rerank",
+        help=Messages.HELP_CLEAR_REMOTE_RERANK,
+    ),
     show: bool = typer.Option(
         False,
         "--show",
@@ -762,6 +785,29 @@ def config(
             flashrank_model_reset = True
         else:
             set_flashrank_model_option = normalized_flashrank_model
+    if set_remote_rerank_url_option is not None:
+        normalized_remote_url = set_remote_rerank_url_option.strip()
+        if not normalized_remote_url:
+            raise typer.BadParameter(Messages.ERROR_REMOTE_RERANK_URL_EMPTY)
+        set_remote_rerank_url_option = normalized_remote_url
+    if set_remote_rerank_model_option is not None:
+        normalized_remote_model = set_remote_rerank_model_option.strip()
+        if not normalized_remote_model:
+            raise typer.BadParameter(Messages.ERROR_REMOTE_RERANK_MODEL_EMPTY)
+        set_remote_rerank_model_option = normalized_remote_model
+    if set_remote_rerank_api_key_option is not None:
+        normalized_remote_key = set_remote_rerank_api_key_option.strip()
+        if not normalized_remote_key:
+            raise typer.BadParameter(Messages.ERROR_REMOTE_RERANK_API_KEY_EMPTY)
+        set_remote_rerank_api_key_option = normalized_remote_key
+    if clear_remote_rerank and any(
+        (
+            set_remote_rerank_url_option is not None,
+            set_remote_rerank_model_option is not None,
+            set_remote_rerank_api_key_option is not None,
+        )
+    ):
+        raise typer.BadParameter(Messages.ERROR_REMOTE_RERANK_CLEAR_CONFLICT)
     if clear_flashrank and any(
         (
             set_api_key_option is not None,
@@ -775,6 +821,10 @@ def config(
             set_auto_index_option is not None,
             set_rerank_option is not None,
             set_flashrank_model_option is not None,
+            set_remote_rerank_url_option is not None,
+            set_remote_rerank_model_option is not None,
+            set_remote_rerank_api_key_option is not None,
+            clear_remote_rerank,
             show,
             show_index_all,
             clear_index_all,
@@ -836,6 +886,31 @@ def config(
         if not (pending_base_url and pending_base_url.strip()):
             raise typer.BadParameter(Messages.ERROR_CUSTOM_BASE_URL_REQUIRED)
 
+    if clear_remote_rerank:
+        active_rerank = set_rerank_option or config_snapshot.rerank
+        if (active_rerank or "").strip().lower() == "remote":
+            raise typer.BadParameter(Messages.ERROR_REMOTE_RERANK_INCOMPLETE)
+    if set_rerank_option == "remote":
+        existing_remote = config_snapshot.remote_rerank
+        pending_remote_url = (
+            set_remote_rerank_url_option
+            if set_remote_rerank_url_option is not None
+            else (existing_remote.base_url if existing_remote else None)
+        )
+        pending_remote_model = (
+            set_remote_rerank_model_option
+            if set_remote_rerank_model_option is not None
+            else (existing_remote.model if existing_remote else None)
+        )
+        pending_remote_key = (
+            set_remote_rerank_api_key_option
+            if set_remote_rerank_api_key_option is not None
+            else (existing_remote.api_key if existing_remote else None)
+        )
+        pending_remote_key = resolve_remote_rerank_api_key(pending_remote_key)
+        if not (pending_remote_url and pending_remote_model and pending_remote_key):
+            raise typer.BadParameter(Messages.ERROR_REMOTE_RERANK_INCOMPLETE)
+
     auto_index: bool | None = None
     if set_auto_index_option is not None:
         try:
@@ -855,6 +930,10 @@ def config(
         auto_index=auto_index,
         rerank=set_rerank_option,
         flashrank_model=set_flashrank_model_option,
+        remote_rerank_url=set_remote_rerank_url_option,
+        remote_rerank_model=set_remote_rerank_model_option,
+        remote_rerank_api_key=set_remote_rerank_api_key_option,
+        clear_remote_rerank=clear_remote_rerank,
     )
 
     if updates.api_key_set:
@@ -921,6 +1000,26 @@ def config(
                     Styles.SUCCESS,
                 )
             )
+    if updates.remote_rerank_url_set and set_remote_rerank_url_option is not None:
+        console.print(
+            _styled(
+                Messages.INFO_REMOTE_RERANK_URL_SET.format(value=set_remote_rerank_url_option),
+                Styles.SUCCESS,
+            )
+        )
+    if updates.remote_rerank_model_set and set_remote_rerank_model_option is not None:
+        console.print(
+            _styled(
+                Messages.INFO_REMOTE_RERANK_MODEL_SET.format(
+                    value=set_remote_rerank_model_option
+                ),
+                Styles.SUCCESS,
+            )
+        )
+    if updates.remote_rerank_api_key_set and set_remote_rerank_api_key_option is not None:
+        console.print(_styled(Messages.INFO_REMOTE_RERANK_API_KEY_SET, Styles.SUCCESS))
+    if updates.remote_rerank_cleared and clear_remote_rerank:
+        console.print(_styled(Messages.INFO_REMOTE_RERANK_CLEARED, Styles.SUCCESS))
 
     if clear_flashrank:
         cache_dir = flashrank_cache_dir(create=False)
@@ -976,10 +1075,23 @@ def config(
         provider = (cfg.provider or DEFAULT_PROVIDER).lower()
         rerank = (cfg.rerank or DEFAULT_RERANK).lower()
         flashrank_line = ""
+        remote_rerank_line = ""
         if rerank == "flashrank":
             model_label = cfg.flashrank_model or f"default ({DEFAULT_FLASHRANK_MODEL})"
             flashrank_line = (
                 f"{Messages.INFO_FLASHRANK_MODEL_SUMMARY.format(value=model_label)}\n"
+            )
+        if rerank == "remote":
+            remote_cfg = cfg.remote_rerank
+            if remote_cfg is None:
+                remote_label = "not configured"
+            else:
+                url_label = remote_cfg.base_url or "unset"
+                model_label = remote_cfg.model or "unset"
+                key_label = "yes" if remote_cfg.api_key else "no"
+                remote_label = f"{url_label} (model {model_label}, key {key_label})"
+            remote_rerank_line = (
+                f"{Messages.INFO_REMOTE_RERANK_SUMMARY.format(value=remote_label)}\n"
             )
         console.print(
             _styled(
@@ -992,6 +1104,7 @@ def config(
                     auto_index="yes" if cfg.auto_index else "no",
                     rerank=rerank,
                     flashrank_line=flashrank_line,
+                    remote_rerank_line=remote_rerank_line,
                     local_cuda="yes" if cfg.local_cuda else "no",
                     base_url=cfg.base_url or "none",
                 ),

@@ -11,6 +11,7 @@ from .config import (
     DEFAULT_PROVIDER,
     DEFAULT_RERANK,
     Config,
+    RemoteRerankConfig,
     SUPPORTED_RERANKERS,
     load_config,
     resolve_default_model,
@@ -43,6 +44,7 @@ class RuntimeSettings:
     auto_index: bool
     rerank: str
     flashrank_model: str | None
+    remote_rerank: RemoteRerankConfig | None
 
 
 def search(
@@ -115,6 +117,7 @@ def search(
         auto_index=settings.auto_index,
         rerank=settings.rerank,
         flashrank_model=settings.flashrank_model,
+        remote_rerank=settings.remote_rerank,
     )
     return perform_search(request)
 
@@ -273,4 +276,5 @@ def _resolve_settings(
         auto_index=bool(auto_index if auto_index is not None else config.auto_index),
         rerank=rerank_value,
         flashrank_model=config.flashrank_model,
+        remote_rerank=config.remote_rerank,
     )

@@ -17,6 +17,7 @@ from ..config import (
     set_model,
     set_provider,
     set_rerank,
+    update_remote_rerank,
 )
 
 
@@ -34,6 +35,10 @@ class ConfigUpdateResult:
     local_cuda_set: bool = False
     rerank_set: bool = False
     flashrank_model_set: bool = False
+    remote_rerank_url_set: bool = False
+    remote_rerank_model_set: bool = False
+    remote_rerank_api_key_set: bool = False
+    remote_rerank_cleared: bool = False
 
     @property
     def changed(self) -> bool:
@@ -51,6 +56,10 @@ class ConfigUpdateResult:
                 self.local_cuda_set,
                 self.rerank_set,
                 self.flashrank_model_set,
+                self.remote_rerank_url_set,
+                self.remote_rerank_model_set,
+                self.remote_rerank_api_key_set,
+                self.remote_rerank_cleared,
             )
         )
 
@@ -69,6 +78,10 @@ def apply_config_updates(
     local_cuda: bool | None = None,
     rerank: str | None = None,
     flashrank_model: str | None = None,
+    remote_rerank_url: str | None = None,
+    remote_rerank_model: str | None = None,
+    remote_rerank_api_key: str | None = None,
+    clear_remote_rerank: bool = False,
 ) -> ConfigUpdateResult:
     """Apply config mutations and report which fields were updated."""
 
@@ -109,6 +122,22 @@ def apply_config_updates(
     if flashrank_model is not None:
         set_flashrank_model(flashrank_model)
         result.flashrank_model_set = True
+    if (
+        clear_remote_rerank
+        or remote_rerank_url is not None
+        or remote_rerank_model is not None
+        or remote_rerank_api_key is not None
+    ):
+        update_remote_rerank(
+            base_url=remote_rerank_url,
+            api_key=remote_rerank_api_key,
+            model=remote_rerank_model,
+            clear=clear_remote_rerank,
+        )
+        result.remote_rerank_url_set = remote_rerank_url is not None
+        result.remote_rerank_model_set = remote_rerank_model is not None
+        result.remote_rerank_api_key_set = remote_rerank_api_key is not None
+        result.remote_rerank_cleared = clear_remote_rerank
     return result
 
 

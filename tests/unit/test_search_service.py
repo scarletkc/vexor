@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from vexor.services.index_service import IndexResult, IndexStatus
+from vexor.config import RemoteRerankConfig
 from vexor.services.search_service import SearchRequest, perform_search
 
 
@@ -741,4 +742,126 @@ def test_perform_search_reranks_with_bm25(monkeypatch, tmp_path: Path) -> None:
 
     assert response.reranker == "bm25"
     assert len(response.results) == 1
+    assert response.results[0].path.name == "b.txt"
+
+
+def test_perform_search_reranks_with_remote(monkeypatch, tmp_path: Path) -> None:
+    def fake_load_index_vectors(*_args, **_kwargs):
+        paths = [tmp_path / "a.txt", tmp_path / "b.txt"]
+        vectors = np.array([[0.8, 0.6], [0.6, 0.8]], dtype=np.float32)
+        metadata = {
+            "files": [
+                {"path": "a.txt", "absolute": str(paths[0]), "mtime": 0.0, "size": 1},
+                {"path": "b.txt", "absolute": str(paths[1]), "mtime": 0.0, "size": 1},
+            ],
+            "chunks": [
+                {"path": "a.txt", "chunk_index": 0, "preview": "beta"},
+                {"path": "b.txt", "chunk_index": 0, "preview": "alpha match"},
+            ],
+        }
+        return paths, vectors, metadata
+
+    def fake_remote_rerank_request(*_args, **_kwargs):
+        return {"data": [{"index": 1, "relevance_score": 0.9}]}
+
+    monkeypatch.setattr("vexor.cache.load_index_vectors", fake_load_index_vectors)
+    monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        "vexor.services.search_service._remote_rerank_request",
+        fake_remote_rerank_request,
+    )
+    import importlib
+
+    search_module = importlib.import_module("vexor.search")
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
+
+    request = SearchRequest(
+        query="alpha",
+        directory=tmp_path,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=True,
+        top_k=1,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key="k",
+        local_cuda=False,
+        exclude_patterns=(),
+        extensions=(),
+        auto_index=True,
+        rerank="remote",
+        remote_rerank=RemoteRerankConfig(
+            base_url="https://api.example.test/v1/rerank",
+            api_key="remote-key",
+            model="rerank-model",
+        ),
+    )
+    response = perform_search(request)
+
+    assert response.reranker == "remote"
+    assert len(response.results) == 1
+    assert response.results[0].path.name == "b.txt"
+
+
+def test_remote_rerank_uses_env_api_key(monkeypatch, tmp_path: Path) -> None:
+    def fake_load_index_vectors(*_args, **_kwargs):
+        paths = [tmp_path / "a.txt", tmp_path / "b.txt"]
+        vectors = np.array([[0.8, 0.6], [0.6, 0.8]], dtype=np.float32)
+        metadata = {
+            "files": [
+                {"path": "a.txt", "absolute": str(paths[0]), "mtime": 0.0, "size": 1},
+                {"path": "b.txt", "absolute": str(paths[1]), "mtime": 0.0, "size": 1},
+            ],
+            "chunks": [
+                {"path": "a.txt", "chunk_index": 0, "preview": "beta"},
+                {"path": "b.txt", "chunk_index": 0, "preview": "alpha match"},
+            ],
+        }
+        return paths, vectors, metadata
+
+    def fake_remote_rerank_request(*_args, **_kwargs):
+        return {"results": [{"index": 1, "relevance_score": 0.9}]}
+
+    monkeypatch.setenv("VEXOR_REMOTE_RERANK_API_KEY", "env-remote-key")
+    monkeypatch.setattr("vexor.cache.load_index_vectors", fake_load_index_vectors)
+    monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        "vexor.services.search_service._remote_rerank_request",
+        fake_remote_rerank_request,
+    )
+    import importlib
+
+    search_module = importlib.import_module("vexor.search")
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
+
+    request = SearchRequest(
+        query="alpha",
+        directory=tmp_path,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=True,
+        top_k=1,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key="k",
+        local_cuda=False,
+        exclude_patterns=(),
+        extensions=(),
+        auto_index=True,
+        rerank="remote",
+        remote_rerank=RemoteRerankConfig(
+            base_url="https://api.example.test/v1/rerank",
+            api_key=None,
+            model="rerank-model",
+        ),
+    )
+    response = perform_search(request)
+
+    assert response.reranker == "remote"
     assert response.results[0].path.name == "b.txt"

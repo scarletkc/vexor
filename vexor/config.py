@@ -20,10 +20,18 @@ DEFAULT_RERANK = "off"
 DEFAULT_FLASHRANK_MODEL = "ms-marco-TinyBERT-L-2-v2"
 DEFAULT_FLASHRANK_MAX_LENGTH = 256
 SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER, "gemini", "custom", "local")
-SUPPORTED_RERANKERS: tuple[str, ...] = ("off", "bm25", "flashrank")
+SUPPORTED_RERANKERS: tuple[str, ...] = ("off", "bm25", "flashrank", "remote")
 ENV_API_KEY = "VEXOR_API_KEY"
+REMOTE_RERANK_ENV = "VEXOR_REMOTE_RERANK_API_KEY"
 LEGACY_GEMINI_ENV = "GOOGLE_GENAI_API_KEY"
 OPENAI_ENV = "OPENAI_API_KEY"
+
+
+@dataclass
+class RemoteRerankConfig:
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
 
 
 @dataclass
@@ -38,6 +46,22 @@ class Config:
     local_cuda: bool = False
     rerank: str = DEFAULT_RERANK
     flashrank_model: str | None = None
+    remote_rerank: RemoteRerankConfig | None = None
+
+
+def _parse_remote_rerank(raw: object) -> RemoteRerankConfig | None:
+    if not isinstance(raw, dict):
+        return None
+    base_url = (raw.get("base_url") or "").strip() or None
+    api_key = (raw.get("api_key") or "").strip() or None
+    model = (raw.get("model") or "").strip() or None
+    if not any((base_url, api_key, model)):
+        return None
+    return RemoteRerankConfig(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+    )
 
 
 def load_config() -> Config:
@@ -58,6 +82,7 @@ def load_config() -> Config:
         local_cuda=bool(raw.get("local_cuda", False)),
         rerank=rerank,
         flashrank_model=raw.get("flashrank_model") or None,
+        remote_rerank=_parse_remote_rerank(raw.get("remote_rerank")),
     )
 
 
@@ -79,6 +104,16 @@ def save_config(config: Config) -> None:
     data["rerank"] = config.rerank
     if config.flashrank_model:
         data["flashrank_model"] = config.flashrank_model
+    if config.remote_rerank is not None:
+        remote_data: Dict[str, Any] = {}
+        if config.remote_rerank.base_url:
+            remote_data["base_url"] = config.remote_rerank.base_url
+        if config.remote_rerank.api_key:
+            remote_data["api_key"] = config.remote_rerank.api_key
+        if config.remote_rerank.model:
+            remote_data["model"] = config.remote_rerank.model
+        if remote_data:
+            data["remote_rerank"] = remote_data
     CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -157,6 +192,30 @@ def set_flashrank_model(value: str | None) -> None:
     save_config(config)
 
 
+def update_remote_rerank(
+    *,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    model: str | None = None,
+    clear: bool = False,
+) -> None:
+    config = load_config()
+    if clear:
+        config.remote_rerank = None
+        save_config(config)
+        return
+    if any(value is not None for value in (base_url, api_key, model)):
+        if config.remote_rerank is None:
+            config.remote_rerank = RemoteRerankConfig()
+        if base_url is not None:
+            config.remote_rerank.base_url = base_url.strip() or None
+        if api_key is not None:
+            config.remote_rerank.api_key = api_key.strip() or None
+        if model is not None:
+            config.remote_rerank.model = model.strip() or None
+    save_config(config)
+
+
 def resolve_default_model(provider: str | None, model: str | None) -> str:
     """Return the effective model name for the selected provider."""
     clean_model = (model or "").strip()
@@ -187,4 +246,15 @@ def resolve_api_key(configured: str | None, provider: str) -> str | None:
         openai_key = os.getenv(OPENAI_ENV)
         if openai_key:
             return openai_key
+    return None
+
+
+def resolve_remote_rerank_api_key(configured: str | None) -> str | None:
+    """Return the remote rerank API key from config or environment."""
+
+    if configured:
+        return configured
+    env_key = os.getenv(REMOTE_RERANK_ENV)
+    if env_key:
+        return env_key
     return None

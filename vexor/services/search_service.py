@@ -5,17 +5,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+import json
 import re
-from typing import Sequence
+from typing import Sequence, TYPE_CHECKING
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 from ..config import (
     DEFAULT_EMBED_CONCURRENCY,
     DEFAULT_FLASHRANK_MAX_LENGTH,
     DEFAULT_FLASHRANK_MODEL,
     DEFAULT_RERANK,
+    RemoteRerankConfig,
+    resolve_remote_rerank_api_key,
 )
 from ..utils import build_exclude_spec, is_excluded_path, normalize_exclude_patterns
 from .cache_service import is_cache_current
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..search import SearchResult
 
 
 @dataclass(slots=True)
@@ -39,6 +47,7 @@ class SearchRequest:
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY
     rerank: str = DEFAULT_RERANK
     flashrank_model: str | None = None
+    remote_rerank: RemoteRerankConfig | None = None
 
 
 @dataclass(slots=True)
@@ -188,6 +197,137 @@ def _apply_flashrank_rerank(
         for idx, result in enumerate(results):
             if idx not in seen:
                 ordered.append(result)
+    return ordered
+
+
+def _resolve_remote_rerank_config(
+    config: RemoteRerankConfig | None,
+) -> RemoteRerankConfig:
+    if not config:
+        from ..text import Messages
+
+        raise RuntimeError(Messages.ERROR_REMOTE_RERANK_INCOMPLETE)
+    api_key = resolve_remote_rerank_api_key(config.api_key)
+    if not (config.base_url and config.model and api_key):
+        from ..text import Messages
+
+        raise RuntimeError(Messages.ERROR_REMOTE_RERANK_INCOMPLETE)
+    if api_key != config.api_key:
+        return RemoteRerankConfig(
+            base_url=config.base_url,
+            api_key=api_key,
+            model=config.model,
+        )
+    return config
+
+
+def _remote_rerank_request(
+    *,
+    config: RemoteRerankConfig,
+    query: str,
+    documents: Sequence[str],
+) -> dict:
+    from ..text import Messages
+
+    payload = {
+        "model": config.model,
+        "query": query,
+        "documents": list(documents),
+    }
+    data = json.dumps(payload).encode("utf-8")
+    request = urlrequest.Request(config.base_url, data=data, method="POST")
+    request.add_header("Content-Type", "application/json")
+    request.add_header("Authorization", f"Bearer {config.api_key}")
+    try:
+        with urlrequest.urlopen(request) as response:
+            body = response.read().decode("utf-8", errors="replace")
+    except urlerror.HTTPError as exc:
+        reason = f"HTTP {exc.code}"
+        try:
+            detail = exc.read().decode("utf-8", errors="replace").strip()
+        except Exception:
+            detail = ""
+        if detail:
+            reason = f"{reason}: {detail[:200]}"
+        raise RuntimeError(Messages.ERROR_REMOTE_RERANK_FAILED.format(reason=reason)) from exc
+    except urlerror.URLError as exc:
+        raise RuntimeError(
+            Messages.ERROR_REMOTE_RERANK_FAILED.format(reason=str(exc))
+        ) from exc
+    except Exception as exc:  # pragma: no cover - network edge cases
+        raise RuntimeError(
+            Messages.ERROR_REMOTE_RERANK_FAILED.format(reason=str(exc))
+        ) from exc
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            Messages.ERROR_REMOTE_RERANK_FAILED.format(reason="Invalid JSON response")
+        ) from exc
+
+
+def _extract_remote_rerank_items(payload: object) -> list[tuple[int, float | None]]:
+    if not isinstance(payload, dict):
+        return []
+    items = payload.get("results")
+    if not isinstance(items, list):
+        items = payload.get("data")
+    if not isinstance(items, list):
+        return []
+    parsed: list[tuple[int, float | None]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        index = item.get("index")
+        if index is None:
+            continue
+        try:
+            idx = int(index)
+        except (TypeError, ValueError):
+            continue
+        score = item.get("relevance_score")
+        if score is None:
+            score = item.get("score")
+        try:
+            parsed_score = float(score) if score is not None else None
+        except (TypeError, ValueError):
+            parsed_score = None
+        parsed.append((idx, parsed_score))
+    return parsed
+
+
+def _apply_remote_rerank(
+    query: str,
+    results: Sequence[SearchResult],
+    config: RemoteRerankConfig | None,
+) -> list[SearchResult]:
+    if not results:
+        return []
+    resolved = _resolve_remote_rerank_config(config)
+    documents = [
+        _build_rerank_document(result) or result.path.as_posix() for result in results
+    ]
+    payload = _remote_rerank_request(
+        config=resolved,
+        query=query,
+        documents=documents,
+    )
+    items = _extract_remote_rerank_items(payload)
+    if not items:
+        return list(results)
+    ordered: list[SearchResult] = []
+    seen: set[int] = set()
+    for idx, score in items:
+        if idx < 0 or idx >= len(results) or idx in seen:
+            continue
+        result = results[idx]
+        if score is not None:
+            result.score = score
+        ordered.append(result)
+        seen.add(idx)
+    for idx, result in enumerate(results):
+        if idx not in seen:
+            ordered.append(result)
     return ordered
 
 
@@ -454,19 +594,26 @@ def perform_search(request: SearchRequest) -> SearchResponse:
     scored.sort(key=lambda item: item.score, reverse=True)
     reranker = None
     rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
-    if rerank in {"bm25", "flashrank"}:
+    if rerank in {"bm25", "flashrank", "remote"}:
         candidate_count = min(len(scored), request.top_k * 2)
         candidates = scored[:candidate_count]
         if rerank == "bm25":
             candidates = _apply_bm25_rerank(request.query, candidates)
             reranker = "bm25"
-        else:
+        elif rerank == "flashrank":
             candidates = _apply_flashrank_rerank(
                 request.query,
                 candidates,
                 request.flashrank_model,
             )
             reranker = "flashrank"
+        else:
+            candidates = _apply_remote_rerank(
+                request.query,
+                candidates,
+                request.remote_rerank,
+            )
+            reranker = "remote"
         results = candidates[: request.top_k]
     else:
         results = scored[: request.top_k]
