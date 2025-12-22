@@ -107,7 +107,7 @@ vexor config --clear-base-url               # reset to official endpoint
 vexor config --show                         # view current settings
 ```
 
-Rerank defaults to `off`.
+Rerank defaults to `off`. **It is highly recommended to configure the Reranker in advance to improve search accuracy.**
 FlashRank requires `pip install "vexor[flashrank]"` and caches models under `~/.vexor/flashrank`.
 
 Config stored in `~/.vexor/config.json`.

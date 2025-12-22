@@ -831,7 +831,10 @@ def config(
             clear_index_all,
         )
     ):
-        raise typer.BadParameter(Messages.ERROR_FLASHRANK_CLEAR_CONFLICT)
+        raise typer.BadParameter(
+            Messages.ERROR_FLASHRANK_CLEAR_CONFLICT,
+            param_hint="--clear-flashrank",
+        )
     if set_provider_option is not None:
         normalized_provider = set_provider_option.strip().lower()
         if normalized_provider not in SUPPORTED_PROVIDERS:
