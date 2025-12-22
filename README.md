@@ -95,6 +95,7 @@ vexor config --set-auto-index true          # auto-index before search (default)
 vexor config --rerank bm25                  # optional BM25 rerank for top-k results
 vexor config --rerank flashrank             # FlashRank rerank (requires optional extra)
 vexor config --set-flashrank-model ms-marco-MultiBERT-L-12  # multilingual model
+vexor config --set-flashrank-model          # reset FlashRank model to default
 vexor config --clear-flashrank              # remove cached FlashRank models
 vexor config --set-base-url https://proxy.example.com  # optional proxy
 vexor config --clear-base-url               # reset to official endpoint
@@ -113,13 +114,12 @@ Rerank reorders the semantic results with a secondary ranker. It uses 2x the req
 
 Recommended defaults:
 - Keep `off` unless you want extra precision.
-- Use `bm25` for lightweight lexical boosts; it is fast and dependency-free.
+- Use `bm25` for lightweight lexical boosts; it is fast and lightweight.
+- BM25 uses a multilingual tokenizer (Bert pre-tokenizer), so it can handle CJK better.
 - Use `flashrank` for stronger reranking (requires `pip install "vexor[flashrank]"` and
   downloads a model to `~/.vexor/flashrank`).
 - For Chinese or multi-language content, set `--set-flashrank-model ms-marco-MultiBERT-L-12`.
 - If unset, FlashRank defaults to `ms-marco-TinyBERT-L-2-v2`.
-
-Thanks to the FlashRank project: https://github.com/PrithivirajDamodaran/FlashRank
 
 ### Providers: Remote vs Local
 

@@ -86,8 +86,28 @@ PYPI_URL = "https://pypi.org/project/vexor/"
 console = Console()
 
 
+def _normalize_flashrank_model_args(args: list[str]) -> list[str]:
+    normalized: list[str] = []
+    idx = 0
+    while idx < len(args):
+        arg = args[idx]
+        normalized.append(arg)
+        if arg == "--":
+            normalized.extend(args[idx + 1 :])
+            break
+        if arg == "--set-flashrank-model":
+            next_arg = args[idx + 1] if idx + 1 < len(args) else None
+            if next_arg is None or next_arg.startswith("-"):
+                normalized.append("")
+        idx += 1
+    return normalized
+
+
 class DefaultSearchGroup(TyperGroup):
     """Treat unknown subcommands as search queries."""
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        return super().parse_args(ctx, _normalize_flashrank_model_args(args))
 
     def resolve_command(
         self,
@@ -165,9 +185,12 @@ def _prepare_flashrank_model(model_name: str | None) -> None:
         raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
     cache_dir = flashrank_cache_dir()
     try:
-        kwargs = {"max_length": DEFAULT_FLASHRANK_MAX_LENGTH, "cache_dir": str(cache_dir)}
-        if model_name:
-            kwargs["model_name"] = model_name
+        effective_model = model_name or DEFAULT_FLASHRANK_MODEL
+        kwargs = {
+            "max_length": DEFAULT_FLASHRANK_MAX_LENGTH,
+            "cache_dir": str(cache_dir),
+            "model_name": effective_model,
+        }
         Ranker(**kwargs)
     except Exception as exc:
         raise RuntimeError(Messages.ERROR_FLASHRANK_SETUP.format(reason=str(exc))) from exc
@@ -731,8 +754,14 @@ def config(
         raise typer.BadParameter(Messages.ERROR_CONCURRENCY_INVALID)
     if set_base_url_option and clear_base_url:
         raise typer.BadParameter(Messages.ERROR_BASE_URL_CONFLICT)
-    if set_flashrank_model_option is not None and not set_flashrank_model_option.strip():
-        raise typer.BadParameter(Messages.ERROR_FLASHRANK_MODEL_EMPTY)
+    flashrank_model_reset = False
+    if set_flashrank_model_option is not None:
+        normalized_flashrank_model = set_flashrank_model_option.strip()
+        if not normalized_flashrank_model:
+            set_flashrank_model_option = ""
+            flashrank_model_reset = True
+        else:
+            set_flashrank_model_option = normalized_flashrank_model
     if clear_flashrank and any(
         (
             set_api_key_option is not None,
@@ -878,12 +907,20 @@ def config(
                 raise typer.Exit(code=1)
             console.print(_styled(Messages.INFO_FLASHRANK_SETUP_DONE, Styles.SUCCESS))
     if updates.flashrank_model_set and set_flashrank_model_option is not None:
-        console.print(
-            _styled(
-                Messages.INFO_FLASHRANK_MODEL_SET.format(value=set_flashrank_model_option),
-                Styles.SUCCESS,
+        if flashrank_model_reset:
+            console.print(
+                _styled(
+                    Messages.INFO_FLASHRANK_MODEL_RESET.format(value=DEFAULT_FLASHRANK_MODEL),
+                    Styles.SUCCESS,
+                )
             )
-        )
+        else:
+            console.print(
+                _styled(
+                    Messages.INFO_FLASHRANK_MODEL_SET.format(value=set_flashrank_model_option),
+                    Styles.SUCCESS,
+                )
+            )
 
     if clear_flashrank:
         cache_dir = flashrank_cache_dir(create=False)

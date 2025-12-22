@@ -113,8 +113,10 @@ else:
 hiddenimports = []
 hiddenimports += collect_submodules("google.genai")
 hiddenimports += collect_submodules("sklearn")
+hiddenimports += collect_submodules("tokenizers")
 hiddenimports += collect_submodules("tree_sitter")
 hiddenimports += ["tree_sitter_javascript", "tree_sitter_typescript"]
+hiddenimports += ["rank_bm25"]
 
 datas = []
 bundled_skills_source = ROOT_DIR / "plugins" / "vexor" / "skills"

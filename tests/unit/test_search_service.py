@@ -21,6 +21,13 @@ class DummySearcher:
         return np.array([[1.0, 0.0]], dtype=np.float32)
 
 
+def test_bm25_tokenizer_handles_cjk() -> None:
+    from vexor.services import search_service as search_service_module
+
+    tokens = search_service_module._bm25_tokenize("中文测试")
+    assert tokens
+
+
 def test_perform_search_auto_indexes_when_missing(monkeypatch, tmp_path: Path) -> None:
     calls: dict[str, object] = {"load": 0, "indexed": 0, "index_kwargs": None}
 

@@ -839,6 +839,31 @@ def test_config_set_and_show(tmp_path):
     assert "FlashRank model" not in strip_ansi(result_show.stdout)
 
 
+def test_config_set_flashrank_model_empty_resets_to_default(tmp_path):
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["config", "--set-flashrank-model", "ms-marco-MultiBERT-L-12"])
+    assert result.exit_code == 0
+    config_path = tmp_path / "config" / "config.json"
+    data = json.loads(config_path.read_text())
+    assert data["flashrank_model"] == "ms-marco-MultiBERT-L-12"
+
+    result_reset = runner.invoke(app, ["config", "--set-flashrank-model"])
+    assert result_reset.exit_code == 0
+    data = json.loads(config_path.read_text())
+    assert "flashrank_model" not in data
+
+    result = runner.invoke(app, ["config", "--set-flashrank-model", "ms-marco-MultiBERT-L-12"])
+    assert result.exit_code == 0
+    data = json.loads(config_path.read_text())
+    assert data["flashrank_model"] == "ms-marco-MultiBERT-L-12"
+
+    result_reset = runner.invoke(app, ["config", "--set-flashrank-model", ""])
+    assert result_reset.exit_code == 0
+    data = json.loads(config_path.read_text())
+    assert "flashrank_model" not in data
+
+
 def test_config_custom_requires_model_and_base_url(tmp_path):
     runner = CliRunner()
 

@@ -61,7 +61,9 @@ class Messages:
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
     HELP_SET_AUTO_INDEX = "Enable/disable automatic indexing before search (default: enabled)."
     HELP_SET_RERANK = "Set the rerank strategy (off, bm25, flashrank)."
-    HELP_SET_FLASHRANK_MODEL = "Set the FlashRank model name."
+    HELP_SET_FLASHRANK_MODEL = (
+        "Set the FlashRank model name (omit or empty resets to default)."
+    )
     HELP_CLEAR_FLASHRANK = "Delete cached FlashRank reranker models."
     HELP_SHOW_CONFIG = "Show current configuration."
     HELP_SHOW_INDEX_ALL = "Show metadata for every cached index regardless of path."
@@ -166,6 +168,7 @@ class Messages:
     INFO_AUTO_INDEX_SET = "Auto index {value}."
     INFO_RERANK_SET = "Rerank strategy set to {value}."
     INFO_FLASHRANK_MODEL_SET = "FlashRank model set to {value}."
+    INFO_FLASHRANK_MODEL_RESET = "FlashRank model reset to default ({value})."
     INFO_LOCAL_SETUP_START = "Preparing local model {model}..."
     INFO_LOCAL_SETUP_HINT = "Use `vexor local --help` to configure a local embedding model."
     INFO_LOCAL_CACHE_DIR = "Local model cache: {path}"

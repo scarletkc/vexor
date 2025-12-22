@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
-import math
 from pathlib import Path
 import re
 from typing import Sequence
@@ -13,6 +11,7 @@ from typing import Sequence
 from ..config import (
     DEFAULT_EMBED_CONCURRENCY,
     DEFAULT_FLASHRANK_MAX_LENGTH,
+    DEFAULT_FLASHRANK_MODEL,
     DEFAULT_RERANK,
 )
 from ..utils import build_exclude_spec, is_excluded_path, normalize_exclude_patterns
@@ -58,8 +57,28 @@ _BM25_B = 0.75
 _FUSION_SEMANTIC_WEIGHT = 0.7
 
 
-def _tokenize(text: str) -> list[str]:
-    return _TOKEN_RE.findall(text.lower())
+@lru_cache(maxsize=1)
+def _get_bm25_tokenizer():
+    try:
+        from tokenizers.pre_tokenizers import BertPreTokenizer
+    except Exception:
+        return None
+    return BertPreTokenizer()
+
+
+def _bm25_tokenize(text: str) -> list[str]:
+    tokenizer = _get_bm25_tokenizer()
+    if tokenizer is None:
+        return _TOKEN_RE.findall(text.lower())
+    tokens = [token for token, _ in tokenizer.pre_tokenize_str(text)]
+    normalized: list[str] = []
+    for token in tokens:
+        cleaned = token.strip()
+        if not cleaned:
+            continue
+        if any(ch.isalnum() for ch in cleaned):
+            normalized.append(cleaned.lower())
+    return normalized
 
 
 def _build_rerank_document(result: SearchResult) -> str:
@@ -82,41 +101,21 @@ def _bm25_scores(
 ) -> list[float]:
     if not documents:
         return []
-    doc_freqs: list[Counter[str]] = []
-    doc_lengths: list[int] = []
-    term_doc_counts: Counter[str] = Counter()
-    for tokens in documents:
-        freq = Counter(tokens)
-        doc_freqs.append(freq)
-        doc_len = len(tokens)
-        doc_lengths.append(doc_len)
-        for term in freq.keys():
-            term_doc_counts[term] += 1
-    avg_doc_len = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 0.0
-    scores = [0.0 for _ in documents]
-    for term in query_tokens:
-        doc_count = term_doc_counts.get(term, 0)
-        if doc_count == 0:
-            continue
-        idf = math.log(1.0 + (len(documents) - doc_count + 0.5) / (doc_count + 0.5))
-        for idx, freq in enumerate(doc_freqs):
-            term_freq = freq.get(term, 0)
-            if term_freq == 0:
-                continue
-            denom = term_freq + _BM25_K1 * (
-                1.0 - _BM25_B + _BM25_B * (doc_lengths[idx] / max(avg_doc_len, 1.0))
-            )
-            scores[idx] += idf * (term_freq * (_BM25_K1 + 1.0) / denom)
-    return scores
+    from rank_bm25 import BM25L
+
+    # BM25L avoids zero-idf scores on tiny candidate sets.
+    bm25 = BM25L(documents, k1=_BM25_K1, b=_BM25_B)
+    scores = bm25.get_scores(query_tokens)
+    return [float(score) for score in scores]
 
 
 def _apply_bm25_rerank(query: str, results: Sequence[SearchResult]) -> list[SearchResult]:
     if not results:
         return []
-    query_tokens = _tokenize(query)
+    query_tokens = _bm25_tokenize(query)
     if not query_tokens:
         return list(results)
-    documents = [_tokenize(_build_rerank_document(result)) for result in results]
+    documents = [_bm25_tokenize(_build_rerank_document(result)) for result in results]
     bm25_scores = _bm25_scores(query_tokens, documents)
     semantic_scores = [max(result.score, 0.0) for result in results]
     semantic_norm = _normalize_by_max(semantic_scores)
@@ -158,7 +157,8 @@ def _apply_flashrank_rerank(
 
         raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
     try:
-        ranker = _get_flashranker(model_name, DEFAULT_FLASHRANK_MAX_LENGTH)
+        effective_model = model_name or DEFAULT_FLASHRANK_MODEL
+        ranker = _get_flashranker(effective_model, DEFAULT_FLASHRANK_MAX_LENGTH)
     except ImportError as exc:
         from ..text import Messages
 
