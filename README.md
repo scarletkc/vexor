@@ -17,7 +17,7 @@
 **Vexor** is a vector-powered CLI for semantic file search. It uses configurable embedding models and ranks results by cosine similarity.
 
 <video controls width="600">
-  <source src="https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/assets/vexor.mp4" type="video/mp4">
+  <source src="https://github.com/scarletkc/vexor/blob/main/assets/vexor.mp4" type="video/mp4">
 </video>
 
 ## Why Vexor?
