@@ -35,6 +35,12 @@ pip install vexor  # also works with pipx, uv
 
 ## Quick Start
 
+### 0. Guided Setup (Recommended)
+```bash
+vexor init
+```
+The wizard also runs automatically on first use when no config exists.
+
 ### 1. Configure API Key
 ```bash
 vexor config --set-api-key "YOUR_KEY"
@@ -191,6 +197,7 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 
 | Command | Description |
 |---------|-------------|
+| `vexor init` | Run the interactive setup wizard |
 | `vexor QUERY` | Shortcut for `vexor search QUERY` |
 | `vexor search QUERY --path PATH` | Semantic search (auto-indexes if needed) |
 | `vexor index --path PATH` | Build/refresh index manually |

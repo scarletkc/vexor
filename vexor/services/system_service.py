@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import platform
@@ -17,6 +18,14 @@ from typing import Optional, Sequence
 from urllib.parse import urlparse
 from urllib import error, request
 
+from ..config import (
+    DEFAULT_FLASHRANK_MODEL,
+    DEFAULT_RERANK,
+    SUPPORTED_RERANKERS,
+    RemoteRerankConfig,
+    normalize_remote_rerank_url,
+    resolve_remote_rerank_api_key,
+)
 from ..text import Messages
 
 EDITOR_FALLBACKS = ("nano", "vi", "notepad", "notepad.exe")
@@ -219,6 +228,100 @@ def check_api_connectivity(
         )
 
 
+def check_rerank_configured(
+    rerank: str | None,
+    *,
+    flashrank_model: str | None,
+    remote_rerank: RemoteRerankConfig | None,
+    skip_api_test: bool,
+) -> DoctorCheckResult | None:
+    """Check whether the configured reranker is available and configured."""
+
+    normalized = (rerank or DEFAULT_RERANK).strip().lower()
+    if normalized in {"", "off", DEFAULT_RERANK}:
+        return None
+    if normalized not in SUPPORTED_RERANKERS:
+        return DoctorCheckResult(
+            name="Rerank",
+            passed=False,
+            message=Messages.ERROR_RERANK_INVALID.format(
+                value=rerank, allowed=", ".join(SUPPORTED_RERANKERS)
+            ),
+        )
+    if normalized == "bm25":
+        if importlib.util.find_spec("rank_bm25") is None:
+            return DoctorCheckResult(
+                name="Rerank",
+                passed=False,
+                message=Messages.DOCTOR_RERANK_BM25_MISSING,
+            )
+        return DoctorCheckResult(
+            name="Rerank",
+            passed=True,
+            message=Messages.DOCTOR_RERANK_BM25_READY,
+        )
+    if normalized == "flashrank":
+        if importlib.util.find_spec("flashrank") is None:
+            return DoctorCheckResult(
+                name="Rerank",
+                passed=False,
+                message=Messages.DOCTOR_RERANK_FLASHRANK_MISSING,
+            )
+        model_label = flashrank_model or DEFAULT_FLASHRANK_MODEL
+        return DoctorCheckResult(
+            name="Rerank",
+            passed=True,
+            message=Messages.DOCTOR_RERANK_FLASHRANK_READY.format(model=model_label),
+        )
+
+    # Remote rerank
+    if remote_rerank is None:
+        return DoctorCheckResult(
+            name="Rerank",
+            passed=False,
+            message=Messages.DOCTOR_RERANK_REMOTE_INCOMPLETE,
+        )
+    base_url = normalize_remote_rerank_url(remote_rerank.base_url)
+    api_key = resolve_remote_rerank_api_key(remote_rerank.api_key)
+    model = (remote_rerank.model or "").strip()
+    if not (base_url and api_key and model):
+        return DoctorCheckResult(
+            name="Rerank",
+            passed=False,
+            message=Messages.DOCTOR_RERANK_REMOTE_INCOMPLETE,
+        )
+    if skip_api_test:
+        return DoctorCheckResult(
+            name="Rerank",
+            passed=True,
+            message=Messages.DOCTOR_RERANK_REMOTE_SKIPPED.format(model=model),
+        )
+    try:
+        from .search_service import _remote_rerank_request
+
+        _remote_rerank_request(
+            config=RemoteRerankConfig(
+                base_url=base_url,
+                api_key=api_key,
+                model=model,
+            ),
+            query="test",
+            documents=["test"],
+        )
+    except RuntimeError as exc:
+        return DoctorCheckResult(
+            name="Rerank",
+            passed=False,
+            message=Messages.DOCTOR_RERANK_REMOTE_FAILED,
+            detail=str(exc),
+        )
+    return DoctorCheckResult(
+        name="Rerank",
+        passed=True,
+        message=Messages.DOCTOR_RERANK_REMOTE_READY.format(model=model),
+    )
+
+
 def check_cache_directory() -> DoctorCheckResult:
     """Check if cache directory exists and is writable."""
     from ..config import CONFIG_DIR
@@ -266,6 +369,9 @@ def run_all_doctor_checks(
     *,
     skip_api_test: bool = False,
     local_cuda: bool = False,
+    rerank: str | None = None,
+    flashrank_model: str | None = None,
+    remote_rerank: RemoteRerankConfig | None = None,
 ) -> list[DoctorCheckResult]:
     """Run all doctor checks and return results."""
     results = [
@@ -274,6 +380,14 @@ def run_all_doctor_checks(
         check_cache_directory(),
         check_api_key_configured(provider, api_key),
     ]
+    rerank_result = check_rerank_configured(
+        rerank,
+        flashrank_model=flashrank_model,
+        remote_rerank=remote_rerank,
+        skip_api_test=skip_api_test,
+    )
+    if rerank_result is not None:
+        results.append(rerank_result)
     if not skip_api_test:
         results.append(
             check_api_connectivity(

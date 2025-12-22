@@ -1,0 +1,710 @@
+"""Interactive first-run setup wizard for Vexor."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+from typing import Mapping, Sequence
+
+import typer
+from rich.console import Console
+
+from .. import __version__, config as config_module
+from ..config import (
+    DEFAULT_LOCAL_MODEL,
+    DEFAULT_PROVIDER,
+    load_config,
+    normalize_remote_rerank_url,
+    resolve_api_key,
+    resolve_default_model,
+    resolve_remote_rerank_api_key,
+)
+from ..providers.local import LocalEmbeddingBackend
+from ..services.config_service import apply_config_updates
+from ..services.skill_service import (
+    DEFAULT_SKILL_NAME,
+    SkillInstallStatus,
+    install_bundled_skill,
+    resolve_skill_roots,
+)
+from ..services.system_service import (
+    DoctorCheckResult,
+    InstallMethod,
+    detect_install_method,
+    run_all_doctor_checks,
+)
+from ..text import Messages, Styles
+
+console = Console()
+
+
+def should_auto_run_init(
+    args: Sequence[str] | None,
+    *,
+    config_path: Path = config_module.CONFIG_FILE,
+    is_tty: bool | None = None,
+) -> bool:
+    """Return True when the init wizard should auto-run on first invocation."""
+    if config_path.exists():
+        return False
+    if is_tty is None:
+        is_tty = sys.stdin.isatty() and sys.stdout.isatty()
+    if not is_tty:
+        return False
+    tokens = list(args or [])
+    if tokens and tokens[0] == "init":
+        return False
+    skip_flags = {
+        "-h",
+        "--help",
+        "-v",
+        "--version",
+        "--install-completion",
+        "--show-completion",
+    }
+    if any(token in skip_flags for token in tokens):
+        return False
+    return True
+
+
+def run_init_wizard() -> None:
+    """Run the interactive onboarding flow and persist configuration."""
+    console.print(_styled(Messages.INIT_TITLE, Styles.TITLE))
+    console.print(_styled(Messages.INIT_INTRO, Styles.INFO))
+    console.print()
+
+    provider_updates = _collect_provider_settings()
+    rerank_updates = _collect_rerank_settings()
+
+    apply_config_updates(**provider_updates, **rerank_updates)
+
+    _prompt_alias_setup()
+    _prompt_skill_install()
+    _prompt_doctor_check()
+    console.print(_styled(Messages.INIT_CONFIG_HINT, Styles.INFO))
+    _print_next_steps()
+
+
+def _collect_provider_settings() -> dict[str, object]:
+    console.print(Messages.INIT_STEP_RUN_MODE)
+    console.print(Messages.INIT_OPTION_LOCAL)
+    console.print(Messages.INIT_OPTION_REMOTE)
+    run_mode = _prompt_choice(
+        Messages.INIT_PROMPT_RUN_MODE,
+        {
+            "a": "local",
+            "local": "local",
+            "b": "remote",
+            "remote": "remote",
+        },
+        default="B",
+        allowed="A/B",
+    )
+    console.print()
+    if run_mode == "local":
+        local_updates = _collect_local_settings()
+        if local_updates is not None:
+            return local_updates
+        # Fall back to remote if requested.
+    return _collect_remote_settings()
+
+
+def _collect_local_settings() -> dict[str, object] | None:
+    console.print(Messages.INIT_STEP_LOCAL_HARDWARE)
+    console.print(Messages.INIT_OPTION_CPU)
+    console.print(Messages.INIT_OPTION_CUDA)
+    hardware = _prompt_choice(
+        Messages.INIT_PROMPT_LOCAL_HARDWARE,
+        {
+            "a": "cpu",
+            "cpu": "cpu",
+            "b": "cuda",
+            "gpu": "cuda",
+            "cuda": "cuda",
+        },
+        default="A",
+        allowed="A/B",
+    )
+    use_cuda = hardware == "cuda"
+    if use_cuda and not _ensure_cuda_available():
+        if typer.confirm(Messages.INIT_CONFIRM_FALLBACK_CPU, default=True):
+            use_cuda = False
+    console.print()
+
+    if not _is_fastembed_available():
+        if typer.confirm(
+            Messages.INIT_CONFIRM_INSTALL_LOCAL_CUDA
+            if use_cuda
+            else Messages.INIT_CONFIRM_INSTALL_LOCAL,
+            default=True,
+        ):
+            extras = "local-cuda" if use_cuda else "local"
+            if not _install_extras(extras):
+                if typer.confirm(Messages.INIT_CONFIRM_SWITCH_REMOTE, default=True):
+                    return None
+        else:
+            if not typer.confirm(
+                Messages.INIT_CONFIRM_CONTINUE_WITHOUT_LOCAL,
+                default=False,
+            ):
+                return None
+
+    if _is_fastembed_available() and typer.confirm(
+        Messages.INIT_CONFIRM_RUN_LOCAL_SETUP,
+        default=True,
+    ):
+        if not _prepare_local_model(DEFAULT_LOCAL_MODEL, use_cuda):
+            if typer.confirm(Messages.INIT_CONFIRM_SWITCH_REMOTE, default=True):
+                return None
+
+    return {
+        "provider": "local",
+        "model": DEFAULT_LOCAL_MODEL,
+        "local_cuda": use_cuda,
+    }
+
+
+def _collect_remote_settings() -> dict[str, object]:
+    console.print(Messages.INIT_STEP_PROVIDER)
+    console.print(Messages.INIT_OPTION_PROVIDER_OPENAI)
+    console.print(Messages.INIT_OPTION_PROVIDER_GEMINI)
+    console.print(Messages.INIT_OPTION_PROVIDER_CUSTOM)
+    provider = _prompt_choice(
+        Messages.INIT_PROMPT_PROVIDER,
+        {
+            "a": "openai",
+            "openai": "openai",
+            "b": "gemini",
+            "gemini": "gemini",
+            "c": "custom",
+            "custom": "custom",
+        },
+        default="A",
+        allowed="A/B/C",
+    )
+    console.print()
+
+    updates: dict[str, object] = {"provider": provider}
+    if provider == "custom":
+        base_url = _prompt_required(Messages.INIT_PROMPT_CUSTOM_BASE_URL)
+        model = _prompt_required(Messages.INIT_PROMPT_CUSTOM_MODEL)
+        api_key = _prompt_api_key(Messages.INIT_PROMPT_API_KEY_CUSTOM, provider)
+        updates.update(
+            {
+                "base_url": base_url,
+                "model": model,
+                "api_key": api_key,
+            }
+        )
+        return updates
+
+    if provider == "gemini":
+        api_key = _prompt_api_key(Messages.INIT_PROMPT_API_KEY_GEMINI, provider)
+    else:
+        api_key = _prompt_api_key(Messages.INIT_PROMPT_API_KEY_OPENAI, provider)
+    updates["api_key"] = api_key
+    return updates
+
+
+def _collect_rerank_settings() -> dict[str, object]:
+    console.print(Messages.INIT_STEP_RERANK)
+    console.print(Messages.INIT_OPTION_RERANK_OFF)
+    console.print(Messages.INIT_OPTION_RERANK_BM25)
+    console.print(Messages.INIT_OPTION_RERANK_FLASHRANK)
+    console.print(Messages.INIT_OPTION_RERANK_REMOTE)
+    rerank_choice = _prompt_choice(
+        Messages.INIT_PROMPT_RERANK,
+        {
+            "1": "off",
+            "off": "off",
+            "none": "off",
+            "2": "bm25",
+            "bm25": "bm25",
+            "3": "flashrank",
+            "flashrank": "flashrank",
+            "4": "remote",
+            "remote": "remote",
+        },
+        default="1",
+        allowed="1/2/3/4",
+    )
+    console.print()
+
+    if rerank_choice == "flashrank":
+        if not _ensure_flashrank_available():
+            fallback = _prompt_choice(
+                Messages.INIT_PROMPT_RERANK_FALLBACK,
+                {
+                    "b": "bm25",
+                    "bm25": "bm25",
+                    "o": "off",
+                    "off": "off",
+                },
+                default="O",
+                allowed="bm25/off",
+            )
+            return {"rerank": fallback}
+        return {"rerank": "flashrank"}
+
+    if rerank_choice == "remote":
+        normalized_url = None
+        while not normalized_url:
+            base_url = _prompt_required(Messages.INIT_PROMPT_REMOTE_RERANK_URL)
+            normalized_url = normalize_remote_rerank_url(base_url)
+            if not normalized_url:
+                console.print(
+                    _styled(Messages.ERROR_REMOTE_RERANK_URL_EMPTY, Styles.ERROR)
+                )
+        model = _prompt_required(Messages.INIT_PROMPT_REMOTE_RERANK_MODEL)
+        api_key = _prompt_required_secret(Messages.INIT_PROMPT_REMOTE_RERANK_API_KEY)
+        return {
+            "rerank": "remote",
+            "remote_rerank_url": normalized_url,
+            "remote_rerank_model": model,
+            "remote_rerank_api_key": api_key,
+        }
+
+    return {"rerank": rerank_choice}
+
+
+def _prompt_alias_setup() -> None:
+    console.print(Messages.INIT_STEP_ALIAS)
+    if not typer.confirm(Messages.INIT_CONFIRM_ALIAS, default=False):
+        console.print()
+        return
+    shell_name = _detect_shell_name()
+    alias_command = _resolve_alias_command(shell_name)
+    console.print(alias_command)
+    profile_path = _resolve_alias_profile(shell_name)
+    if profile_path is None:
+        console.print(_styled(Messages.WARNING_ALIAS_PROFILE_MISSING, Styles.WARNING))
+        console.print()
+        return
+    try:
+        profile_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = (
+            profile_path.read_text(encoding="utf-8") if profile_path.exists() else ""
+        )
+        if alias_command in existing:
+            console.print(
+                _styled(
+                    Messages.INFO_ALIAS_ALREADY_SET.format(path=profile_path),
+                    Styles.INFO,
+                )
+            )
+            console.print()
+            return
+        with profile_path.open("a", encoding="utf-8") as handle:
+            if existing and not existing.endswith("\n"):
+                handle.write("\n")
+            handle.write(alias_command + "\n")
+        console.print(
+            _styled(
+                Messages.INFO_ALIAS_APPLIED.format(path=profile_path),
+                Styles.SUCCESS,
+            )
+        )
+    except OSError as exc:
+        console.print(
+            _styled(
+                Messages.ERROR_ALIAS_WRITE.format(path=profile_path, reason=str(exc)),
+                Styles.ERROR,
+            )
+        )
+    console.print()
+
+
+def _prompt_skill_install() -> None:
+    console.print(Messages.INIT_STEP_SKILLS)
+    if not typer.confirm(Messages.INIT_CONFIRM_SKILLS_INSTALL, default=False):
+        console.print()
+        return
+    console.print(Messages.INIT_STEP_SKILLS_TARGET)
+    console.print(Messages.INIT_OPTION_SKILLS_AUTO)
+    console.print(Messages.INIT_OPTION_SKILLS_CLAUDE)
+    console.print(Messages.INIT_OPTION_SKILLS_CODEX)
+    console.print(Messages.INIT_OPTION_SKILLS_CUSTOM)
+    target = _prompt_choice(
+        Messages.INIT_PROMPT_SKILLS_TARGET,
+        {
+            "a": "auto",
+            "auto": "auto",
+            "b": "claude",
+            "claude": "claude",
+            "c": "codex",
+            "codex": "codex",
+            "d": "custom",
+        },
+        default="A",
+        allowed="A/B/C/D",
+    )
+    if target == "custom":
+        target = _prompt_required(Messages.INIT_PROMPT_SKILLS_PATH)
+    _install_skills(target)
+    console.print()
+
+
+def _prompt_doctor_check() -> None:
+    console.print(Messages.INIT_STEP_DOCTOR)
+    if not typer.confirm(Messages.INIT_CONFIRM_DOCTOR, default=True):
+        console.print()
+        return
+    _run_doctor_checks()
+    console.print()
+
+
+def _run_doctor_checks() -> None:
+    console.print(_styled(Messages.DOCTOR_TITLE.format(version=__version__), Styles.TITLE))
+    console.print()
+
+    config_load_error: DoctorCheckResult | None = None
+    try:
+        config = load_config()
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        config = config_module.Config()
+        config_load_error = DoctorCheckResult(
+            name="Config JSON",
+            passed=False,
+            message=Messages.DOCTOR_CONFIG_INVALID.format(path=config_module.CONFIG_FILE),
+            detail=str(exc),
+        )
+
+    provider = (config.provider or DEFAULT_PROVIDER).lower()
+    model = resolve_default_model(provider, config.model)
+
+    results: list[DoctorCheckResult] = []
+    if config_load_error is not None:
+        results.append(config_load_error)
+
+    results.extend(
+        run_all_doctor_checks(
+            provider=provider,
+            model=model,
+            api_key=config.api_key,
+            base_url=config.base_url,
+            skip_api_test=False,
+            local_cuda=bool(config.local_cuda),
+            rerank=config.rerank,
+            flashrank_model=config.flashrank_model,
+            remote_rerank=config.remote_rerank,
+        )
+    )
+
+    has_failure = False
+    for result in results:
+        if result.passed:
+            icon = "[green]✓[/green]"
+        else:
+            icon = "[red]✗[/red]"
+            has_failure = True
+
+        console.print(f"  {icon} [bold]{result.name}:[/bold] {result.message}")
+        if result.detail:
+            console.print(f"      [dim]{result.detail}[/dim]")
+
+    console.print()
+    if has_failure:
+        console.print(_styled(Messages.DOCTOR_SOME_FAILED, Styles.WARNING))
+        return
+    console.print(_styled(Messages.DOCTOR_ALL_PASSED, Styles.SUCCESS))
+
+
+def _install_skills(target: str) -> None:
+    try:
+        roots = resolve_skill_roots(target)
+    except ValueError as exc:
+        console.print(_styled(str(exc), Styles.ERROR))
+        return
+
+    for root in roots:
+        destination_root = root.expanduser()
+        try:
+            result = install_bundled_skill(
+                skill_name=DEFAULT_SKILL_NAME,
+                skills_dir=destination_root,
+                force=False,
+            )
+        except FileExistsError as exc:
+            console.print(
+                _styled(
+                    Messages.ERROR_INSTALL_SKILL_EXISTS.format(path=str(exc.args[0])),
+                    Styles.ERROR,
+                )
+            )
+            continue
+        except FileNotFoundError as exc:
+            console.print(
+                _styled(
+                    Messages.ERROR_INSTALL_SKILL_SOURCE.format(reason=str(exc)), Styles.ERROR
+                )
+            )
+            return
+
+        if result.status == SkillInstallStatus.up_to_date:
+            console.print(
+                _styled(
+                    Messages.INFO_INSTALL_SKILL_UP_TO_DATE.format(path=result.destination),
+                    Styles.INFO,
+                )
+            )
+        else:
+            console.print(
+                _styled(
+                    Messages.INFO_INSTALL_SKILL_DONE.format(path=result.destination),
+                    Styles.SUCCESS,
+                )
+            )
+
+
+def _prompt_choice(
+    prompt: str,
+    options: Mapping[str, str],
+    *,
+    default: str,
+    allowed: str,
+) -> str:
+    while True:
+        value = typer.prompt(prompt, default=default)
+        cleaned = (value or "").strip().lower()
+        if not cleaned:
+            cleaned = default.lower()
+        selection = options.get(cleaned)
+        if selection:
+            return selection
+        console.print(
+            _styled(
+                Messages.INIT_ERROR_INVALID_CHOICE.format(value=value, allowed=allowed),
+                Styles.WARNING,
+            )
+        )
+
+
+def _prompt_required(prompt: str) -> str:
+    while True:
+        value = typer.prompt(prompt)
+        cleaned = value.strip()
+        if cleaned:
+            return cleaned
+        console.print(_styled(Messages.INIT_ERROR_REQUIRED, Styles.WARNING))
+
+
+def _prompt_api_key(prompt: str, provider: str) -> str | None:
+    while True:
+        value = typer.prompt(
+            prompt,
+            default="",
+            show_default=False,
+            hide_input=True,
+        )
+        cleaned = value.strip()
+        if cleaned:
+            return cleaned
+        if resolve_api_key(None, provider):
+            console.print(_styled(Messages.INIT_USING_ENV_API_KEY, Styles.INFO))
+            return None
+        if typer.confirm(Messages.INIT_CONFIRM_SKIP_API_KEY, default=False):
+            return None
+
+
+def _prompt_required_secret(prompt: str) -> str | None:
+    while True:
+        value = typer.prompt(
+            prompt,
+            default="",
+            show_default=False,
+            hide_input=True,
+        )
+        cleaned = value.strip()
+        if cleaned:
+            return cleaned
+        if resolve_remote_rerank_api_key(None):
+            console.print(_styled(Messages.INIT_USING_ENV_API_KEY, Styles.INFO))
+            return None
+        console.print(_styled(Messages.INIT_ERROR_REMOTE_RERANK_KEY, Styles.WARNING))
+
+
+def _ensure_cuda_available() -> bool:
+    try:
+        import onnxruntime as ort
+    except Exception as exc:
+        console.print(_styled(Messages.DOCTOR_LOCAL_CUDA_IMPORT_FAILED, Styles.ERROR))
+        console.print(
+            _styled(
+                Messages.DOCTOR_LOCAL_CUDA_IMPORT_DETAIL.format(reason=str(exc)),
+                Styles.ERROR,
+            )
+        )
+        return False
+    try:
+        providers = ort.get_available_providers()
+    except Exception as exc:
+        console.print(_styled(Messages.DOCTOR_LOCAL_CUDA_MISSING, Styles.ERROR))
+        console.print(
+            _styled(
+                Messages.DOCTOR_LOCAL_CUDA_IMPORT_DETAIL.format(reason=str(exc)),
+                Styles.ERROR,
+            )
+        )
+        return False
+    if "CUDAExecutionProvider" not in providers:
+        console.print(_styled(Messages.DOCTOR_LOCAL_CUDA_MISSING, Styles.ERROR))
+        console.print(
+            _styled(
+                Messages.DOCTOR_LOCAL_CUDA_MISSING_DETAIL.format(
+                    providers=", ".join(providers) if providers else "none"
+                ),
+                Styles.ERROR,
+            )
+        )
+        return False
+    return True
+
+
+def _is_fastembed_available() -> bool:
+    return importlib.util.find_spec("fastembed") is not None
+
+
+def _is_flashrank_available() -> bool:
+    return importlib.util.find_spec("flashrank") is not None
+
+
+def _prepare_local_model(model: str, use_cuda: bool) -> bool:
+    console.print(
+        _styled(Messages.INFO_LOCAL_SETUP_START.format(model=model), Styles.INFO)
+    )
+    try:
+        backend = LocalEmbeddingBackend(model_name=model, cuda=use_cuda)
+        vectors = backend.embed(["test"])
+    except RuntimeError as exc:
+        console.print(_styled(str(exc), Styles.ERROR))
+        return False
+    if vectors.size == 0:
+        console.print(_styled(Messages.ERROR_NO_EMBEDDINGS, Styles.ERROR))
+        return False
+    console.print(
+        _styled(Messages.INFO_LOCAL_SETUP_DONE.format(model=model), Styles.SUCCESS)
+    )
+    return True
+
+
+def _ensure_flashrank_available() -> bool:
+    if _is_flashrank_available():
+        return True
+    console.print(_styled(Messages.INIT_FLASHRANK_MISSING, Styles.WARNING))
+    if not typer.confirm(Messages.INIT_CONFIRM_INSTALL_FLASHRANK, default=True):
+        return False
+    if not _install_extras("flashrank"):
+        return False
+    return _is_flashrank_available()
+
+
+def _install_extras(extras: str) -> bool:
+    install_info = detect_install_method()
+    if install_info.method == InstallMethod.STANDALONE:
+        console.print(_styled(Messages.INIT_INSTALL_STANDALONE, Styles.WARNING))
+        return False
+
+    cmd = _build_extras_install_command(install_info, extras)
+    if not cmd:
+        console.print(_styled(Messages.INIT_INSTALL_UNSUPPORTED, Styles.WARNING))
+        return False
+
+    if install_info.requires_admin:
+        console.print(_styled(Messages.INIT_INSTALL_REQUIRES_ADMIN, Styles.WARNING))
+
+    console.print(_styled(Messages.INIT_INSTALL_START.format(extra=extras), Styles.INFO))
+    console.print(
+        _styled(
+            Messages.INIT_INSTALL_COMMAND.format(cmd=_format_command(cmd)),
+            Styles.INFO,
+        )
+    )
+    completed = subprocess.run(cmd, check=False)
+    if completed.returncode != 0:
+        console.print(
+            _styled(
+                Messages.INIT_INSTALL_FAILED.format(code=completed.returncode),
+                Styles.ERROR,
+            )
+        )
+        return False
+    console.print(_styled(Messages.INIT_INSTALL_DONE.format(extra=extras), Styles.SUCCESS))
+    return True
+
+
+def _build_extras_install_command(
+    install_info,
+    extras: str,
+) -> list[str] | None:
+    if install_info.method == InstallMethod.GIT_EDITABLE and install_info.editable_root:
+        target = f"{install_info.editable_root}[{extras}]"
+        return [sys.executable, "-m", "pip", "install", "-e", target]
+
+    if install_info.method == InstallMethod.STANDALONE:
+        return None
+
+    cmd = [sys.executable, "-m", "pip", "install", "--upgrade"]
+    if install_info.method == InstallMethod.PIP_USER:
+        cmd.append("--user")
+    cmd.append(f"vexor[{extras}]")
+    return cmd
+
+
+def _format_command(parts: Sequence[str]) -> str:
+    return " ".join(shlex.quote(part) for part in parts)
+
+
+def _print_next_steps() -> None:
+    console.print(_styled(Messages.INIT_NEXT_STEPS_TITLE, Styles.TITLE))
+    console.print(Messages.INIT_NEXT_STEP_SEARCH)
+
+
+def _detect_shell_name() -> str | None:
+    shell_env = os.environ.get("SHELL", "")
+    if shell_env:
+        name = Path(shell_env).name.lower()
+        if name in {"bash", "zsh", "fish"}:
+            return name
+    if os.name == "nt":
+        return "powershell"
+    return None
+
+
+def _resolve_powershell_profile() -> Path:
+    home = Path.home()
+    ps7_dir = home / "Documents" / "PowerShell"
+    ps5_dir = home / "Documents" / "WindowsPowerShell"
+    if ps7_dir.exists():
+        return ps7_dir / "Microsoft.PowerShell_profile.ps1"
+    if ps5_dir.exists():
+        return ps5_dir / "Microsoft.PowerShell_profile.ps1"
+    return ps7_dir / "Microsoft.PowerShell_profile.ps1"
+
+
+def _resolve_alias_profile(shell_name: str | None) -> Path | None:
+    if shell_name == "bash":
+        return Path("~/.bashrc").expanduser()
+    if shell_name == "zsh":
+        return Path("~/.zshrc").expanduser()
+    if shell_name == "fish":
+        return Path("~/.config/fish/config.fish").expanduser()
+    if shell_name == "powershell":
+        return _resolve_powershell_profile()
+    return None
+
+
+def _resolve_alias_command(shell_name: str | None) -> str:
+    if shell_name == "fish":
+        return Messages.INFO_ALIAS_FISH
+    if shell_name == "powershell":
+        return Messages.INFO_ALIAS_POWERSHELL
+    return Messages.INFO_ALIAS_VX
+
+
+def _styled(text: str, style: str) -> str:
+    return f"[{style}]{text}[/{style}]"

@@ -42,6 +42,7 @@ from .config import (
 from .modes import available_modes, get_strategy
 from .services.cache_service import is_cache_current, load_index_metadata_safe
 from .services.config_service import apply_config_updates, get_config_snapshot
+from .services.init_service import run_init_wizard, should_auto_run_init
 from .services.index_service import IndexStatus, build_index, clear_index_entries
 from .services.search_service import SearchRequest, perform_search, _select_cache_superset
 from .services.system_service import (
@@ -671,6 +672,12 @@ def index(
         return
     if result.cache_path is not None:
         console.print(_styled(Messages.INFO_INDEX_SAVED.format(path=result.cache_path), Styles.SUCCESS))
+
+
+@app.command(help=Messages.HELP_INIT)
+def init() -> None:
+    """Run the interactive setup wizard."""
+    run_init_wizard()
 
 
 @app.command()
@@ -1406,6 +1413,9 @@ def doctor(
             base_url=config.base_url,
             skip_api_test=skip_api_test,
             local_cuda=bool(config.local_cuda),
+            rerank=config.rerank,
+            flashrank_model=config.flashrank_model,
+            remote_rerank=config.remote_rerank,
         )
     )
 
@@ -1793,10 +1803,19 @@ def _resolve_alias_command(shell_name: str | None) -> str:
 
 def run(argv: list[str] | None = None) -> None:
     """Entry point wrapper allowing optional argument override."""
+    args = list(argv) if argv is not None else sys.argv[1:]
+    if should_auto_run_init(args, config_path=config_module.CONFIG_FILE):
+        run_init_wizard()
+        resume_cmd = "vexor"
+        if args:
+            resume_cmd = f"vexor {_format_command(args)}"
+        console.print(_styled(Messages.INIT_RESUME_TITLE, Styles.INFO))
+        console.print(resume_cmd)
+        return
     if argv is None:
         app()
     else:
-        app(args=list(argv))
+        app(args=args)
 
 
 def _format_command(parts: Sequence[str]) -> str:

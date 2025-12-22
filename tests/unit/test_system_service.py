@@ -5,6 +5,7 @@ import os
 import pytest
 
 from vexor.services import system_service
+from vexor.config import RemoteRerankConfig
 
 
 class DummyResponse:
@@ -103,3 +104,65 @@ def test_resolve_editor_command_none_when_missing(monkeypatch):
 def test_find_command_on_path(monkeypatch):
     monkeypatch.setattr(system_service.shutil, "which", lambda cmd: f"/bin/{cmd}")
     assert system_service.find_command_on_path("vexor") == "/bin/vexor"
+
+
+def test_check_rerank_bm25_missing(monkeypatch):
+    def fake_find_spec(name):
+        if name == "rank_bm25":
+            return None
+        return object()
+
+    monkeypatch.setattr(system_service.importlib.util, "find_spec", fake_find_spec)
+
+    result = system_service.check_rerank_configured(
+        "bm25",
+        flashrank_model=None,
+        remote_rerank=None,
+        skip_api_test=False,
+    )
+
+    assert result is not None
+    assert result.passed is False
+
+
+def test_check_rerank_flashrank_ready(monkeypatch):
+    monkeypatch.setattr(system_service.importlib.util, "find_spec", lambda _name: object())
+
+    result = system_service.check_rerank_configured(
+        "flashrank",
+        flashrank_model=None,
+        remote_rerank=None,
+        skip_api_test=False,
+    )
+
+    assert result is not None
+    assert result.passed is True
+
+
+def test_check_rerank_remote_incomplete():
+    result = system_service.check_rerank_configured(
+        "remote",
+        flashrank_model=None,
+        remote_rerank=None,
+        skip_api_test=False,
+    )
+
+    assert result is not None
+    assert result.passed is False
+
+
+def test_check_rerank_remote_skipped():
+    remote = RemoteRerankConfig(
+        base_url="https://example.com/rerank",
+        api_key="secret",
+        model="model-x",
+    )
+    result = system_service.check_rerank_configured(
+        "remote",
+        flashrank_model=None,
+        remote_rerank=remote,
+        skip_api_test=True,
+    )
+
+    assert result is not None
+    assert result.passed is True

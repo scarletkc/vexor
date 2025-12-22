@@ -1026,6 +1026,33 @@ def test_local_cuda_toggle_updates_config(tmp_path):
     assert data["local_cuda"] is False
 
 
+def test_init_wizard_configures_remote(tmp_path):
+    runner = CliRunner()
+    user_input = "\n".join(
+        [
+            "B",  # remote
+            "A",  # openai
+            "sk-test",  # api key
+            "1",  # rerank off
+            "n",  # alias
+            "n",  # skills
+            "n",  # doctor
+            "",
+        ]
+    )
+
+    result = runner.invoke(app, ["init"], input=user_input)
+
+    assert result.exit_code == 0
+    config_path = tmp_path / "config" / "config.json"
+    data = json.loads(config_path.read_text())
+    assert data["provider"] == "openai"
+    assert data["api_key"] == "sk-test"
+    assert data["rerank"] == "off"
+    output = strip_ansi(result.stdout)
+    assert "vexor \"retry logic handled\"" in output
+
+
 def test_config_set_auto_index(tmp_path):
     runner = CliRunner()
 
