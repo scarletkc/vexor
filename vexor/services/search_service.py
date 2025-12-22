@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
+import math
 from pathlib import Path
+import re
 from typing import Sequence
 
-from ..config import DEFAULT_EMBED_CONCURRENCY
+from ..config import DEFAULT_EMBED_CONCURRENCY, DEFAULT_RERANK
 from ..utils import build_exclude_spec, is_excluded_path, normalize_exclude_patterns
 from .cache_service import is_cache_current
 
@@ -30,6 +33,7 @@ class SearchRequest:
     extensions: tuple[str, ...]
     auto_index: bool = True
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY
+    rerank: str = DEFAULT_RERANK
 
 
 @dataclass(slots=True)
@@ -39,6 +43,87 @@ class SearchResponse:
     results: Sequence[SearchResult]
     is_stale: bool
     index_empty: bool
+    reranker: str | None = None
+
+
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
+_BM25_K1 = 1.5
+_BM25_B = 0.75
+_FUSION_SEMANTIC_WEIGHT = 0.7
+
+
+def _tokenize(text: str) -> list[str]:
+    return _TOKEN_RE.findall(text.lower())
+
+
+def _build_rerank_document(result: SearchResult) -> str:
+    preview = result.preview or ""
+    return f"{result.path.name} {result.path.as_posix()} {preview}".strip()
+
+
+def _normalize_by_max(scores: Sequence[float]) -> list[float]:
+    if not scores:
+        return []
+    max_score = max(scores)
+    if max_score <= 0:
+        return [0.0 for _ in scores]
+    return [score / max_score for score in scores]
+
+
+def _bm25_scores(
+    query_tokens: Sequence[str],
+    documents: Sequence[Sequence[str]],
+) -> list[float]:
+    if not documents:
+        return []
+    doc_freqs: list[Counter[str]] = []
+    doc_lengths: list[int] = []
+    term_doc_counts: Counter[str] = Counter()
+    for tokens in documents:
+        freq = Counter(tokens)
+        doc_freqs.append(freq)
+        doc_len = len(tokens)
+        doc_lengths.append(doc_len)
+        for term in freq.keys():
+            term_doc_counts[term] += 1
+    avg_doc_len = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 0.0
+    scores = [0.0 for _ in documents]
+    for term in query_tokens:
+        doc_count = term_doc_counts.get(term, 0)
+        if doc_count == 0:
+            continue
+        idf = math.log(1.0 + (len(documents) - doc_count + 0.5) / (doc_count + 0.5))
+        for idx, freq in enumerate(doc_freqs):
+            term_freq = freq.get(term, 0)
+            if term_freq == 0:
+                continue
+            denom = term_freq + _BM25_K1 * (
+                1.0 - _BM25_B + _BM25_B * (doc_lengths[idx] / max(avg_doc_len, 1.0))
+            )
+            scores[idx] += idf * (term_freq * (_BM25_K1 + 1.0) / denom)
+    return scores
+
+
+def _apply_bm25_rerank(query: str, results: Sequence[SearchResult]) -> list[SearchResult]:
+    if not results:
+        return []
+    query_tokens = _tokenize(query)
+    if not query_tokens:
+        return list(results)
+    documents = [_tokenize(_build_rerank_document(result)) for result in results]
+    bm25_scores = _bm25_scores(query_tokens, documents)
+    semantic_scores = [max(result.score, 0.0) for result in results]
+    semantic_norm = _normalize_by_max(semantic_scores)
+    bm25_norm = _normalize_by_max(bm25_scores)
+    fused: list[SearchResult] = []
+    for result, sem_score, bm25_score in zip(results, semantic_norm, bm25_norm):
+        fused_score = _FUSION_SEMANTIC_WEIGHT * sem_score + (
+            (1.0 - _FUSION_SEMANTIC_WEIGHT) * bm25_score
+        )
+        result.score = float(fused_score)
+        fused.append(result)
+    fused.sort(key=lambda item: item.score, reverse=True)
+    return fused
 
 
 def perform_search(request: SearchRequest) -> SearchResponse:
@@ -303,12 +388,18 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         )
     scored.sort(key=lambda item: item.score, reverse=True)
     results = scored[: request.top_k]
+    reranker = None
+    rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
+    if rerank == "bm25":
+        results = _apply_bm25_rerank(request.query, results)
+        reranker = "bm25"
     return SearchResponse(
         base_path=request.directory,
         backend=searcher.device,
         results=results,
         is_stale=stale,
         index_empty=False,
+        reranker=reranker,
     )
 
 

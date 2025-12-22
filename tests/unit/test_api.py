@@ -17,6 +17,7 @@ def test_search_uses_config_defaults(tmp_path, monkeypatch) -> None:
         base_url="https://example.test",
         auto_index=False,
         local_cuda=True,
+        rerank="bm25",
     )
     monkeypatch.setattr(api_module, "load_config", lambda: cfg)
     captured: dict[str, object] = {}
@@ -46,6 +47,7 @@ def test_search_uses_config_defaults(tmp_path, monkeypatch) -> None:
     assert req.api_key == "key"
     assert req.auto_index is False
     assert req.local_cuda is True
+    assert req.rerank == "bm25"
 
 
 def test_search_overrides_config(tmp_path, monkeypatch) -> None:

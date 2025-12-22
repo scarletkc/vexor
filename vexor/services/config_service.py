@@ -15,6 +15,7 @@ from ..config import (
     set_local_cuda,
     set_model,
     set_provider,
+    set_rerank,
 )
 
 
@@ -30,6 +31,7 @@ class ConfigUpdateResult:
     base_url_cleared: bool = False
     auto_index_set: bool = False
     local_cuda_set: bool = False
+    rerank_set: bool = False
 
     @property
     def changed(self) -> bool:
@@ -45,6 +47,7 @@ class ConfigUpdateResult:
                 self.base_url_cleared,
                 self.auto_index_set,
                 self.local_cuda_set,
+                self.rerank_set,
             )
         )
 
@@ -61,6 +64,7 @@ def apply_config_updates(
     clear_base_url: bool = False,
     auto_index: bool | None = None,
     local_cuda: bool | None = None,
+    rerank: str | None = None,
 ) -> ConfigUpdateResult:
     """Apply config mutations and report which fields were updated."""
 
@@ -95,6 +99,9 @@ def apply_config_updates(
     if local_cuda is not None:
         set_local_cuda(local_cuda)
         result.local_cuda_set = True
+    if rerank is not None:
+        set_rerank(rerank)
+        result.rerank_set = True
     return result
 
 

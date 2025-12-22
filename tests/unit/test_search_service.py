@@ -686,3 +686,48 @@ def test_perform_search_reindexes_parent_for_subdir_stale(
     assert calls["directory"] == root
     assert calls["recursive"] is True
     assert [result.path.name for result in response.results] == ["a.py"]
+
+
+def test_perform_search_reranks_with_bm25(monkeypatch, tmp_path: Path) -> None:
+    def fake_load_index_vectors(*_args, **_kwargs):
+        paths = [tmp_path / "a.txt", tmp_path / "b.txt"]
+        vectors = np.array([[0.8, 0.6], [0.6, 0.8]], dtype=np.float32)
+        metadata = {
+            "files": [
+                {"path": "a.txt", "absolute": str(paths[0]), "mtime": 0.0, "size": 1},
+                {"path": "b.txt", "absolute": str(paths[1]), "mtime": 0.0, "size": 1},
+            ],
+            "chunks": [
+                {"path": "a.txt", "chunk_index": 0, "preview": "beta"},
+                {"path": "b.txt", "chunk_index": 0, "preview": "alpha match"},
+            ],
+        }
+        return paths, vectors, metadata
+
+    monkeypatch.setattr("vexor.cache.load_index_vectors", fake_load_index_vectors)
+    monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+
+    request = SearchRequest(
+        query="alpha",
+        directory=tmp_path,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=True,
+        top_k=2,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key="k",
+        local_cuda=False,
+        exclude_patterns=(),
+        extensions=(),
+        auto_index=True,
+        rerank="bm25",
+    )
+    response = perform_search(request)
+
+    assert response.reranker == "bm25"
+    assert response.results[0].path.name == "b.txt"

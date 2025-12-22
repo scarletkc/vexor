@@ -54,6 +54,7 @@ def test_search_outputs_table(tmp_path, monkeypatch):
             ],
             is_stale=False,
             index_empty=False,
+            reranker="bm25",
         )
 
     monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
@@ -76,6 +77,7 @@ def test_search_outputs_table(tmp_path, monkeypatch):
     assert "Lines" in result.stdout
     assert "Preview" in result.stdout
     assert "L12-34" in result.stdout
+    assert "Reranker: bm25" in result.stdout
     assert captured["recursive"] is True
     assert captured["mode"] == "auto"
 
@@ -809,6 +811,8 @@ def test_config_set_and_show(tmp_path):
             "gemini",
             "--set-base-url",
             "https://proxy.example.com",
+            "--rerank",
+            "bm25",
         ],
     )
 
@@ -823,10 +827,12 @@ def test_config_set_and_show(tmp_path):
     assert data["base_url"] == "https://proxy.example.com"
     assert data["auto_index"] is True
     assert data["local_cuda"] is False
+    assert data["rerank"] == "bm25"
 
     result_show = runner.invoke(app, ["config", "--show"])
     assert "custom-model" in result_show.stdout
     assert "Embedding concurrency: 3" in strip_ansi(result_show.stdout)
+    assert "Rerank: bm25" in strip_ansi(result_show.stdout)
 
 
 def test_config_custom_requires_model_and_base_url(tmp_path):

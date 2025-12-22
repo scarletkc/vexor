@@ -21,6 +21,7 @@ def test_load_config_defaults(tmp_path, monkeypatch):
     assert cfg.auto_index is True
     assert cfg.local_cuda is False
     assert cfg.embed_concurrency == config_module.DEFAULT_EMBED_CONCURRENCY
+    assert cfg.rerank == config_module.DEFAULT_RERANK
 
 
 def test_resolve_default_model_gemini_defaults() -> None:
@@ -72,6 +73,14 @@ def test_save_and_load_embed_concurrency(tmp_path, monkeypatch):
     config_module.save_config(config_module.Config(embed_concurrency=4))
     cfg = config_module.load_config()
     assert cfg.embed_concurrency == 4
+
+
+def test_save_and_load_rerank(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+
+    config_module.save_config(config_module.Config(rerank="bm25"))
+    cfg = config_module.load_config()
+    assert cfg.rerank == "bm25"
 
 
 def test_resolve_api_key_prefers_config(monkeypatch):

@@ -9,7 +9,9 @@ from typing import Sequence
 from .config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_PROVIDER,
+    DEFAULT_RERANK,
     Config,
+    SUPPORTED_RERANKERS,
     load_config,
     resolve_default_model,
 )
@@ -39,6 +41,7 @@ class RuntimeSettings:
     api_key: str | None
     local_cuda: bool
     auto_index: bool
+    rerank: str
 
 
 def search(
@@ -109,6 +112,7 @@ def search(
         exclude_patterns=normalized_excludes,
         extensions=normalized_exts,
         auto_index=settings.auto_index,
+        rerank=settings.rerank,
     )
     return perform_search(request)
 
@@ -241,6 +245,9 @@ def _resolve_settings(
 ) -> RuntimeSettings:
     config = load_config() if use_config else Config()
     provider_value = (provider or config.provider or DEFAULT_PROVIDER).lower()
+    rerank_value = (config.rerank or DEFAULT_RERANK).strip().lower()
+    if rerank_value not in SUPPORTED_RERANKERS:
+        rerank_value = DEFAULT_RERANK
     model_name = resolve_default_model(
         provider_value,
         model if model is not None else config.model,
@@ -262,4 +269,5 @@ def _resolve_settings(
         api_key=api_key if api_key is not None else config.api_key,
         local_cuda=bool(local_cuda if local_cuda is not None else config.local_cuda),
         auto_index=bool(auto_index if auto_index is not None else config.auto_index),
+        rerank=rerank_value,
     )

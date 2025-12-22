@@ -16,7 +16,9 @@ DEFAULT_LOCAL_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_BATCH_SIZE = 0
 DEFAULT_EMBED_CONCURRENCY = 2
 DEFAULT_PROVIDER = "openai"
+DEFAULT_RERANK = "off"
 SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER, "gemini", "custom", "local")
+SUPPORTED_RERANKERS: tuple[str, ...] = ("off", "bm25")
 ENV_API_KEY = "VEXOR_API_KEY"
 LEGACY_GEMINI_ENV = "GOOGLE_GENAI_API_KEY"
 OPENAI_ENV = "OPENAI_API_KEY"
@@ -32,12 +34,16 @@ class Config:
     base_url: str | None = None
     auto_index: bool = True
     local_cuda: bool = False
+    rerank: str = DEFAULT_RERANK
 
 
 def load_config() -> Config:
     if not CONFIG_FILE.exists():
         return Config()
     raw = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    rerank = (raw.get("rerank") or DEFAULT_RERANK).strip().lower()
+    if rerank not in SUPPORTED_RERANKERS:
+        rerank = DEFAULT_RERANK
     return Config(
         api_key=raw.get("api_key") or None,
         model=raw.get("model") or DEFAULT_MODEL,
@@ -47,6 +53,7 @@ def load_config() -> Config:
         base_url=raw.get("base_url") or None,
         auto_index=bool(raw.get("auto_index", True)),
         local_cuda=bool(raw.get("local_cuda", False)),
+        rerank=rerank,
     )
 
 
@@ -65,6 +72,7 @@ def save_config(config: Config) -> None:
         data["base_url"] = config.base_url
     data["auto_index"] = bool(config.auto_index)
     data["local_cuda"] = bool(config.local_cuda)
+    data["rerank"] = config.rerank
     CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -117,6 +125,15 @@ def set_auto_index(value: bool) -> None:
 def set_local_cuda(value: bool) -> None:
     config = load_config()
     config.local_cuda = bool(value)
+    save_config(config)
+
+
+def set_rerank(value: str) -> None:
+    config = load_config()
+    normalized = (value or DEFAULT_RERANK).strip().lower()
+    if normalized not in SUPPORTED_RERANKERS:
+        normalized = DEFAULT_RERANK
+    config.rerank = normalized
     save_config(config)
 
 

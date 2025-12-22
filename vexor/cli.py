@@ -27,7 +27,9 @@ from .config import (
     DEFAULT_LOCAL_MODEL,
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
+    DEFAULT_RERANK,
     SUPPORTED_PROVIDERS,
+    SUPPORTED_RERANKERS,
     load_config,
     resolve_default_model,
 )
@@ -351,6 +353,9 @@ def search(
     base_url = config.base_url
     api_key = config.api_key
     auto_index = bool(config.auto_index)
+    rerank = (config.rerank or DEFAULT_RERANK).strip().lower()
+    if rerank not in SUPPORTED_RERANKERS:
+        rerank = DEFAULT_RERANK
     respect_gitignore = not no_respect_gitignore
 
     clean_query = query.strip()
@@ -387,6 +392,7 @@ def search(
         exclude_patterns=normalized_excludes,
         extensions=normalized_exts,
         auto_index=auto_index,
+        rerank=rerank,
     )
     if output_format == SearchOutputFormat.rich:
         should_index_first = _should_index_before_search(request) if auto_index else False
@@ -439,7 +445,7 @@ def search(
     if output_format == SearchOutputFormat.porcelain_z:
         _render_results_porcelain_z(response.results, response.base_path)
         return
-    _render_results(response.results, response.base_path, response.backend)
+    _render_results(response.results, response.base_path, response.backend, response.reranker)
 
 
 @app.command()
@@ -666,6 +672,11 @@ def config(
         "--set-auto-index",
         help=Messages.HELP_SET_AUTO_INDEX,
     ),
+    set_rerank_option: str | None = typer.Option(
+        None,
+        "--rerank",
+        help=Messages.HELP_SET_RERANK,
+    ),
     show: bool = typer.Option(
         False,
         "--show",
@@ -699,6 +710,16 @@ def config(
                 )
             )
         set_provider_option = normalized_provider
+    if set_rerank_option is not None:
+        normalized_rerank = set_rerank_option.strip().lower()
+        if normalized_rerank not in SUPPORTED_RERANKERS:
+            allowed = ", ".join(SUPPORTED_RERANKERS)
+            raise typer.BadParameter(
+                Messages.ERROR_RERANK_INVALID.format(
+                    value=set_rerank_option, allowed=allowed
+                )
+            )
+        set_rerank_option = normalized_rerank
 
     config_snapshot = load_config()
     current_provider = (config_snapshot.provider or DEFAULT_PROVIDER).lower()
@@ -748,6 +769,7 @@ def config(
         base_url=set_base_url_option,
         clear_base_url=clear_base_url,
         auto_index=auto_index,
+        rerank=set_rerank_option,
     )
 
     if updates.api_key_set:
@@ -782,6 +804,10 @@ def config(
     if updates.auto_index_set and auto_index is not None:
         state = "enabled" if auto_index else "disabled"
         console.print(_styled(Messages.INFO_AUTO_INDEX_SET.format(value=state), Styles.SUCCESS))
+    if updates.rerank_set and set_rerank_option is not None:
+        console.print(
+            _styled(Messages.INFO_RERANK_SET.format(value=set_rerank_option), Styles.SUCCESS)
+        )
 
     if clear_index_all:
         removed = clear_all_cache()
@@ -820,6 +846,7 @@ def config(
                     batch=cfg.batch_size if cfg.batch_size is not None else DEFAULT_BATCH_SIZE,
                     concurrency=cfg.embed_concurrency,
                     auto_index="yes" if cfg.auto_index else "no",
+                    rerank=(cfg.rerank or DEFAULT_RERANK),
                     local_cuda="yes" if cfg.local_cuda else "no",
                     base_url=cfg.base_url or "none",
                 ),
@@ -1364,10 +1391,18 @@ def feedback() -> None:
         raise typer.Exit(code=1) from exc
 
 
-def _render_results(results: Sequence["SearchResult"], base: Path, backend: str | None) -> None:
+def _render_results(
+    results: Sequence["SearchResult"],
+    base: Path,
+    backend: str | None,
+    reranker: str | None,
+) -> None:
     console.print(_styled(Messages.TABLE_TITLE, Styles.TITLE))
     if backend:
-        console.print(_styled(f"{Messages.TABLE_BACKEND_PREFIX}{backend}", Styles.INFO))
+        line = f"{Messages.TABLE_BACKEND_PREFIX}{backend}"
+        if reranker:
+            line = f"{line} | {Messages.TABLE_RERANKER_PREFIX}{reranker}"
+        console.print(_styled(line, Styles.INFO))
     table = Table(show_header=True, header_style=Styles.TABLE_HEADER)
     table.add_column(Messages.TABLE_HEADER_INDEX, justify="right")
     table.add_column(Messages.TABLE_HEADER_SIMILARITY, justify="right")
