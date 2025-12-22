@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/assets/vexor.svg" alt="Vexor" width="50%" height="auto">
+<img src="https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/assets/vexor.svg" alt="Vexor" width="25%" height="auto">
 
 # Vexor
 
@@ -15,6 +15,10 @@
 ---
 
 **Vexor** is a vector-powered CLI for semantic file search. It uses configurable embedding models and ranks results by cosine similarity.
+
+<video controls width="600">
+  <source src="https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/assets/vexor.mp4" type="video/mp4">
+</video>
 
 ## Why Vexor?
 
