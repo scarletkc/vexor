@@ -223,6 +223,42 @@ def test_search_outputs_porcelain(tmp_path, monkeypatch):
     assert captured["recursive"] is True
 
 
+def test_default_search_invokes_search(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.txt"
+    sample_file.write_text("data")
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["query"] = request.query
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[SearchResult(path=sample_file, score=0.99)],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "alpha",
+            "--path",
+            str(tmp_path),
+            "--top",
+            "1",
+            "--format",
+            "porcelain",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["query"] == "alpha"
+    assert "./alpha.txt" in result.stdout
+
+
 def test_search_outputs_porcelain_z(tmp_path, monkeypatch):
     runner = CliRunner()
     sample_file = tmp_path / "alpha.txt"

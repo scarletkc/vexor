@@ -67,6 +67,17 @@ def test_update_reports_fetch_error(monkeypatch):
     assert result.exit_code == 1
 
 
+def test_alias_outputs_shell_alias():
+    runner = CliRunner()
+    result = runner.invoke(app, ["alias"])
+    assert result.exit_code == 0
+    assert result.stdout.strip() in {
+        "alias vx='vexor'",
+        "alias vx 'vexor'",
+        "Set-Alias vx vexor",
+    }
+
+
 def test_search_rejects_invalid_mode(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

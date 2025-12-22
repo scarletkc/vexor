@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import shutil
 import subprocess
 import sys
+from difflib import get_close_matches
 from enum import Enum
 from pathlib import Path
 from typing import Sequence, TYPE_CHECKING
 
+import click
 import typer
 from rich.console import Console
 from rich.table import Table
+from typer.core import TyperGroup
 
 from . import __version__, config as config_module
 from .cache import clear_all_cache, list_cache_entries
@@ -74,10 +78,44 @@ REPO_OWNER_AND_NAME = "scarletkc/vexor"
 PYPI_URL = "https://pypi.org/project/vexor/"
 
 console = Console()
+
+
+class DefaultSearchGroup(TyperGroup):
+    """Treat unknown subcommands as search queries."""
+
+    def resolve_command(
+        self,
+        ctx: click.Context,
+        args: list[str],
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        original_args = list(args)
+        try:
+            return super().resolve_command(ctx, args)
+        except click.UsageError:
+            if not original_args:
+                raise
+            token = original_args[0]
+            if token.startswith("-"):
+                raise
+            if self.suggest_commands and self.commands:
+                matches = get_close_matches(
+                    token,
+                    list(self.commands.keys()),
+                    cutoff=0.8,
+                )
+                if matches:
+                    raise
+            command = self.get_command(ctx, "search")
+            if command is None:
+                raise
+            return "search", command, original_args
+
+
 app = typer.Typer(
     help=Messages.APP_HELP,
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
+    cls=DefaultSearchGroup,
 )
 
 
@@ -1206,6 +1244,52 @@ def update(
     )
 
 
+@app.command(help=Messages.HELP_ALIAS)
+def alias() -> None:
+    """Print a shell alias that maps `vx` to `vexor`."""
+    shell_name = _detect_shell_name()
+    alias_command = _resolve_alias_command(shell_name)
+    typer.echo(alias_command)
+    if not sys.stdin.isatty():
+        return
+    if not typer.confirm(Messages.PROMPT_ALIAS_APPLY):
+        return
+
+    profile_path = _resolve_alias_profile(shell_name)
+    if profile_path is None:
+        console.print(_styled(Messages.WARNING_ALIAS_PROFILE_MISSING, Styles.WARNING))
+        return
+    try:
+        profile_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = profile_path.read_text(encoding="utf-8") if profile_path.exists() else ""
+        if alias_command in existing:
+            console.print(
+                _styled(
+                    Messages.INFO_ALIAS_ALREADY_SET.format(path=profile_path),
+                    Styles.INFO,
+                )
+            )
+            return
+        with profile_path.open("a", encoding="utf-8") as handle:
+            if existing and not existing.endswith("\n"):
+                handle.write("\n")
+            handle.write(alias_command + "\n")
+        console.print(
+            _styled(
+                Messages.INFO_ALIAS_APPLIED.format(path=profile_path),
+                Styles.SUCCESS,
+            )
+        )
+    except OSError as exc:
+        console.print(
+            _styled(
+                Messages.ERROR_ALIAS_WRITE.format(path=profile_path, reason=str(exc)),
+                Styles.ERROR,
+            )
+        )
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def star() -> None:
     """Star the Vexor repository on GitHub (or use `gh` if available)."""
@@ -1366,6 +1450,48 @@ def _format_lines(start_line: int | None, end_line: int | None) -> str:
     if end_line is None or end_line <= start_line:
         return f"L{start_line}"
     return f"L{start_line}-{end_line}"
+
+
+def _detect_shell_name() -> str | None:
+    shell_env = os.environ.get("SHELL", "")
+    if shell_env:
+        name = Path(shell_env).name.lower()
+        if name in {"bash", "zsh", "fish"}:
+            return name
+    if os.name == "nt":
+        return "powershell"
+    return None
+
+
+def _resolve_powershell_profile() -> Path:
+    home = Path.home()
+    ps7_dir = home / "Documents" / "PowerShell"
+    ps5_dir = home / "Documents" / "WindowsPowerShell"
+    if ps7_dir.exists():
+        return ps7_dir / "Microsoft.PowerShell_profile.ps1"
+    if ps5_dir.exists():
+        return ps5_dir / "Microsoft.PowerShell_profile.ps1"
+    return ps7_dir / "Microsoft.PowerShell_profile.ps1"
+
+
+def _resolve_alias_profile(shell_name: str | None) -> Path | None:
+    if shell_name == "bash":
+        return Path("~/.bashrc").expanduser()
+    if shell_name == "zsh":
+        return Path("~/.zshrc").expanduser()
+    if shell_name == "fish":
+        return Path("~/.config/fish/config.fish").expanduser()
+    if shell_name == "powershell":
+        return _resolve_powershell_profile()
+    return None
+
+
+def _resolve_alias_command(shell_name: str | None) -> str:
+    if shell_name == "fish":
+        return Messages.INFO_ALIAS_FISH
+    if shell_name == "powershell":
+        return Messages.INFO_ALIAS_POWERSHELL
+    return Messages.INFO_ALIAS_VX
 
 
 def run(argv: list[str] | None = None) -> None:

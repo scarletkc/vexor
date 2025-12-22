@@ -39,6 +39,7 @@ Or via environment: `VEXOR_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENAI_API_KEY`
 
 ### 2. Search
 ```bash
+vexor "api client config"  # defaults to search
 vexor search "api client config"  # searches current directory
 # or explicit path:
 vexor search "api client config" --path ~/projects/demo --top 5
@@ -157,6 +158,7 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 
 | Command | Description |
 |---------|-------------|
+| `vexor QUERY` | Shortcut for `vexor search QUERY` |
 | `vexor search QUERY --path PATH` | Semantic search (auto-indexes if needed) |
 | `vexor index --path PATH` | Build/refresh index manually |
 | `vexor config --show` | Display current configuration |
@@ -169,6 +171,7 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 | `vexor doctor` | Run diagnostic checks (command, config, cache, API key, API connectivity) |
 | `vexor update [--upgrade] [--pre]` | Check for new version (optionally upgrade; `--pre` includes pre-releases) |
 | `vexor feedback` | Open GitHub issue form (or use `gh`) |
+| `vexor alias` | Print a shell alias for `vx` and optionally apply it |
 
 ### Common Flags
 
