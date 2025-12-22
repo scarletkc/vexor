@@ -100,7 +100,7 @@ def run_init_wizard(*, dry_run: bool = False) -> None:
 def _print_welcome_banner() -> None:
     """Print a styled welcome banner for the init wizard."""
     title = Text()
-    title.append("🚀 ", style="bold")
+    title.append("⚙ ", style="bold")
     title.append(Messages.INIT_TITLE, style="bold cyan")
     title.append(f"  v{__version__}", style="dim")
 
@@ -781,7 +781,7 @@ def _format_command(parts: Sequence[str]) -> str:
 
 def _print_next_steps() -> None:
     next_steps = Text()
-    next_steps.append("📋 ", style="bold")
+    next_steps.append(" ", style="bold")
     next_steps.append(Messages.INIT_NEXT_STEPS_TITLE, style="bold cyan")
 
     console.print(

@@ -224,7 +224,7 @@ class Messages:
     INIT_INSTALL_COMMAND = "Running: {cmd}"
     INIT_INSTALL_FAILED = "Install failed (exit code {code})."
     INIT_INSTALL_DONE = "Install finished."
-    INIT_NEXT_STEPS_TITLE = "Next steps"
+    INIT_NEXT_STEPS_TITLE = "Next step"
     INIT_NEXT_STEP_SEARCH = "vexor \"retry logic handled\""
 
     INFO_NO_FILES = "No files found in the selected directory."
