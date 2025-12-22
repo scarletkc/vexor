@@ -67,6 +67,7 @@ from .services.skill_service import (
     resolve_skill_roots,
 )
 from .providers.local import LocalEmbeddingBackend, resolve_fastembed_cache_dir
+from .output import format_status_icon
 from .text import Messages, Styles
 from .utils import (
     resolve_directory,
@@ -1427,10 +1428,8 @@ def doctor(
 
     has_failure = False
     for result in results:
-        if result.passed:
-            icon = "[green]✓[/green]"
-        else:
-            icon = "[red]✗[/red]"
+        icon = format_status_icon(result.passed, console=console)
+        if not result.passed:
             has_failure = True
 
         console.print(f"  {icon} [bold]{result.name}:[/bold] {result.message}")

@@ -43,6 +43,7 @@ from ..services.system_service import (
     detect_install_method,
     run_all_doctor_checks,
 )
+from ..output import format_status_icon, supports_unicode_output
 from ..text import Messages, Styles
 
 console = Console()
@@ -100,7 +101,8 @@ def run_init_wizard(*, dry_run: bool = False) -> None:
 def _print_welcome_banner() -> None:
     """Print a styled welcome banner for the init wizard."""
     title = Text()
-    title.append("⚙ ", style="bold")
+    icon = "\u2699 " if supports_unicode_output(console) else "* "
+    title.append(icon, style="bold")
     title.append(Messages.INIT_TITLE, style="bold cyan")
     title.append(f"  v{__version__}", style="dim")
 
@@ -475,10 +477,8 @@ def _run_doctor_checks() -> None:
 
     has_failure = False
     for result in results:
-        if result.passed:
-            icon = "[green]✓[/green]"
-        else:
-            icon = "[red]✗[/red]"
+        icon = format_status_icon(result.passed, console=console)
+        if not result.passed:
             has_failure = True
 
         console.print(f"  {icon} [bold]{result.name}:[/bold] {result.message}")
