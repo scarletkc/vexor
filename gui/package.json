@@ -10,7 +10,7 @@
     "start": "electron ."
   },
   "dependencies": {
-    "electron": "^30.0.0",
+    "electron": "^39.2.7",
     "vue": "^3.4.0"
   },
   "devDependencies": {
