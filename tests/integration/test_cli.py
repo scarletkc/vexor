@@ -1086,7 +1086,7 @@ def test_config_clear_flashrank_conflict(tmp_path):
     result = runner.invoke(app, ["config", "--clear-flashrank", "--show"])
 
     assert result.exit_code != 0
-    assert "clear-flashrank" in result.stderr
+    assert "clear-flashrank" in strip_ansi(result.stderr)
 
 
 def test_config_rejects_unknown_provider(tmp_path):
