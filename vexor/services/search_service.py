@@ -17,6 +17,7 @@ from ..config import (
     DEFAULT_FLASHRANK_MODEL,
     DEFAULT_RERANK,
     RemoteRerankConfig,
+    normalize_remote_rerank_url,
     resolve_remote_rerank_api_key,
 )
 from ..utils import build_exclude_spec, is_excluded_path, normalize_exclude_patterns
@@ -207,14 +208,15 @@ def _resolve_remote_rerank_config(
         from ..text import Messages
 
         raise RuntimeError(Messages.ERROR_REMOTE_RERANK_INCOMPLETE)
+    base_url = normalize_remote_rerank_url(config.base_url)
     api_key = resolve_remote_rerank_api_key(config.api_key)
-    if not (config.base_url and config.model and api_key):
+    if not (base_url and config.model and api_key):
         from ..text import Messages
 
         raise RuntimeError(Messages.ERROR_REMOTE_RERANK_INCOMPLETE)
-    if api_key != config.api_key:
+    if base_url != config.base_url or api_key != config.api_key:
         return RemoteRerankConfig(
-            base_url=config.base_url,
+            base_url=base_url,
             api_key=api_key,
             model=config.model,
         )

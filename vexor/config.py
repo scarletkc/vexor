@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict
+from urllib.parse import urlparse, urlunparse
 
 CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -52,7 +53,7 @@ class Config:
 def _parse_remote_rerank(raw: object) -> RemoteRerankConfig | None:
     if not isinstance(raw, dict):
         return None
-    base_url = (raw.get("base_url") or "").strip() or None
+    base_url = normalize_remote_rerank_url(raw.get("base_url"))
     api_key = (raw.get("api_key") or "").strip() or None
     model = (raw.get("model") or "").strip() or None
     if not any((base_url, api_key, model)):
@@ -208,12 +209,34 @@ def update_remote_rerank(
         if config.remote_rerank is None:
             config.remote_rerank = RemoteRerankConfig()
         if base_url is not None:
-            config.remote_rerank.base_url = base_url.strip() or None
+            config.remote_rerank.base_url = normalize_remote_rerank_url(base_url)
         if api_key is not None:
             config.remote_rerank.api_key = api_key.strip() or None
         if model is not None:
             config.remote_rerank.model = model.strip() or None
     save_config(config)
+
+
+def normalize_remote_rerank_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    parsed = urlparse(cleaned)
+    if not parsed.scheme or not parsed.netloc:
+        base = cleaned.rstrip("/")
+        if base.endswith("/rerank") or base.endswith("/reranker"):
+            return base
+        return f"{base}/rerank"
+    path = parsed.path or ""
+    trimmed = path.rstrip("/")
+    if trimmed.endswith("/rerank") or trimmed.endswith("/reranker"):
+        new_path = trimmed
+    else:
+        new_path = f"{trimmed}/rerank" if trimmed else "/rerank"
+    normalized = parsed._replace(path=new_path)
+    return urlunparse(normalized)
 
 
 def resolve_default_model(provider: str | None, model: str | None) -> str:

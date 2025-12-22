@@ -73,6 +73,7 @@ Required fields:
 - remote_rerank.base_url
 - remote_rerank.api_key
 - remote_rerank.model
+Note: if `base_url` does not end with `/rerank` or `/reranker`, Vexor appends `/rerank`.
 
 ### CLI
 Add support in `vexor config`:

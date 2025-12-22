@@ -98,8 +98,8 @@ vexor config --rerank remote                # remote rerank via HTTP endpoint
 vexor config --set-flashrank-model ms-marco-MultiBERT-L-12  # multilingual model
 vexor config --set-flashrank-model          # reset FlashRank model to default
 vexor config --clear-flashrank              # remove cached FlashRank models
-vexor config --set-remote-rerank-url https://api.knox.chat/v1/rerank
-vexor config --set-remote-rerank-model rerank-2.5
+vexor config --set-remote-rerank-url https://proxy.example.com/v1/rerank
+vexor config --set-remote-rerank-model bge-reranker-v2-m3
 vexor config --set-remote-rerank-api-key $VEXOR_REMOTE_RERANK_API_KEY  # or env var
 vexor config --clear-remote-rerank          # clear remote rerank config
 vexor config --set-base-url https://proxy.example.com  # optional proxy

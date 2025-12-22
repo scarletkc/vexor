@@ -35,6 +35,7 @@ from .config import (
     SUPPORTED_RERANKERS,
     flashrank_cache_dir,
     load_config,
+    normalize_remote_rerank_url,
     resolve_remote_rerank_api_key,
     resolve_default_model,
 )
@@ -786,7 +787,7 @@ def config(
         else:
             set_flashrank_model_option = normalized_flashrank_model
     if set_remote_rerank_url_option is not None:
-        normalized_remote_url = set_remote_rerank_url_option.strip()
+        normalized_remote_url = normalize_remote_rerank_url(set_remote_rerank_url_option)
         if not normalized_remote_url:
             raise typer.BadParameter(Messages.ERROR_REMOTE_RERANK_URL_EMPTY)
         set_remote_rerank_url_option = normalized_remote_url

@@ -114,6 +114,20 @@ def test_save_and_load_remote_rerank(tmp_path, monkeypatch):
     assert cfg.remote_rerank.model == "rerank-model"
 
 
+def test_normalize_remote_rerank_url_appends_rerank():
+    assert (
+        config_module.normalize_remote_rerank_url("https://api.example.test/v1")
+        == "https://api.example.test/v1/rerank"
+    )
+
+
+def test_normalize_remote_rerank_url_keeps_rerank():
+    assert (
+        config_module.normalize_remote_rerank_url("https://api.example.test/v1/rerank")
+        == "https://api.example.test/v1/rerank"
+    )
+
+
 def test_resolve_api_key_prefers_config(monkeypatch):
     assert config_module.resolve_api_key("cfg-key", "gemini") == "cfg-key"
 
