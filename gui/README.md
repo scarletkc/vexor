@@ -35,3 +35,7 @@ The GUI can download the standalone CLI into the Electron user data folder:
 npm run package
 npm run make
 ```
+
+Notes:
+- Run the Windows installer build on Windows (Squirrel).
+- Run the Linux installer build on Linux (deb/rpm).
