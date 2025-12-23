@@ -26,6 +26,9 @@
         <button :class="{ active: view === 'config' }" @click="view = 'config'">
           Config & Tools
         </button>
+        <button :class="{ active: view === 'updates' }" @click="view = 'updates'">
+          Updates
+        </button>
       </nav>
 
       <section v-if="view === 'run'">
@@ -150,6 +153,13 @@
           </div>
         </div>
 
+        <div class="card command-log">
+          <h2>Command Log</h2>
+          <div class="log">{{ logOutput || 'Waiting for command output...' }}</div>
+        </div>
+      </section>
+
+      <section v-else-if="view === 'updates'">
         <div class="card">
           <h2>Updates</h2>
           <div class="inline">
@@ -170,9 +180,6 @@
             </div>
           </div>
           <div class="actions">
-            <button class="secondary" type="button" @click="checkCliUpdate" :disabled="busy">
-              Check CLI Update
-            </button>
             <button
               class="primary"
               type="button"
@@ -180,6 +187,9 @@
               :disabled="busy || downloadInfo.inProgress"
             >
               Download CLI
+            </button>
+            <button class="secondary" type="button" @click="checkCliUpdate" :disabled="busy">
+              Check CLI Update
             </button>
             <button class="secondary" type="button" @click="openReleases">
               Open GitHub Releases
