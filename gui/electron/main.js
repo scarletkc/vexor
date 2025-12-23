@@ -7,6 +7,7 @@ const path = require("path");
 
 const initSessions = new Map();
 let nextInitId = 1;
+let activeRunChild = null;
 
 function createWindow() {
   const iconCandidates =
@@ -123,13 +124,17 @@ function isDirOnPath(dirPath) {
   });
 }
 
-function runVexorCommand({ cliPath, args, input }) {
+function runVexorCommand({ cliPath, args, input }, options = {}) {
   return new Promise((resolve) => {
+    const trackActive = Boolean(options.trackActive);
     const resolvedPath = resolveCliPath(cliPath);
     const child = spawn(resolvedPath, args, {
       env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
       windowsHide: true
     });
+    if (trackActive) {
+      activeRunChild = child;
+    }
     let stdout = "";
     let stderr = "";
 
@@ -144,17 +149,27 @@ function runVexorCommand({ cliPath, args, input }) {
     child.stderr.on("data", (data) => {
       stderr += data.toString();
     });
+
+    const finalize = (payload) => {
+      if (trackActive && activeRunChild === child) {
+        activeRunChild = null;
+      }
+      resolve(payload);
+    };
+
     child.on("error", (error) => {
-      resolve({
+      finalize({
         code: null,
+        signal: null,
         stdout,
         stderr,
         error: error.message
       });
     });
-    child.on("close", (code) => {
-      resolve({
+    child.on("close", (code, signal) => {
+      finalize({
         code,
+        signal,
         stdout,
         stderr,
         error: null
@@ -475,7 +490,23 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("vexor:run", async (_event, payload) => {
-    return runVexorCommand(payload);
+    return runVexorCommand(payload, { trackActive: true });
+  });
+
+  ipcMain.handle("vexor:run-cancel", async () => {
+    if (!activeRunChild) {
+      return { ok: false, error: "No command is currently running." };
+    }
+    const child = activeRunChild;
+    try {
+      const ok = child.kill("SIGINT");
+      if (!ok) {
+        child.kill();
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error.message || String(error) };
+    }
   });
 
   ipcMain.handle("vexor:cli-info", async (_event, payload) => {

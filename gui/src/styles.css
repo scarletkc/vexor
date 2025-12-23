@@ -228,6 +228,11 @@ code {
   flex: 1;
 }
 
+.inline input {
+  flex: 1;
+  min-width: 0;
+}
+
 .toggle-group {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

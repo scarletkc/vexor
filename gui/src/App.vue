@@ -139,6 +139,14 @@
               <button type="button" class="secondary" @click="resetRunForm">
                 Reset
               </button>
+              <button
+                type="button"
+                class="secondary"
+                @click="cancelRun"
+                :disabled="!busy || cancelRequested"
+              >
+                {{ cancelRequested ? 'Cancelling…' : 'Cancel' }}
+              </button>
             </div>
           </form>
 
@@ -466,6 +474,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 const view = ref("run");
 const runMode = ref("search");
 const busy = ref(false);
+const cancelRequested = ref(false);
 const results = ref([]);
 const logOutput = ref("");
 const windowLocation = ref(window.location.href);
@@ -811,29 +820,49 @@ async function runAction() {
     return;
   }
   busy.value = true;
+  cancelRequested.value = false;
   results.value = [];
 
-  const args = [];
-  if (runMode.value === "search") {
-    args.push("search", runForm.query.trim(), "--format", "porcelain");
-    args.push("--top", String(runForm.top || 5));
-  } else {
-    args.push("index");
-    if (runForm.clearIndex) {
-      args.push("--clear");
+  try {
+    const args = [];
+    if (runMode.value === "search") {
+      args.push("search", runForm.query.trim(), "--format", "porcelain");
+      args.push("--top", String(runForm.top || 5));
+    } else {
+      args.push("index");
+      if (runForm.clearIndex) {
+        args.push("--clear");
+      }
+      if (runForm.showIndex) {
+        args.push("--show");
+      }
     }
-    if (runForm.showIndex) {
-      args.push("--show");
-    }
-  }
-  args.push(...buildCommonArgs());
+    args.push(...buildCommonArgs());
 
-  const result = await window.vexor.run({ cliPath: cliPath.value, args });
-  logOutput.value = buildLog(result, runMode.value !== "search");
-  if (runMode.value === "search" && result.stdout) {
-    results.value = parsePorcelain(result.stdout);
+    const modeAtStart = runMode.value;
+    const result = await window.vexor.run({ cliPath: cliPath.value, args });
+    logOutput.value = buildLog(result, modeAtStart !== "search");
+    if (modeAtStart === "search" && result.stdout && result.code === 0) {
+      results.value = parsePorcelain(result.stdout);
+    }
+  } finally {
+    busy.value = false;
+    cancelRequested.value = false;
   }
-  busy.value = false;
+}
+
+async function cancelRun() {
+  if (!window.vexor?.cancelRun) {
+    logOutput.value = "Cancel is not available.";
+    return;
+  }
+  cancelRequested.value = true;
+  logOutput.value = "Cancelling…";
+  const result = await window.vexor.cancelRun();
+  if (!result?.ok) {
+    cancelRequested.value = false;
+    logOutput.value = result?.error || "Cancel failed.";
+  }
 }
 
 async function saveConfig() {
