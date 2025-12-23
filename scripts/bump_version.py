@@ -32,15 +32,19 @@ def main(argv: list[str]) -> int:
     package_init = repo_root / "vexor" / "__init__.py"
     plugin_manifest = repo_root / "plugins" / "vexor" / ".claude-plugin" / "plugin.json"
     gui_package_json = repo_root / "gui" / "package.json"
+    gui_package_lock = repo_root / "gui" / "package-lock.json"
 
     _set_python_version(package_init, raw)
     _set_plugin_version(plugin_manifest, raw)
     _set_gui_version(gui_package_json, raw)
+    _set_gui_lock_version(gui_package_lock, raw)
 
     print(f"Updated version to {raw}")
     print(f"- {package_init}")
     print(f"- {plugin_manifest}")
     print(f"- {gui_package_json}")
+    if gui_package_lock.exists():
+        print(f"- {gui_package_lock}")
     return 0
 
 
@@ -67,6 +71,26 @@ def _set_gui_version(path: Path, version: str) -> None:
     package_json = json.loads(path.read_text(encoding="utf-8"))
     package_json["version"] = version
     path.write_text(json.dumps(package_json, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _set_gui_lock_version(path: Path, version: str) -> None:
+    if not path.exists():
+        return
+
+    lock = json.loads(path.read_text(encoding="utf-8"))
+
+    # npm lockfile typically stores the root package version in two places:
+    # - top-level "version"
+    # - packages[""]{"version"}
+    if isinstance(lock, dict):
+        lock["version"] = version
+        packages = lock.get("packages")
+        if isinstance(packages, dict):
+            root_pkg = packages.get("")
+            if isinstance(root_pkg, dict):
+                root_pkg["version"] = version
+
+    path.write_text(json.dumps(lock, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
