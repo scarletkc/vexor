@@ -36,7 +36,8 @@
                  ▼              ▼
        ┌──────────────────┐  ┌──────────────────┐
        │  build_release   │  │  publish_pypi    │
-       │  (win + linux)   │  │ (build + upload) │
+       │ (pyinstaller +   │  │ (build + upload) │
+       │  electron zip)   │  │                  │
        └────────┬─────────┘  └──────────────────┘
                 │
                 ▼
@@ -61,6 +62,7 @@
 **阶段 3: 构建与发布**
 - 版本变化时同时进行:
   - 构建多平台发行版 (Windows + Linux)
+  - 构建 Electron GUI ZIP (Windows + Linux)
   - 发布到 PyPI
 - 最后创建 GitHub Release
 

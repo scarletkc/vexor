@@ -71,6 +71,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         if: steps.detect.outputs.changed == 'true'
@@ -128,6 +130,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: pyproject.toml
 
       - name: Extract version
         id: version
@@ -160,10 +164,14 @@ jobs:
             python-version: '3.10'
             artifact-suffix: windows.exe
             built-binary: dist/vexor.exe
+            gui-zip-glob: "gui/out/make/zip/win32/*/*.zip"
+            gui-zip-suffix: windows.zip
           - os: ubuntu-latest
             python-version: '3.10'
             artifact-suffix: linux
             built-binary: dist/vexor
+            gui-zip-glob: "gui/out/make/zip/linux/*/*.zip"
+            gui-zip-suffix: linux.zip
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -177,6 +185,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: pyproject.toml
 
       - name: Install build dependencies
         shell: bash
@@ -194,12 +204,41 @@ jobs:
         run: |
           pyinstaller vexor.spec
 
-      - name: Prepare release asset
+      - name: Prepare CLI release asset
         shell: bash
         run: |
           VERSION="${{ needs.prepare_release.outputs.version }}"
           mkdir -p release
           cp "${{ matrix.built-binary }}" "release/vexor-${VERSION}-${{ matrix.artifact-suffix }}"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: gui/package-lock.json
+
+      - name: Install GUI dependencies
+        shell: bash
+        working-directory: gui
+        run: npm ci
+
+      - name: Build GUI zip
+        shell: bash
+        working-directory: gui
+        run: npm run make
+
+      - name: Prepare GUI release asset
+        shell: bash
+        run: |
+          VERSION="${{ needs.prepare_release.outputs.version }}"
+          ZIP_PATH="$(ls ${{ matrix.gui-zip-glob }} 2>/dev/null | head -n 1)"
+          if [ -z "${ZIP_PATH}" ]; then
+            echo "Missing GUI zip at ${{ matrix.gui-zip-glob }}" >&2
+            ls -R gui/out/make/zip || true
+            exit 1
+          fi
+          cp "${ZIP_PATH}" "release/vexor-desktop-${VERSION}-${{ matrix.gui-zip-suffix }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -285,6 +324,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: pyproject.toml
 
       - name: Install build dependencies
         shell: bash
