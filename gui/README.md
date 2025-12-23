@@ -27,4 +27,11 @@ in the Config screen (stored locally in the renderer).
 ## CLI downloads
 
 The GUI can download the standalone CLI into the Electron user data folder:
-`app.getPath('userData')/vexor/` (auto-used when present).
+`app.getPath('userData')/cli/` (auto-used when present).
+
+## Forge packaging
+
+```bash
+npm run package
+npm run make
+```

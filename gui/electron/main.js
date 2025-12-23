@@ -9,7 +9,19 @@ const initSessions = new Map();
 let nextInitId = 1;
 
 function createWindow() {
-  const win = new BrowserWindow({
+  const iconCandidates =
+    process.platform === "win32"
+      ? ["vexor.ico", "vexor.png"]
+      : ["vexor.png", "vexor.ico"];
+  let iconPath = null;
+  for (const name of iconCandidates) {
+    const candidate = path.join(__dirname, "..", "assets", name);
+    if (fs.existsSync(candidate)) {
+      iconPath = candidate;
+      break;
+    }
+  }
+  const windowOptions = {
     width: 1240,
     height: 820,
     minWidth: 980,
@@ -21,7 +33,11 @@ function createWindow() {
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.js")
     }
-  });
+  };
+  if (iconPath) {
+    windowOptions.icon = iconPath;
+  }
+  const win = new BrowserWindow(windowOptions);
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   const indexPath = path.join(__dirname, "..", "dist", "index.html");
@@ -35,7 +51,7 @@ function createWindow() {
 }
 
 function getCliRootDir() {
-  return path.join(app.getPath("userData"), "vexor");
+  return path.join(app.getPath("userData"), "cli");
 }
 
 function getDownloadedCliPath() {

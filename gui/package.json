@@ -7,13 +7,17 @@
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
     "build": "vite build",
-    "start": "electron ."
+    "start": "electron .",
+    "package": "npm run build && electron-forge package",
+    "make": "npm run build && electron-forge make"
   },
   "dependencies": {
     "electron": "^39.2.7",
     "vue": "^3.5.26"
   },
   "devDependencies": {
+    "@electron-forge/cli": "^7.9.0",
+    "@electron-forge/maker-zip": "^7.9.0",
     "@vitejs/plugin-vue": "^6.0.3",
     "concurrently": "^9.2.1",
     "vite": "^7.3.0",
