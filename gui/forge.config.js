@@ -14,37 +14,38 @@ module.exports = {
     {
       name: "@electron-forge/maker-zip",
       platforms: ["linux", "win32"]
-    },
-    {
-      name: "@electron-forge/maker-squirrel",
-      config: {
-        name: "vexor-desktop",
-        setupIcon: iconIcoPath,
-        authors: "Vexor",
-        description: "Vexor Desktop GUI"
-      },
-      platforms: ["win32"]
-    },
-    {
-      name: "@electron-forge/maker-deb",
-      config: {
-        options: {
-          maintainer: "Vexor",
-          homepage: "https://github.com/scarletkc/vexor",
-          icon: iconPngPath
-        }
-      },
-      platforms: ["linux"]
-    },
-    {
-      name: "@electron-forge/maker-rpm",
-      config: {
-        options: {
-          homepage: "https://github.com/scarletkc/vexor",
-          icon: iconPngPath
-        }
-      },
-      platforms: ["linux"]
     }
+    // Installer makers (temporarily disabled)
+    // {
+    //   name: "@electron-forge/maker-squirrel",
+    //   config: {
+    //     name: "vexor-desktop",
+    //     setupIcon: iconIcoPath,
+    //     authors: "Vexor",
+    //     description: "Vexor Desktop GUI"
+    //   },
+    //   platforms: ["win32"]
+    // },
+    // {
+    //   name: "@electron-forge/maker-deb",
+    //   config: {
+    //     options: {
+    //       maintainer: "Vexor",
+    //       homepage: "https://github.com/scarletkc/vexor",
+    //       icon: iconPngPath
+    //     }
+    //   },
+    //   platforms: ["linux"]
+    // },
+    // {
+    //   name: "@electron-forge/maker-rpm",
+    //   config: {
+    //     options: {
+    //       homepage: "https://github.com/scarletkc/vexor",
+    //       icon: iconPngPath
+    //     }
+    //   },
+    //   platforms: ["linux"]
+    // }
   ]
 };

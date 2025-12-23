@@ -37,5 +37,5 @@ npm run make
 ```
 
 Notes:
-- Run the Windows installer build on Windows (Squirrel).
-- Run the Linux installer build on Linux (deb/rpm).
+- This build currently produces ZIP packages only (Windows/Linux).
+- Installer makers are commented out in `gui/forge.config.js`.
