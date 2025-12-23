@@ -5,7 +5,7 @@
         <img src="/vexor.svg" alt="Vexor" />
         <div>
           <h1>Vexor Desktop</h1>
-          <p>A vector-powered desktop app for semantic filename search.</p>
+          <p>A vector-powered desktop app for semantic file search.</p>
         </div>
       </div>
       <div class="status">
