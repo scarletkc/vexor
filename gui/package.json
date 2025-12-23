@@ -12,7 +12,6 @@
     "make": "npm run build && electron-forge make"
   },
   "dependencies": {
-    "electron": "^39.2.7",
     "vue": "^3.5.26"
   },
   "devDependencies": {
@@ -20,6 +19,7 @@
     "@electron-forge/maker-zip": "^7.9.0",
     "@vitejs/plugin-vue": "^6.0.3",
     "concurrently": "^9.2.1",
+    "electron": "^39.2.7",
     "vite": "^7.3.0",
     "wait-on": "^9.0.3"
   }
