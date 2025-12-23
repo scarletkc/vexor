@@ -35,6 +35,8 @@ Download standalone binary from [releases](https://github.com/scarletkc/vexor/re
 pip install vexor  # also works with pipx, uv
 ```
 
+> The desktop app is still in early alpha. May be unstable, try the CLI for production use. 
+
 ## Quick Start
 
 ### 0. Guided Setup (Recommended)
@@ -43,13 +45,7 @@ vexor init
 ```
 The wizard also runs automatically on first use when no config exists.
 
-### 1. Configure API Key
-```bash
-vexor config --set-api-key "YOUR_KEY"
-```
-Or via environment: `VEXOR_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENAI_API_KEY`.
-
-### 2. Search
+### 1. Search
 ```bash
 vexor "api client config"  # defaults to search
 vexor search "api client config"  # searches current directory
@@ -67,7 +63,7 @@ Vexor semantic file search results
 3   0.809        ./tests/test_config_loader.py   -       tests for config loader
 ```
 
-### 3. Explicit Index (Optional)
+### 2. Explicit Index (Optional)
 ```bash
 vexor index  # indexes current directory
 # or explicit path:
@@ -119,6 +115,12 @@ Rerank defaults to `off`. **It is highly recommended to configure the Reranker i
 FlashRank requires `pip install "vexor[flashrank]"` and caches models under `~/.vexor/flashrank`.
 
 Config stored in `~/.vexor/config.json`.
+
+### Configure API Key
+```bash
+vexor config --set-api-key "YOUR_KEY"
+```
+Or via environment: `VEXOR_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENAI_API_KEY`.
 
 ### Rerank
 
