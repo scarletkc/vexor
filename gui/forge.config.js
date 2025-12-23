@@ -19,7 +19,9 @@ module.exports = {
       name: "@electron-forge/maker-squirrel",
       config: {
         name: "vexor-desktop",
-        setupIcon: iconIcoPath
+        setupIcon: iconIcoPath,
+        authors: "Vexor",
+        description: "Vexor Desktop GUI"
       },
       platforms: ["win32"]
     },
