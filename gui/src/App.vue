@@ -350,7 +350,7 @@
               </div>
               <div class="field">
                 <label>Remote Rerank API Key</label>
-                <input v-model="configForm.remoteRerankApiKey" type="password" placeholder="rk-..." autocomplete="off" />
+                <input v-model="configForm.remoteRerankApiKey" type="password" placeholder="sk-..." autocomplete="off" />
               </div>
             </div>
 
