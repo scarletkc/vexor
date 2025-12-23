@@ -514,6 +514,15 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
+  ipcMain.handle("vexor:open-devtools", async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) {
+      return { ok: false };
+    }
+    win.webContents.openDevTools({ mode: "detach" });
+    return { ok: true };
+  });
+
   ipcMain.handle("vexor:config-info", async () => {
     return getConfigInfo();
   });

@@ -5,7 +5,8 @@
   "main": "electron/main.js",
   "type": "commonjs",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "electron:dev": "node electron/dev-runner.cjs",
+    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && npm run electron:dev\"",
     "build": "vite build",
     "start": "electron .",
     "package": "npm run build && electron-forge package",

@@ -29,6 +29,9 @@
         <button :class="{ active: view === 'updates' }" @click="view = 'updates'">
           Updates
         </button>
+        <button :class="{ active: view === 'development' }" @click="view = 'development'">
+          Development
+        </button>
       </nav>
 
       <section v-if="view === 'run'">
@@ -214,6 +217,27 @@
           <div v-if="downloadInfo.inProgress" class="progress">
             <div class="progress-bar" :style="{ width: downloadProgressPercent + '%' }"></div>
             <div class="progress-meta">{{ downloadProgressLabel }}</div>
+          </div>
+        </div>
+
+        <div class="card command-log">
+          <h2>Command Log</h2>
+          <div class="log">{{ logOutput || 'Waiting for command output...' }}</div>
+        </div>
+      </section>
+
+      <section v-else-if="view === 'development'">
+        <div class="card">
+          <h2>Development</h2>
+          <div class="field">
+            <label>Loaded URL</label>
+            <input :value="windowLocation" readonly />
+            <small>This is for debugging purposes.</small>
+          </div>
+          <div class="actions">
+            <button class="secondary" type="button" @click="openDevTools">
+              Open DevTools
+            </button>
           </div>
         </div>
 
@@ -444,6 +468,7 @@ const runMode = ref("search");
 const busy = ref(false);
 const results = ref([]);
 const logOutput = ref("");
+const windowLocation = ref(window.location.href);
 const cliPath = ref(localStorage.getItem("vexorCliPath") || "");
 const configInfo = reactive({ path: "", exists: false, parseError: null, config: {} });
 const appVersion = ref("");
@@ -1020,6 +1045,17 @@ function openSkillsModal() {
 async function openReleases() {
   const url = updateInfo.releaseUrl || "https://github.com/scarletkc/vexor/releases";
   await window.vexor.openExternal(url);
+}
+
+async function openDevTools() {
+  if (!window.vexor?.openDevTools) {
+    logOutput.value = "DevTools API is not available.";
+    return;
+  }
+  const result = await window.vexor.openDevTools();
+  if (result && result.ok === false) {
+    logOutput.value = "Failed to open DevTools.";
+  }
 }
 
 async function openInitWizard() {

@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("vexor", {
   downloadCli: () => ipcRenderer.invoke("vexor:cli-download"),
   addCliToPath: () => ipcRenderer.invoke("vexor:cli-add-to-path"),
   openExternal: (url) => ipcRenderer.invoke("vexor:open-external", { url }),
+  openDevTools: () => ipcRenderer.invoke("vexor:open-devtools"),
   getConfigInfo: () => ipcRenderer.invoke("vexor:config-info"),
   initStart: (payload) => ipcRenderer.invoke("vexor:init:start", payload),
   initSend: (payload) => ipcRenderer.invoke("vexor:init:input", payload),
