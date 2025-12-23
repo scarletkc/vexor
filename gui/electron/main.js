@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, Menu } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const https = require("https");
@@ -38,6 +38,8 @@ function createWindow() {
     windowOptions.icon = iconPath;
   }
   const win = new BrowserWindow(windowOptions);
+  win.setMenuBarVisibility(false);
+  win.setAutoHideMenuBar(true);
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   const indexPath = path.join(__dirname, "..", "dist", "index.html");
@@ -343,6 +345,7 @@ async function downloadLatestCli(sender) {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   createWindow();
 
   ipcMain.handle("vexor:select-directory", async () => {
