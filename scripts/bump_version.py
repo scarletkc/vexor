@@ -15,6 +15,9 @@ from pathlib import Path
 
 
 _VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[0-9A-Za-z.+-]+)?$")
+_SEMVER_PATTERN = re.compile(
+    r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
 
 
 def main(argv: list[str]) -> int:
@@ -34,12 +37,15 @@ def main(argv: list[str]) -> int:
     gui_package_json = repo_root / "gui" / "package.json"
     gui_package_lock = repo_root / "gui" / "package-lock.json"
 
+    gui_version = _to_gui_semver(raw)
     _set_python_version(package_init, raw)
     _set_plugin_version(plugin_manifest, raw)
-    _set_gui_version(gui_package_json, raw)
-    _set_gui_lock_version(gui_package_lock, raw)
+    _set_gui_version(gui_package_json, gui_version)
+    _set_gui_lock_version(gui_package_lock, gui_version)
 
     print(f"Updated version to {raw}")
+    if gui_version != raw:
+        print(f"GUI version normalized to {gui_version}")
     print(f"- {package_init}")
     print(f"- {plugin_manifest}")
     print(f"- {gui_package_json}")
@@ -91,6 +97,24 @@ def _set_gui_lock_version(path: Path, version: str) -> None:
                 root_pkg["version"] = version
 
     path.write_text(json.dumps(lock, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _to_gui_semver(version: str) -> str:
+    """Normalize PEP 440-like versions into SemVer for the GUI."""
+    if _SEMVER_PATTERN.fullmatch(version):
+        return version
+    match = re.match(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?P<suffix>.*)$", version)
+    if not match:
+        return version
+    base = match.group("base")
+    suffix = match.group("suffix")
+    if not suffix:
+        return base
+    if suffix.startswith(("-", "+")):
+        return f"{base}{suffix}"
+    if suffix.startswith("."):
+        suffix = suffix[1:]
+    return f"{base}-{suffix}"
 
 
 if __name__ == "__main__":

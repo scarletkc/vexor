@@ -1,7 +1,7 @@
 {
   "name": "vexor-desktop",
   "private": true,
-  "version": "0.18.1b3",
+  "version": "0.18.1-b3",
   "main": "electron/main.js",
   "type": "commonjs",
   "scripts": {
