@@ -409,6 +409,68 @@ function buildPathExportLine(dirPath, profilePath) {
   return `export PATH="$PATH:${escaped}"`;
 }
 
+function removePathFromProfile(dirPath) {
+  const profilePath = resolveProfilePath();
+  if (!fs.existsSync(profilePath)) {
+    return { ok: true, pathRemoved: false, profilePath };
+  }
+  const marker = "# Added by Vexor Desktop";
+  const lines = fs.readFileSync(profilePath, "utf-8").split(/\r?\n/);
+  let changed = false;
+  const filtered = [];
+  for (let idx = 0; idx < lines.length; idx += 1) {
+    const line = lines[idx];
+    if (line.trim() === marker) {
+      changed = true;
+      const next = lines[idx + 1];
+      if (next && next.includes(dirPath)) {
+        idx += 1;
+      }
+      continue;
+    }
+    filtered.push(line);
+  }
+  if (changed) {
+    fs.writeFileSync(profilePath, filtered.join("\n"), "utf-8");
+  }
+  return { ok: true, pathRemoved: changed, profilePath };
+}
+
+function removePathFromWindows(dirPath) {
+  const currentPath = process.env.PATH || "";
+  const entries = currentPath.split(path.delimiter).filter(Boolean);
+  const normalizedTarget = path.resolve(dirPath).toLowerCase();
+  const filtered = entries.filter((entry) => {
+    const resolved = path.resolve(entry.trim()).toLowerCase();
+    return resolved !== normalizedTarget;
+  });
+  const updated = filtered.join(path.delimiter);
+  return new Promise((resolve) => {
+    const child = spawn("setx", ["PATH", updated], {
+      shell: true,
+      windowsHide: true
+    });
+    let stderr = "";
+    child.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({ ok: true, pathRemoved: true, profilePath: "User PATH" });
+        return;
+      }
+      resolve({
+        ok: false,
+        pathRemoved: false,
+        error: stderr.trim() || `setx failed (${code})`
+      });
+    });
+    child.on("error", (error) => {
+      resolve({ ok: false, pathRemoved: false, error: error.message });
+    });
+  });
+}
+
 function addDownloadedCliToPath() {
   const downloadedPath = getDownloadedCliPath();
   if (!fs.existsSync(downloadedPath)) {
@@ -475,6 +537,58 @@ function addDownloadedCliToPath() {
   return Promise.resolve({ ok: false, error: "Unsupported platform." });
 }
 
+async function removeDownloadedCli() {
+  const downloadedPath = getDownloadedCliPath();
+  const dirPath = getCliRootDir();
+  let deleted = false;
+  let deleteError = null;
+  if (fs.existsSync(downloadedPath)) {
+    try {
+      fs.unlinkSync(downloadedPath);
+      deleted = true;
+    } catch (error) {
+      deleteError = error.message;
+    }
+  }
+  try {
+    if (fs.existsSync(dirPath)) {
+      const entries = fs.readdirSync(dirPath);
+      if (entries.length === 0) {
+        fs.rmdirSync(dirPath);
+      }
+    }
+  } catch (_) {
+    // Ignore cleanup errors.
+  }
+
+  let pathResult = { ok: true, pathRemoved: false, profilePath: "" };
+  if (isDirOnPath(dirPath)) {
+    if (process.platform === "win32") {
+      pathResult = await removePathFromWindows(dirPath);
+    } else if (process.platform === "linux") {
+      pathResult = removePathFromProfile(dirPath);
+    } else {
+      pathResult = { ok: false, pathRemoved: false, error: "Unsupported platform." };
+    }
+  }
+
+  const errors = [];
+  if (deleteError) {
+    errors.push(`Delete failed: ${deleteError}`);
+  }
+  if (!pathResult.ok && pathResult.error) {
+    errors.push(`PATH update failed: ${pathResult.error}`);
+  }
+
+  return {
+    ok: errors.length === 0,
+    deleted,
+    pathRemoved: Boolean(pathResult.pathRemoved),
+    profilePath: pathResult.profilePath || "",
+    error: errors.join("; ")
+  };
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   createWindow();
@@ -532,6 +646,14 @@ app.whenReady().then(() => {
   ipcMain.handle("vexor:cli-add-to-path", async () => {
     try {
       return await addDownloadedCliToPath();
+    } catch (error) {
+      return { ok: false, error: error.message || String(error) };
+    }
+  });
+
+  ipcMain.handle("vexor:cli-remove-download", async () => {
+    try {
+      return await removeDownloadedCli();
     } catch (error) {
       return { ok: false, error: error.message || String(error) };
     }

@@ -211,6 +211,14 @@
             >
               Download CLI
             </button>
+            <button
+              class="secondary"
+              type="button"
+              @click="removeDownloadedCli"
+              :disabled="busy || !cliInfo.downloadedExists"
+            >
+              Remove Downloaded CLI
+            </button>
             <button class="secondary" type="button" @click="checkCliUpdate" :disabled="busy">
               Check CLI Update
             </button>
@@ -429,6 +437,9 @@
               </button>
               <button class="secondary" type="button" @click="openInitWizard">
                 Init wizard
+              </button>
+              <button class="secondary" type="button" @click="showAlias">
+                Show alias (vx)
               </button>
               <button class="secondary" type="button" @click="openSkillsModal">
                 Install skills
@@ -1057,6 +1068,10 @@ async function clearApiKey() {
   await runConfigAction(["config", "--clear-api-key"]);
 }
 
+async function showAlias() {
+  await runConfigAction(["alias"]);
+}
+
 async function checkCliUpdate() {
   if (busy.value) {
     return;
@@ -1099,6 +1114,30 @@ async function downloadCli() {
   await refreshCliInfo();
   busy.value = false;
   await checkCliUpdate();
+}
+
+async function removeDownloadedCli() {
+  if (busy.value) {
+    return;
+  }
+  busy.value = true;
+  const result = await window.vexor.removeDownloadedCli();
+  if (!result.ok) {
+    logOutput.value = `Remove CLI failed: ${result.error || "unknown error"}`;
+  } else if (result.deleted || result.pathRemoved) {
+    const parts = [];
+    if (result.deleted) {
+      parts.push("Downloaded CLI removed.");
+    }
+    if (result.pathRemoved) {
+      parts.push("PATH entry removed.");
+    }
+    logOutput.value = parts.join(" ");
+  } else {
+    logOutput.value = "No downloaded CLI to remove.";
+  }
+  await refreshCliInfo();
+  busy.value = false;
 }
 
 async function addDownloadedCliToPath() {
