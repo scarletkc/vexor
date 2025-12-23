@@ -5,7 +5,7 @@
         <img src="/vexor.svg" alt="Vexor" />
         <div>
           <h1>Vexor Desktop</h1>
-          <p>Form-first search and indexing control panel for the Vexor CLI.</p>
+          <p>A vector-powered desktop app for semantic filename search.</p>
         </div>
       </div>
       <div class="status">
