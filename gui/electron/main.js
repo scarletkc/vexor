@@ -104,6 +104,25 @@ function resolveCliPath(cliPath) {
   return resolveCliPathInfo(cliPath).path;
 }
 
+function isDirOnPath(dirPath) {
+  const envPath = process.env.PATH || "";
+  if (!envPath) {
+    return false;
+  }
+  const target = path.resolve(dirPath);
+  const normalizedTarget =
+    process.platform === "win32" ? target.toLowerCase() : target;
+  const entries = envPath.split(path.delimiter);
+  return entries.some((entry) => {
+    if (!entry) {
+      return false;
+    }
+    const resolved = path.resolve(entry.trim());
+    const normalized = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+    return normalized === normalizedTarget;
+  });
+}
+
 function runVexorCommand({ cliPath, args, input }) {
   return new Promise((resolve) => {
     const resolvedPath = resolveCliPath(cliPath);
@@ -157,6 +176,10 @@ function parseCliVersion(output) {
 
 async function getCliInfo(cliPath) {
   const info = resolveCliPathInfo(cliPath);
+  const downloadedDir = getCliRootDir();
+  const downloadedPath = getDownloadedCliPath();
+  const downloadedExists = fs.existsSync(downloadedPath);
+  const downloadedInPath = isDirOnPath(downloadedDir);
   const result = await runVexorCommand({ cliPath, args: ["--version"] });
   const text = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
   const version = parseCliVersion(text);
@@ -167,7 +190,11 @@ async function getCliInfo(cliPath) {
     cliSource: info.source,
     cliAvailable: available,
     cliVersion: version,
-    cliOutput: text
+    cliOutput: text,
+    downloadedDir,
+    downloadedPath,
+    downloadedExists,
+    downloadedInPath
   };
 }
 
@@ -344,6 +371,95 @@ async function downloadLatestCli(sender) {
   return { ok: true, path: targetPath, info };
 }
 
+function resolveProfilePath() {
+  const shell = process.env.SHELL || "";
+  const name = path.basename(shell);
+  if (name === "zsh") {
+    return path.join(os.homedir(), ".zprofile");
+  }
+  if (name === "bash") {
+    return path.join(os.homedir(), ".bashrc");
+  }
+  if (name === "fish") {
+    return path.join(os.homedir(), ".config", "fish", "config.fish");
+  }
+  return path.join(os.homedir(), ".profile");
+}
+
+function buildPathExportLine(dirPath, profilePath) {
+  const escaped = dirPath.replace(/"/g, '\\"');
+  if (profilePath.endsWith("config.fish")) {
+    return `set -gx PATH $PATH "${escaped}"`;
+  }
+  return `export PATH="$PATH:${escaped}"`;
+}
+
+function addDownloadedCliToPath() {
+  const downloadedPath = getDownloadedCliPath();
+  if (!fs.existsSync(downloadedPath)) {
+    return Promise.resolve({
+      ok: false,
+      error: "Downloaded CLI not found."
+    });
+  }
+  const dirPath = getCliRootDir();
+  if (isDirOnPath(dirPath)) {
+    return Promise.resolve({ ok: true, already: true });
+  }
+  if (process.platform === "win32") {
+    const currentPath = process.env.PATH || "";
+    const parts = currentPath.split(path.delimiter).filter(Boolean);
+    parts.push(dirPath);
+    const updated = parts.join(path.delimiter);
+    return new Promise((resolve) => {
+      const child = spawn("setx", ["PATH", updated], {
+        shell: true,
+        windowsHide: true
+      });
+      let stderr = "";
+      child.stderr.on("data", (data) => {
+        stderr += data.toString();
+      });
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolve({ ok: true, profilePath: "User PATH", restartRequired: true });
+          return;
+        }
+        resolve({
+          ok: false,
+          error: stderr.trim() || `setx failed (${code})`
+        });
+      });
+      child.on("error", (error) => {
+        resolve({ ok: false, error: error.message });
+      });
+    });
+  }
+
+  if (process.platform === "linux") {
+    const profilePath = resolveProfilePath();
+    const exportLine = buildPathExportLine(dirPath, profilePath);
+    const marker = "# Added by Vexor Desktop";
+    const parentDir = path.dirname(profilePath);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+    let content = "";
+    if (fs.existsSync(profilePath)) {
+      content = fs.readFileSync(profilePath, "utf-8");
+      if (content.includes(dirPath)) {
+        return Promise.resolve({ ok: true, already: true, profilePath });
+      }
+    }
+    const prefix = content && !content.endsWith("\n") ? "\n" : "";
+    const block = `${marker}\n${exportLine}\n`;
+    fs.appendFileSync(profilePath, `${prefix}${block}`, "utf-8");
+    return Promise.resolve({ ok: true, profilePath, restartRequired: true });
+  }
+
+  return Promise.resolve({ ok: false, error: "Unsupported platform." });
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   createWindow();
@@ -377,6 +493,14 @@ app.whenReady().then(() => {
   ipcMain.handle("vexor:cli-download", async (event) => {
     try {
       return await downloadLatestCli(event.sender);
+    } catch (error) {
+      return { ok: false, error: error.message || String(error) };
+    }
+  });
+
+  ipcMain.handle("vexor:cli-add-to-path", async () => {
+    try {
+      return await addDownloadedCliToPath();
     } catch (error) {
       return { ok: false, error: error.message || String(error) };
     }

@@ -194,9 +194,21 @@
             <button class="secondary" type="button" @click="checkCliUpdate" :disabled="busy">
               Check CLI Update
             </button>
+            <button
+              v-if="showAddToPath"
+              class="secondary"
+              type="button"
+              @click="addDownloadedCliToPath"
+              :disabled="busy"
+            >
+              Add Downloaded CLI to PATH
+            </button>
             <button class="secondary" type="button" @click="openReleases">
               Open GitHub Releases
             </button>
+          </div>
+          <div v-if="showAddToPath" class="notice">
+            Downloaded CLI is not on PATH yet. You can add it or use a custom CLI path.
           </div>
           <div v-if="updateMessage" class="notice">{{ updateMessage }}</div>
           <div v-if="downloadInfo.inProgress" class="progress">
@@ -361,6 +373,34 @@
               </button>
             </div>
           </div>
+
+          <div class="card">
+            <h2>Skills</h2>
+            <div class="field">
+              <label>Install Target</label>
+              <select v-model="skillsForm.target">
+                <option value="auto">auto</option>
+                <option value="claude">claude</option>
+                <option value="codex">codex</option>
+                <option value="custom">custom</option>
+              </select>
+            </div>
+            <div v-if="skillsForm.target === 'custom'" class="field">
+              <label>Custom skills path</label>
+              <input v-model="skillsForm.customPath" placeholder="e.g. ~/.codex/skills" />
+            </div>
+            <div class="toggle-group">
+              <label class="toggle">
+                <input v-model="skillsForm.force" type="checkbox" />
+                Overwrite existing skill folder
+              </label>
+            </div>
+            <div class="actions">
+              <button class="primary" type="button" @click="installSkills" :disabled="busy">
+                Install skills
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="card command-log">
@@ -407,7 +447,11 @@ const cliInfo = reactive({
   cliSource: "",
   cliAvailable: false,
   cliVersion: "",
-  cliOutput: ""
+  cliOutput: "",
+  downloadedDir: "",
+  downloadedPath: "",
+  downloadedExists: false,
+  downloadedInPath: false
 });
 const updateInfo = reactive({
   checked: false,
@@ -492,6 +536,9 @@ const cliSourceLabel = computed(() => {
 });
 
 const cliMissing = computed(() => !cliInfo.cliAvailable);
+const showAddToPath = computed(
+  () => cliInfo.downloadedExists && !cliInfo.downloadedInPath
+);
 
 const downloadProgressPercent = computed(() => {
   if (!downloadInfo.total) {
@@ -619,6 +666,10 @@ async function refreshCliInfo() {
   cliInfo.cliAvailable = Boolean(info.cliAvailable);
   cliInfo.cliVersion = info.cliVersion || "";
   cliInfo.cliOutput = info.cliOutput || "";
+  cliInfo.downloadedDir = info.downloadedDir || "";
+  cliInfo.downloadedPath = info.downloadedPath || "";
+  cliInfo.downloadedExists = Boolean(info.downloadedExists);
+  cliInfo.downloadedInPath = Boolean(info.downloadedInPath);
 }
 
 async function pickDirectory() {
@@ -800,6 +851,10 @@ async function runConfigAction(args) {
   if (busy.value) {
     return;
   }
+  if (cliMissing.value) {
+    logOutput.value = "CLI not found. Download it or set a CLI path first.";
+    return;
+  }
   busy.value = true;
   const result = await window.vexor.run({ cliPath: cliPath.value, args });
   logOutput.value = buildLog(result, true);
@@ -904,6 +959,47 @@ async function downloadCli() {
   await checkCliUpdate();
 }
 
+async function addDownloadedCliToPath() {
+  if (busy.value) {
+    return;
+  }
+  busy.value = true;
+  const result = await window.vexor.addCliToPath();
+  if (!result.ok) {
+    logOutput.value = `Add to PATH failed: ${result.error || "unknown error"}`;
+  } else if (result.already) {
+    logOutput.value = "CLI directory is already on PATH.";
+  } else {
+    const location = result.profilePath || "your profile";
+    logOutput.value = `CLI path added to ${location}. Restart your shell to apply.`;
+  }
+  await refreshCliInfo();
+  busy.value = false;
+}
+
+async function installSkills() {
+  if (busy.value) {
+    return;
+  }
+  if (cliMissing.value) {
+    logOutput.value = "CLI not found. Download it or set a CLI path first.";
+    return;
+  }
+  const target =
+    skillsForm.target === "custom"
+      ? skillsForm.customPath.trim()
+      : skillsForm.target;
+  if (!target) {
+    logOutput.value = "Please provide a skills path.";
+    return;
+  }
+  const args = ["install", "--skills", target];
+  if (skillsForm.force) {
+    args.push("--force");
+  }
+  await runConfigAction(args);
+}
+
 async function openReleases() {
   const url = updateInfo.releaseUrl || "https://github.com/scarletkc/vexor/releases";
   await window.vexor.openExternal(url);
@@ -975,3 +1071,8 @@ onBeforeUnmount(() => {
   }
 });
 </script>
+const skillsForm = reactive({
+  target: "auto",
+  customPath: "",
+  force: false
+});

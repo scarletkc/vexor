@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("vexor", {
   getCliInfo: (payload) => ipcRenderer.invoke("vexor:cli-info", payload),
   checkCliUpdate: () => ipcRenderer.invoke("vexor:cli-check-update"),
   downloadCli: () => ipcRenderer.invoke("vexor:cli-download"),
+  addCliToPath: () => ipcRenderer.invoke("vexor:cli-add-to-path"),
   openExternal: (url) => ipcRenderer.invoke("vexor:open-external", { url }),
   getConfigInfo: () => ipcRenderer.invoke("vexor:config-info"),
   initStart: (payload) => ipcRenderer.invoke("vexor:init:start", payload),
