@@ -35,6 +35,9 @@
         <div v-if="!configInfo.exists" class="notice">
           First run: set provider/API key below or run the init wizard.
         </div>
+        <div v-if="cliMissing" class="notice">
+          CLI not found. Download it in Updates or set a custom CLI path in Config & Tools.
+        </div>
         <div class="grid">
           <form class="card" @submit.prevent="runAction">
             <h2>Run Mode</h2>
@@ -488,6 +491,8 @@ const cliSourceLabel = computed(() => {
   return cliInfo.cliSource;
 });
 
+const cliMissing = computed(() => !cliInfo.cliAvailable);
+
 const downloadProgressPercent = computed(() => {
   if (!downloadInfo.total) {
     return 0;
@@ -703,6 +708,10 @@ function buildLog(result, includeStdout) {
 
 async function runAction() {
   if (busy.value) {
+    return;
+  }
+  if (cliMissing.value) {
+    logOutput.value = "CLI not found. Download it or set a CLI path first.";
     return;
   }
   if (runMode.value === "search" && !runForm.query.trim()) {
