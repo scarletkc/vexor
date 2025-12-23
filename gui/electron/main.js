@@ -41,19 +41,14 @@ function createWindow() {
   win.setMenuBarVisibility(false);
   win.setAutoHideMenuBar(true);
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL || "http://localhost:5173";
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   const indexPath = path.join(__dirname, "..", "dist", "index.html");
-  if (!app.isPackaged) {
-    win.loadURL(devServerUrl).catch(() => {
-      if (fs.existsSync(indexPath)) {
-        return win.loadFile(indexPath);
-      }
-      return null;
-    });
+  if (devServerUrl) {
+    win.loadURL(devServerUrl);
   } else if (fs.existsSync(indexPath)) {
     win.loadFile(indexPath);
   } else {
-    win.loadURL(devServerUrl);
+    win.loadURL("http://localhost:5173");
   }
 }
 
