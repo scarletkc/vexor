@@ -169,6 +169,15 @@
 
         <div class="card command-log">
           <h2>Command Log</h2>
+          <div v-if="missingDeps.length" class="notice">
+            <div v-for="item in missingDeps" :key="item.id">
+              <strong>{{ item.title }}</strong>
+              <span> {{ item.detail }}</span>
+            </div>
+            <div v-if="showStandaloneHint">
+              Downloaded CLI cannot install extras. Install via pip and set the CLI path.
+            </div>
+          </div>
           <div class="log">{{ logOutput || 'Waiting for command output...' }}</div>
         </div>
       </section>
@@ -230,6 +239,15 @@
 
         <div class="card command-log">
           <h2>Command Log</h2>
+          <div v-if="missingDeps.length" class="notice">
+            <div v-for="item in missingDeps" :key="item.id">
+              <strong>{{ item.title }}</strong>
+              <span> {{ item.detail }}</span>
+            </div>
+            <div v-if="showStandaloneHint">
+              Downloaded CLI cannot install extras. Install via pip and set the CLI path.
+            </div>
+          </div>
           <div class="log">{{ logOutput || 'Waiting for command output...' }}</div>
         </div>
       </section>
@@ -251,6 +269,15 @@
 
         <div class="card command-log">
           <h2>Command Log</h2>
+          <div v-if="missingDeps.length" class="notice">
+            <div v-for="item in missingDeps" :key="item.id">
+              <strong>{{ item.title }}</strong>
+              <span> {{ item.detail }}</span>
+            </div>
+            <div v-if="showStandaloneHint">
+              Downloaded CLI cannot install extras. Install via pip and set the CLI path.
+            </div>
+          </div>
           <div class="log">{{ logOutput || 'Waiting for command output...' }}</div>
         </div>
       </section>
@@ -412,6 +439,15 @@
 
         <div class="card command-log">
           <h2>Command Log</h2>
+          <div v-if="missingDeps.length" class="notice">
+            <div v-for="item in missingDeps" :key="item.id">
+              <strong>{{ item.title }}</strong>
+              <span> {{ item.detail }}</span>
+            </div>
+            <div v-if="showStandaloneHint">
+              Downloaded CLI cannot install extras. Install via pip and set the CLI path.
+            </div>
+          </div>
           <div class="log">{{ logOutput || 'Waiting for command output...' }}</div>
         </div>
       </section>
@@ -477,6 +513,7 @@ const busy = ref(false);
 const cancelRequested = ref(false);
 const results = ref([]);
 const logOutput = ref("");
+const missingDeps = ref([]);
 const windowLocation = ref(window.location.href);
 const cliPath = ref(localStorage.getItem("vexorCliPath") || "");
 const configInfo = reactive({ path: "", exists: false, parseError: null, config: {} });
@@ -557,6 +594,10 @@ watch(cliPath, (value) => {
   localStorage.setItem("vexorCliPath", value);
 });
 
+watch(logOutput, (value) => {
+  missingDeps.value = detectMissingDeps(value);
+});
+
 const guiVersionLabel = computed(() => {
   return appVersion.value ? `v${appVersion.value}` : "unknown";
 });
@@ -623,6 +664,10 @@ const updateMessage = computed(() => {
   return "CLI is up to date.";
 });
 
+const showStandaloneHint = computed(
+  () => missingDeps.value.length > 0 && cliInfo.cliSource === "downloaded"
+);
+
 function stripAnsi(text) {
   return text.replace(/\u001b\[[0-9;]*m/g, "");
 }
@@ -670,6 +715,37 @@ function compareVersions(left, right) {
     }
   }
   return 0;
+}
+
+function detectMissingDeps(text) {
+  if (!text) {
+    return [];
+  }
+  const normalized = text.toLowerCase();
+  const deps = [];
+  if (
+    normalized.includes("local model support is not installed") ||
+    normalized.includes("vexor[local]")
+  ) {
+    deps.push({
+      id: "local",
+      title: "Local embeddings are not available.",
+      detail: 'Install: pip install "vexor[local]" (or "vexor[local-cuda]").'
+    });
+  }
+  if (
+    normalized.includes("flashrank reranker is not installed") ||
+    normalized.includes("flashrank rerank not installed") ||
+    normalized.includes("flashrank is not installed") ||
+    normalized.includes("vexor[flashrank]")
+  ) {
+    deps.push({
+      id: "flashrank",
+      title: "FlashRank reranker is not available.",
+      detail: 'Install: pip install "vexor[flashrank]".'
+    });
+  }
+  return deps;
 }
 
 async function loadConfig(applyToForm) {
