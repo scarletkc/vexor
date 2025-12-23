@@ -371,32 +371,7 @@
               <button class="secondary" type="button" @click="openInitWizard">
                 Init wizard
               </button>
-            </div>
-          </div>
-
-          <div class="card">
-            <h2>Skills</h2>
-            <div class="field">
-              <label>Install Target</label>
-              <select v-model="skillsForm.target">
-                <option value="auto">auto</option>
-                <option value="claude">claude</option>
-                <option value="codex">codex</option>
-                <option value="custom">custom</option>
-              </select>
-            </div>
-            <div v-if="skillsForm.target === 'custom'" class="field">
-              <label>Custom skills path</label>
-              <input v-model="skillsForm.customPath" placeholder="e.g. ~/.codex/skills" />
-            </div>
-            <div class="toggle-group">
-              <label class="toggle">
-                <input v-model="skillsForm.force" type="checkbox" />
-                Overwrite existing skill folder
-              </label>
-            </div>
-            <div class="actions">
-              <button class="primary" type="button" @click="installSkills" :disabled="busy">
+              <button class="secondary" type="button" @click="openSkillsModal">
                 Install skills
               </button>
             </div>
@@ -408,6 +383,36 @@
           <div class="log">{{ logOutput || 'Waiting for command output...' }}</div>
         </div>
       </section>
+    </div>
+
+    <div v-if="skillsModalOpen" class="modal">
+      <div class="modal-card" style="width: min(420px, 95vw);">
+        <h2>Install Skills</h2>
+        <p>Install Vexor CLI skills to your AI assistant's skills directory.</p>
+        <div class="field">
+          <label>Install Target</label>
+          <select v-model="skillsForm.target">
+            <option value="auto">auto</option>
+            <option value="claude">claude</option>
+            <option value="codex">codex</option>
+            <option value="custom">custom</option>
+          </select>
+        </div>
+        <div v-if="skillsForm.target === 'custom'" class="field">
+          <label>Custom skills path</label>
+          <input v-model="skillsForm.customPath" placeholder="e.g. ~/.codex/skills" />
+        </div>
+        <div class="toggle-group">
+          <label class="toggle">
+            <input v-model="skillsForm.force" type="checkbox" />
+            Overwrite existing skill folder
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary" type="button" @click="skillsModalOpen = false">Cancel</button>
+          <button class="primary" type="button" @click="installSkills" :disabled="busy">Install</button>
+        </div>
+      </div>
     </div>
 
     <div v-if="initModalOpen" class="modal">
@@ -498,8 +503,15 @@ const configForm = reactive({
   localCuda: false
 });
 
+const skillsForm = reactive({
+  target: "auto",
+  customPath: "",
+  force: false
+});
+
 const localModel = ref("");
 const initModalOpen = ref(false);
+const skillsModalOpen = ref(false);
 const initSessionId = ref(null);
 const initLog = ref("");
 const initInput = ref("");
@@ -997,7 +1009,12 @@ async function installSkills() {
   if (skillsForm.force) {
     args.push("--force");
   }
+  skillsModalOpen.value = false;
   await runConfigAction(args);
+}
+
+function openSkillsModal() {
+  skillsModalOpen.value = true;
 }
 
 async function openReleases() {
@@ -1071,8 +1088,3 @@ onBeforeUnmount(() => {
   }
 });
 </script>
-const skillsForm = reactive({
-  target: "auto",
-  customPath: "",
-  force: false
-});
