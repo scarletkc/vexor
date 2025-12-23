@@ -212,10 +212,11 @@
               Download CLI
             </button>
             <button
+              v-if="cliInfo.downloadedExists"
               class="secondary"
               type="button"
               @click="removeDownloadedCli"
-              :disabled="busy || !cliInfo.downloadedExists"
+              :disabled="busy"
             >
               Remove Downloaded CLI
             </button>
