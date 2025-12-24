@@ -22,6 +22,7 @@ def test_load_config_defaults(tmp_path, monkeypatch):
     assert cfg.local_cuda is False
     assert cfg.embed_concurrency == config_module.DEFAULT_EMBED_CONCURRENCY
     assert cfg.extract_concurrency == config_module.DEFAULT_EXTRACT_CONCURRENCY
+    assert cfg.extract_backend == config_module.DEFAULT_EXTRACT_BACKEND
     assert cfg.rerank == config_module.DEFAULT_RERANK
     assert cfg.flashrank_model is None
     assert cfg.remote_rerank is None
@@ -84,6 +85,14 @@ def test_save_and_load_extract_concurrency(tmp_path, monkeypatch):
     config_module.save_config(config_module.Config(extract_concurrency=5))
     cfg = config_module.load_config()
     assert cfg.extract_concurrency == 5
+
+
+def test_save_and_load_extract_backend(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+
+    config_module.save_config(config_module.Config(extract_backend="process"))
+    cfg = config_module.load_config()
+    assert cfg.extract_backend == "process"
 
 
 def test_save_and_load_rerank(tmp_path, monkeypatch):
@@ -190,6 +199,7 @@ def test_update_config_from_json_merges(tmp_path, monkeypatch):
             "provider": "gemini",
             "api_key": "key",
             "batch_size": 9,
+            "extract_backend": "process",
             "rerank": "remote",
             "remote_rerank": {
                 "base_url": "https://api.example.test/v1",
@@ -207,6 +217,7 @@ def test_update_config_from_json_merges(tmp_path, monkeypatch):
     assert cfg.batch_size == 9
     assert cfg.embed_concurrency == 4
     assert cfg.extract_concurrency == 5
+    assert cfg.extract_backend == "process"
     assert cfg.rerank == "remote"
     assert cfg.remote_rerank is not None
     assert cfg.remote_rerank.base_url == "https://api.example.test/v1/rerank"

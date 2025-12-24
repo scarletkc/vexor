@@ -60,6 +60,7 @@ class Messages:
     HELP_SET_BATCH = "Set the default batch size (0 = single request)."
     HELP_SET_EMBED_CONCURRENCY = "Set the number of concurrent embedding requests."
     HELP_SET_EXTRACT_CONCURRENCY = "Set the number of concurrent file extraction workers."
+    HELP_SET_EXTRACT_BACKEND = "Set the extraction backend (auto, thread, process)."
     HELP_SET_PROVIDER = "Set the default embedding provider (e.g., gemini, openai, custom, or local)."
     HELP_SET_BASE_URL = "Override the provider's base URL (leave unset for official endpoints)."
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
@@ -119,6 +120,9 @@ class Messages:
     ERROR_BATCH_NEGATIVE = "Batch size must be >= 0"
     ERROR_CONCURRENCY_INVALID = "Embedding concurrency must be >= 1"
     ERROR_EXTRACT_CONCURRENCY_INVALID = "Extraction concurrency must be >= 1"
+    ERROR_EXTRACT_BACKEND_INVALID = (
+        "Unsupported extraction backend '{value}'. Allowed values: {allowed}."
+    )
     ERROR_MODE_INVALID = "Unsupported mode '{value}'. Allowed values: {allowed}."
     ERROR_PROVIDER_INVALID = "Unsupported provider '{value}'. Allowed values: {allowed}."
     ERROR_RERANK_INVALID = "Unsupported rerank value '{value}'. Allowed values: {allowed}."
@@ -269,6 +273,7 @@ class Messages:
     INFO_BATCH_SET = "Default batch size set to {value}."
     INFO_EMBED_CONCURRENCY_SET = "Embedding concurrency set to {value}."
     INFO_EXTRACT_CONCURRENCY_SET = "Extraction concurrency set to {value}."
+    INFO_EXTRACT_BACKEND_SET = "Extraction backend set to {value}."
     INFO_PROVIDER_SET = "Default provider set to {value}."
     INFO_BASE_URL_SET = "Base URL override set to {value}."
     INFO_BASE_URL_CLEARED = "Base URL override cleared."
@@ -312,6 +317,7 @@ class Messages:
         "Default batch size: {batch}\n"
         "Embedding concurrency: {concurrency}\n"
         "Extract concurrency: {extract_concurrency}\n"
+        "Extract backend: {extract_backend}\n"
         "Auto index: {auto_index}\n"
         "Rerank: {rerank}\n"
         "{flashrank_line}"

@@ -18,15 +18,17 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_MODEL = "text-embedding-3-small"
 DEFAULT_GEMINI_MODEL = "gemini-embedding-001"
 DEFAULT_LOCAL_MODEL = "intfloat/multilingual-e5-small"
-DEFAULT_BATCH_SIZE = 64
+DEFAULT_BATCH_SIZE = 32
 DEFAULT_EMBED_CONCURRENCY = 2
 DEFAULT_EXTRACT_CONCURRENCY = max(1, min(4, os.cpu_count() or 1))
+DEFAULT_EXTRACT_BACKEND = "auto"
 DEFAULT_PROVIDER = "openai"
 DEFAULT_RERANK = "off"
 DEFAULT_FLASHRANK_MODEL = "ms-marco-TinyBERT-L-2-v2"
 DEFAULT_FLASHRANK_MAX_LENGTH = 256
 SUPPORTED_PROVIDERS: tuple[str, ...] = (DEFAULT_PROVIDER, "gemini", "custom", "local")
 SUPPORTED_RERANKERS: tuple[str, ...] = ("off", "bm25", "flashrank", "remote")
+SUPPORTED_EXTRACT_BACKENDS: tuple[str, ...] = ("auto", "thread", "process")
 ENV_API_KEY = "VEXOR_API_KEY"
 REMOTE_RERANK_ENV = "VEXOR_REMOTE_RERANK_API_KEY"
 LEGACY_GEMINI_ENV = "GOOGLE_GENAI_API_KEY"
@@ -47,6 +49,7 @@ class Config:
     batch_size: int = DEFAULT_BATCH_SIZE
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY
     extract_concurrency: int = DEFAULT_EXTRACT_CONCURRENCY
+    extract_backend: str = DEFAULT_EXTRACT_BACKEND
     provider: str = DEFAULT_PROVIDER
     base_url: str | None = None
     auto_index: bool = True
@@ -86,6 +89,7 @@ def load_config() -> Config:
         extract_concurrency=int(
             raw.get("extract_concurrency", DEFAULT_EXTRACT_CONCURRENCY)
         ),
+        extract_backend=_coerce_extract_backend(raw.get("extract_backend")),
         provider=raw.get("provider") or DEFAULT_PROVIDER,
         base_url=raw.get("base_url") or None,
         auto_index=bool(raw.get("auto_index", True)),
@@ -106,6 +110,7 @@ def save_config(config: Config) -> None:
     data["batch_size"] = config.batch_size
     data["embed_concurrency"] = config.embed_concurrency
     data["extract_concurrency"] = config.extract_concurrency
+    data["extract_backend"] = config.extract_backend
     if config.provider:
         data["provider"] = config.provider
     if config.base_url:
@@ -198,6 +203,12 @@ def set_embed_concurrency(value: int) -> None:
 def set_extract_concurrency(value: int) -> None:
     config = load_config()
     config.extract_concurrency = value
+    save_config(config)
+
+
+def set_extract_backend(value: str) -> None:
+    config = load_config()
+    config.extract_backend = _normalize_extract_backend(value)
     save_config(config)
 
 
@@ -354,6 +365,7 @@ def _clone_config(config: Config) -> Config:
         batch_size=config.batch_size,
         embed_concurrency=config.embed_concurrency,
         extract_concurrency=config.extract_concurrency,
+        extract_backend=config.extract_backend,
         provider=config.provider,
         base_url=config.base_url,
         auto_index=config.auto_index,
@@ -393,6 +405,8 @@ def _apply_config_payload(config: Config, payload: Mapping[str, object]) -> None
             "extract_concurrency",
             DEFAULT_EXTRACT_CONCURRENCY,
         )
+    if "extract_backend" in payload:
+        config.extract_backend = _normalize_extract_backend(payload["extract_backend"])
     if "provider" in payload:
         config.provider = _coerce_required_str(
             payload["provider"], "provider", DEFAULT_PROVIDER
@@ -465,6 +479,26 @@ def _coerce_bool(value: object, field: str) -> bool:
         if cleaned in {"false", "0", "no", "off"}:
             return False
     raise ValueError(Messages.ERROR_CONFIG_VALUE_INVALID.format(field=field))
+
+
+def _normalize_extract_backend(value: object) -> str:
+    if value is None:
+        return DEFAULT_EXTRACT_BACKEND
+    if isinstance(value, str):
+        normalized = value.strip().lower() or DEFAULT_EXTRACT_BACKEND
+        if normalized in SUPPORTED_EXTRACT_BACKENDS:
+            return normalized
+    raise ValueError(Messages.ERROR_CONFIG_VALUE_INVALID.format(field="extract_backend"))
+
+
+def _coerce_extract_backend(value: object) -> str:
+    if value is None:
+        return DEFAULT_EXTRACT_BACKEND
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in SUPPORTED_EXTRACT_BACKENDS:
+            return normalized
+    return DEFAULT_EXTRACT_BACKEND
 
 
 def _normalize_rerank(value: object) -> str:

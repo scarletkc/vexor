@@ -40,7 +40,7 @@ Core parameters:
 
 Config-related parameters:
 
-- `provider`, `model`, `batch_size`, `embed_concurrency`, `extract_concurrency`
+- `provider`, `model`, `batch_size`, `embed_concurrency`, `extract_concurrency`, `extract_backend`
 - `base_url`, `api_key`, `local_cuda`
 - `auto_index`, `use_config`
 - `config`: `Config` object, dict, or JSON string (per-call override)
@@ -96,6 +96,7 @@ The `config` payload (dict/JSON) supports:
 - `batch_size`: integer
 - `embed_concurrency`: integer
 - `extract_concurrency`: integer
+- `extract_backend`: `auto`, `thread`, or `process`
 - `auto_index`: boolean
 - `local_cuda`: boolean (local provider only)
 - `rerank`: `off`, `bm25`, `flashrank`, `remote`

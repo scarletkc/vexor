@@ -12,6 +12,7 @@ from ..config import (
     set_batch_size,
     set_embed_concurrency,
     set_extract_concurrency,
+    set_extract_backend,
     set_auto_index,
     set_flashrank_model,
     set_local_cuda,
@@ -30,6 +31,7 @@ class ConfigUpdateResult:
     batch_size_set: bool = False
     embed_concurrency_set: bool = False
     extract_concurrency_set: bool = False
+    extract_backend_set: bool = False
     provider_set: bool = False
     base_url_set: bool = False
     base_url_cleared: bool = False
@@ -52,6 +54,7 @@ class ConfigUpdateResult:
                 self.batch_size_set,
                 self.embed_concurrency_set,
                 self.extract_concurrency_set,
+                self.extract_backend_set,
                 self.provider_set,
                 self.base_url_set,
                 self.base_url_cleared,
@@ -75,6 +78,7 @@ def apply_config_updates(
     batch_size: int | None = None,
     embed_concurrency: int | None = None,
     extract_concurrency: int | None = None,
+    extract_backend: str | None = None,
     provider: str | None = None,
     base_url: str | None = None,
     clear_base_url: bool = False,
@@ -108,6 +112,9 @@ def apply_config_updates(
     if extract_concurrency is not None:
         set_extract_concurrency(extract_concurrency)
         result.extract_concurrency_set = True
+    if extract_backend is not None:
+        set_extract_backend(extract_backend)
+        result.extract_backend_set = True
     if provider is not None:
         set_provider(provider)
         result.provider_set = True

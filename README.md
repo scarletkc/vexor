@@ -114,6 +114,7 @@ vexor config --set-model text-embedding-3-small
 vexor config --set-batch-size 0             # 0 = single request
 vexor config --set-embed-concurrency 2       # parallel embedding requests
 vexor config --set-extract-concurrency 4     # parallel file extraction workers
+vexor config --set-extract-backend auto      # auto|thread|process (default: auto)
 vexor config --set-auto-index true          # auto-index before search (default)
 vexor config --rerank bm25                  # optional BM25 rerank for top-k results
 vexor config --rerank flashrank             # FlashRank rerank (requires optional extra)

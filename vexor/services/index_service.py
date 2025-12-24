@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import itertools
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -16,12 +17,18 @@ from .cache_service import load_index_metadata_safe
 from .content_extract_service import TEXT_EXTENSIONS
 from .js_parser import JSTS_EXTENSIONS
 from ..cache import CACHE_VERSION, IndexedChunk, backfill_chunk_lines
-from ..config import DEFAULT_EMBED_CONCURRENCY, DEFAULT_EXTRACT_CONCURRENCY
+from ..config import (
+    DEFAULT_EMBED_CONCURRENCY,
+    DEFAULT_EXTRACT_BACKEND,
+    DEFAULT_EXTRACT_CONCURRENCY,
+)
 from ..modes import get_strategy, ModePayload
 
 INCREMENTAL_CHANGE_THRESHOLD = 0.5
 MTIME_TOLERANCE = 5e-1
 MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
+_EXTRACT_PROCESS_MIN_FILES = 16
+_CPU_HEAVY_MODES = {"auto", "code", "outline", "full"}
 
 
 class IndexStatus(str, Enum):
@@ -41,11 +48,39 @@ def _resolve_extract_concurrency(value: int) -> int:
     return max(int(value or 1), 1)
 
 
+def _resolve_extract_backend(
+    value: str | None,
+    *,
+    mode: str,
+    file_count: int,
+    concurrency: int,
+) -> str:
+    normalized = (value or DEFAULT_EXTRACT_BACKEND).strip().lower()
+    if normalized not in {"auto", "thread", "process"}:
+        normalized = DEFAULT_EXTRACT_BACKEND
+    if normalized == "auto":
+        if (
+            concurrency > 1
+            and file_count >= _EXTRACT_PROCESS_MIN_FILES
+            and mode in _CPU_HEAVY_MODES
+        ):
+            return "process"
+        return "thread"
+    return normalized
+
+
+def _extract_payloads_for_mode(path: Path, mode: str) -> list[ModePayload]:
+    strategy = get_strategy(mode)
+    return strategy.payloads_for_files([path])
+
+
 def _payloads_for_files(
     strategy,
     files: Sequence[Path],
     *,
+    mode: str,
     extract_concurrency: int,
+    extract_backend: str,
 ) -> list[ModePayload]:
     if not files:
         return []
@@ -54,14 +89,38 @@ def _payloads_for_files(
         return strategy.payloads_for_files(files)
     max_workers = min(concurrency, len(files))
 
-    def _extract_one(path: Path) -> list[ModePayload]:
-        return strategy.payloads_for_files([path])
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        results = executor.map(_extract_one, files)
-        payloads: list[ModePayload] = []
-        for batch in results:
-            payloads.extend(batch)
-        return payloads
+    def _extract_with_thread_pool() -> list[ModePayload]:
+        def _extract_one(path: Path) -> list[ModePayload]:
+            return strategy.payloads_for_files([path])
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = executor.map(_extract_one, files)
+            payloads: list[ModePayload] = []
+            for batch in results:
+                payloads.extend(batch)
+            return payloads
+
+    effective_backend = _resolve_extract_backend(
+        extract_backend,
+        mode=mode,
+        file_count=len(files),
+        concurrency=concurrency,
+    )
+    if effective_backend == "process":
+        try:
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                results = executor.map(
+                    _extract_payloads_for_mode,
+                    files,
+                    itertools.repeat(mode),
+                )
+                payloads: list[ModePayload] = []
+                for batch in results:
+                    payloads.extend(batch)
+                return payloads
+        except Exception:
+            return _extract_with_thread_pool()
+    return _extract_with_thread_pool()
 
 
 def build_index(
@@ -75,6 +134,7 @@ def build_index(
     batch_size: int,
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY,
     extract_concurrency: int = DEFAULT_EXTRACT_CONCURRENCY,
+    extract_backend: str = DEFAULT_EXTRACT_BACKEND,
     provider: str,
     base_url: str | None,
     api_key: str | None,
@@ -142,6 +202,8 @@ def build_index(
                     missing_rel_paths=missing_line_files,
                     root=directory,
                     extract_concurrency=extract_concurrency,
+                    extract_backend=extract_backend,
+                    mode=mode,
                 )
                 cache_path = backfill_chunk_lines(
                     root=directory,
@@ -203,7 +265,9 @@ def build_index(
                 _payloads_for_files(
                     strategy,
                     changed_files,
+                    mode=mode,
                     extract_concurrency=extract_concurrency,
+                    extract_backend=extract_backend,
                 )
                 if changed_files
                 else []
@@ -237,6 +301,8 @@ def build_index(
                     missing_rel_paths=line_backfill_targets,
                     root=directory,
                     extract_concurrency=extract_concurrency,
+                    extract_backend=extract_backend,
+                    mode=mode,
                 )
                 cache_path = backfill_chunk_lines(
                     root=directory,
@@ -258,7 +324,9 @@ def build_index(
     payloads = _payloads_for_files(
         strategy,
         files,
+        mode=mode,
         extract_concurrency=extract_concurrency,
+        extract_backend=extract_backend,
     )
     file_labels = [payload.label for payload in payloads]
     embeddings = _embed_labels_with_cache(
@@ -298,6 +366,7 @@ def build_index_in_memory(
     batch_size: int,
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY,
     extract_concurrency: int = DEFAULT_EXTRACT_CONCURRENCY,
+    extract_backend: str = DEFAULT_EXTRACT_BACKEND,
     provider: str,
     base_url: str | None,
     api_key: str | None,
@@ -353,7 +422,9 @@ def build_index_in_memory(
     payloads = _payloads_for_files(
         strategy,
         files,
+        mode=mode,
         extract_concurrency=extract_concurrency,
+        extract_backend=extract_backend,
     )
     if not payloads:
         empty = np.empty((0, 0), dtype=np.float32)
@@ -857,6 +928,8 @@ def _build_line_backfill_updates(
     missing_rel_paths: set[str],
     root: Path,
     extract_concurrency: int,
+    extract_backend: str,
+    mode: str,
 ) -> list[tuple[str, int, int | None, int | None]]:
     if not missing_rel_paths:
         return []
@@ -867,7 +940,9 @@ def _build_line_backfill_updates(
     payloads = _payloads_for_files(
         strategy,
         targets,
+        mode=mode,
         extract_concurrency=extract_concurrency,
+        extract_backend=extract_backend,
     )
     return [
         (

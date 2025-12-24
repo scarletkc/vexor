@@ -31,6 +31,7 @@ from .config import (
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
     DEFAULT_RERANK,
+    SUPPORTED_EXTRACT_BACKENDS,
     SUPPORTED_PROVIDERS,
     SUPPORTED_RERANKERS,
     flashrank_cache_dir,
@@ -402,6 +403,7 @@ def search(
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
     embed_concurrency = config.embed_concurrency
     extract_concurrency = config.extract_concurrency
+    extract_backend = config.extract_backend
     base_url = config.base_url
     api_key = config.api_key
     auto_index = bool(config.auto_index)
@@ -440,6 +442,7 @@ def search(
         batch_size=batch_size,
         embed_concurrency=embed_concurrency,
         extract_concurrency=extract_concurrency,
+        extract_backend=extract_backend,
         provider=provider,
         base_url=base_url,
         api_key=api_key,
@@ -580,6 +583,7 @@ def index(
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
     embed_concurrency = config.embed_concurrency
     extract_concurrency = config.extract_concurrency
+    extract_backend = config.extract_backend
     base_url = config.base_url
     api_key = config.api_key
 
@@ -677,6 +681,7 @@ def index(
             batch_size=batch_size,
             embed_concurrency=embed_concurrency,
             extract_concurrency=extract_concurrency,
+            extract_backend=extract_backend,
             provider=provider,
             base_url=base_url,
             api_key=api_key,
@@ -742,6 +747,11 @@ def config(
         None,
         "--set-extract-concurrency",
         help=Messages.HELP_SET_EXTRACT_CONCURRENCY,
+    ),
+    set_extract_backend_option: str | None = typer.Option(
+        None,
+        "--set-extract-backend",
+        help=Messages.HELP_SET_EXTRACT_BACKEND,
     ),
     set_provider_option: str | None = typer.Option(
         None,
@@ -846,6 +856,16 @@ def config(
         if not normalized_remote_key:
             raise typer.BadParameter(Messages.ERROR_REMOTE_RERANK_API_KEY_EMPTY)
         set_remote_rerank_api_key_option = normalized_remote_key
+    if set_extract_backend_option is not None:
+        normalized_backend = set_extract_backend_option.strip().lower()
+        if normalized_backend not in SUPPORTED_EXTRACT_BACKENDS:
+            allowed = ", ".join(SUPPORTED_EXTRACT_BACKENDS)
+            raise typer.BadParameter(
+                Messages.ERROR_EXTRACT_BACKEND_INVALID.format(
+                    value=set_extract_backend_option, allowed=allowed
+                )
+            )
+        set_extract_backend_option = normalized_backend
     if clear_remote_rerank and any(
         (
             set_remote_rerank_url_option is not None,
@@ -862,6 +882,7 @@ def config(
             set_batch_option is not None,
             set_embed_concurrency_option is not None,
             set_extract_concurrency_option is not None,
+            set_extract_backend_option is not None,
             set_provider_option is not None,
             set_base_url_option is not None,
             clear_base_url,
@@ -975,6 +996,7 @@ def config(
         batch_size=set_batch_option,
         embed_concurrency=set_embed_concurrency_option,
         extract_concurrency=set_extract_concurrency_option,
+        extract_backend=set_extract_backend_option,
         provider=set_provider_option,
         base_url=set_base_url_option,
         clear_base_url=clear_base_url,
@@ -1012,6 +1034,13 @@ def config(
                 Messages.INFO_EXTRACT_CONCURRENCY_SET.format(
                     value=set_extract_concurrency_option
                 ),
+                Styles.SUCCESS,
+            )
+        )
+    if updates.extract_backend_set and set_extract_backend_option is not None:
+        console.print(
+            _styled(
+                Messages.INFO_EXTRACT_BACKEND_SET.format(value=set_extract_backend_option),
                 Styles.SUCCESS,
             )
         )
@@ -1162,6 +1191,7 @@ def config(
                     batch=cfg.batch_size if cfg.batch_size is not None else DEFAULT_BATCH_SIZE,
                     concurrency=cfg.embed_concurrency,
                     extract_concurrency=cfg.extract_concurrency,
+                    extract_backend=cfg.extract_backend,
                     auto_index="yes" if cfg.auto_index else "no",
                     rerank=rerank,
                     flashrank_line=flashrank_line,
