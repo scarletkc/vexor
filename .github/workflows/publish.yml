@@ -160,15 +160,22 @@ jobs:
               release_changed = current_version != prev_version
 
           current_tag = f"v{current_version}"
+          prev_tag = ""
           try:
-              tag_list = subprocess.check_output(
-                  ["git", "tag", "--list", "v*", "--sort=-version:refname"],
+              prev_tag = subprocess.check_output(
+                  ["git", "describe", "--tags", "--abbrev=0", "--match", "v*", "HEAD"],
                   text=True,
-              ).splitlines()
+              ).strip()
           except subprocess.CalledProcessError:
-              tag_list = []
-
-          prev_tag = next((tag for tag in tag_list if tag != current_tag), "")
+              prev_tag = ""
+          if prev_tag == current_tag:
+              try:
+                  prev_tag = subprocess.check_output(
+                      ["git", "describe", "--tags", "--abbrev=0", "--match", "v*", "HEAD^"],
+                      text=True,
+                  ).strip()
+              except subprocess.CalledProcessError:
+                  prev_tag = ""
           prev_gui = read_file_from_ref(prev_tag, "gui/package.json") if prev_tag else None
           if prev_gui is None:
               gui_changed = True
