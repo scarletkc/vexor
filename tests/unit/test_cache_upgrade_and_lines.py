@@ -52,9 +52,14 @@ def test_ensure_schema_upgrades_legacy_indexed_file(tmp_path, monkeypatch):
         )
         cache._ensure_schema(conn)  # type: ignore[attr-defined]
         columns = [row[1] for row in conn.execute("PRAGMA table_info(indexed_file)").fetchall()]
-        assert "chunk_index" in columns
-        assert "start_line" in columns
-        assert "end_line" in columns
+        assert "position" not in columns
+        assert "chunk_index" not in columns
+        assert "preview" not in columns
+        table_names = {
+            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "indexed_chunk" in table_names
+        assert "chunk_meta" in table_names
     finally:
         conn.close()
 

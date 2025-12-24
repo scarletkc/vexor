@@ -361,6 +361,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
     from ..cache import (  # local import
         embedding_cache_key,
         list_cache_entries,
+        load_chunk_metadata,
         load_embedding_cache,
         load_index_vectors,
         load_query_vector,
@@ -459,6 +460,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
 
     file_snapshot = metadata.get("files", [])
     chunk_entries = metadata.get("chunks", [])
+    chunk_ids = metadata.get("chunk_ids", [])
     stale = bool(file_snapshot) and not is_cache_current(
         request.directory,
         request.include_hidden,
@@ -620,11 +622,25 @@ def perform_search(request: SearchRequest) -> SearchResponse:
     query_vector = np.asarray(query_vector, dtype=np.float32).ravel()
     similarities = np.asarray(file_vectors @ query_vector, dtype=np.float32)
     top_indices = _top_indices(similarities, candidate_count)
+    chunk_meta_by_id: dict[int, dict] = {}
+    if chunk_ids:
+        candidate_ids = [
+            chunk_ids[idx] for idx in top_indices if idx < len(chunk_ids)
+        ]
+        if candidate_ids:
+            try:
+                chunk_meta_by_id = load_chunk_metadata(candidate_ids)
+            except Exception:  # pragma: no cover - best-effort metadata lookup
+                chunk_meta_by_id = {}
     scored: list[SearchResult] = []
     for idx in top_indices:
         path = paths[idx]
         score = similarities[idx]
-        chunk_meta = chunk_entries[idx] if idx < len(chunk_entries) else {}
+        chunk_meta = {}
+        if chunk_ids and idx < len(chunk_ids):
+            chunk_meta = chunk_meta_by_id.get(chunk_ids[idx], {})
+        elif idx < len(chunk_entries):
+            chunk_meta = chunk_entries[idx]
         start_line = chunk_meta.get("start_line")
         end_line = chunk_meta.get("end_line")
         scored.append(
@@ -933,6 +949,7 @@ def _filter_index_by_extensions(
     ext_set = {ext.lower() for ext in extensions if ext}
     if not ext_set:
         return list(paths), file_vectors, metadata
+    chunk_ids = metadata.get("chunk_ids")
     keep_indices: list[int] = []
     filtered_paths: list[Path] = []
     for idx, path in enumerate(paths):
@@ -947,6 +964,8 @@ def _filter_index_by_extensions(
             ext_set,
         )
         filtered_metadata["chunks"] = []
+        if chunk_ids is not None:
+            filtered_metadata["chunk_ids"] = []
         return [], filtered_vectors, filtered_metadata
     filtered_vectors = file_vectors[keep_indices]
     chunk_entries = metadata.get("chunks", [])
@@ -959,6 +978,10 @@ def _filter_index_by_extensions(
         ext_set,
     )
     filtered_metadata["chunks"] = filtered_chunks
+    if chunk_ids is not None:
+        filtered_metadata["chunk_ids"] = [
+            chunk_ids[idx] for idx in keep_indices if idx < len(chunk_ids)
+        ]
     return filtered_paths, filtered_vectors, filtered_metadata
 
 
@@ -971,6 +994,7 @@ def _filter_index_by_exclude_patterns(
 ) -> tuple[list[Path], Sequence[Sequence[float]], dict]:
     if exclude_spec is None:
         return list(paths), file_vectors, metadata
+    chunk_ids = metadata.get("chunk_ids")
     keep_indices: list[int] = []
     filtered_paths: list[Path] = []
     root_resolved = root.resolve()
@@ -991,6 +1015,8 @@ def _filter_index_by_exclude_patterns(
             exclude_spec,
         )
         filtered_metadata["chunks"] = []
+        if chunk_ids is not None:
+            filtered_metadata["chunk_ids"] = []
         return [], filtered_vectors, filtered_metadata
     filtered_vectors = file_vectors[keep_indices]
     chunk_entries = metadata.get("chunks", [])
@@ -1003,6 +1029,10 @@ def _filter_index_by_exclude_patterns(
         exclude_spec,
     )
     filtered_metadata["chunks"] = filtered_chunks
+    if chunk_ids is not None:
+        filtered_metadata["chunk_ids"] = [
+            chunk_ids[idx] for idx in keep_indices if idx < len(chunk_ids)
+        ]
     return filtered_paths, filtered_vectors, filtered_metadata
 
 
@@ -1019,6 +1049,7 @@ def _filter_index_by_directory(
         relative_dir = directory.resolve().relative_to(index_root.resolve())
     except ValueError:
         return list(paths), file_vectors, metadata
+    chunk_ids = metadata.get("chunk_ids")
     keep_indices: list[int] = []
     filtered_paths: list[Path] = []
     for idx, path in enumerate(paths):
@@ -1039,6 +1070,8 @@ def _filter_index_by_directory(
             recursive=recursive,
         )
         filtered_metadata["chunks"] = []
+        if chunk_ids is not None:
+            filtered_metadata["chunk_ids"] = []
         filtered_metadata["root"] = str(directory)
         return [], filtered_vectors, filtered_metadata
     filtered_vectors = file_vectors[keep_indices]
@@ -1053,6 +1086,10 @@ def _filter_index_by_directory(
         recursive=recursive,
     )
     filtered_metadata["chunks"] = filtered_chunks
+    if chunk_ids is not None:
+        filtered_metadata["chunk_ids"] = [
+            chunk_ids[idx] for idx in keep_indices if idx < len(chunk_ids)
+        ]
     filtered_metadata["root"] = str(directory)
     return filtered_paths, filtered_vectors, filtered_metadata
 

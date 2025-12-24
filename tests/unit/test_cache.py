@@ -76,7 +76,10 @@ def test_store_and_load_index(tmp_path, monkeypatch):
     assert [p.name for p in loaded_paths] == ["a.txt", "b.txt", "c.txt"]
     assert np.allclose(loaded_vectors, embeddings)
     assert meta["model"] == "test-model"
-    assert meta["chunks"][0]["preview"] == "preview-a.txt"
+    chunk_ids = meta.get("chunk_ids", [])
+    assert len(chunk_ids) == 3
+    chunk_meta = cache.load_chunk_metadata(chunk_ids)
+    assert chunk_meta[chunk_ids[0]]["preview"] == "preview-a.txt"
     assert meta["exclude_patterns"] == ()
     assert meta["extensions"] == ()
 

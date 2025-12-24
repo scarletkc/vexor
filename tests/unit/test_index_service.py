@@ -179,9 +179,14 @@ def test_build_index_backfills_line_metadata_when_missing(tmp_path, monkeypatch)
         ).fetchone()
         assert meta_row is not None
         index_id = int(meta_row["id"])
-        conn.execute("UPDATE index_metadata SET version = 5 WHERE id = ?", (index_id,))
         conn.execute(
-            "UPDATE indexed_file SET start_line = NULL, end_line = NULL WHERE index_id = ?",
+            """
+            UPDATE chunk_meta
+            SET start_line = NULL, end_line = NULL
+            WHERE chunk_id IN (
+                SELECT id FROM indexed_chunk WHERE index_id = ?
+            )
+            """,
             (index_id,),
         )
         conn.commit()
