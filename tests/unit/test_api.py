@@ -127,6 +127,105 @@ def test_set_data_dir_updates_config_and_cache(tmp_path) -> None:
         cache_module.set_cache_dir(original_cache_dir)
 
 
+def test_set_config_json_updates_runtime_config(tmp_path, monkeypatch) -> None:
+    from vexor import cache as cache_module
+    from vexor import config as config_module
+
+    original_config_dir = config_module.CONFIG_DIR
+    original_cache_dir = cache_module.CACHE_DIR
+
+    api_module.set_data_dir(tmp_path)
+    try:
+        captured: dict[str, object] = {}
+
+        def fake_perform_search(request):
+            captured["request"] = request
+            return SearchResponse(
+                base_path=tmp_path,
+                backend=None,
+                results=[SearchResult(path=tmp_path / "file.py", score=0.9)],
+                is_stale=False,
+                index_empty=False,
+            )
+
+        monkeypatch.setattr(api_module, "perform_search", fake_perform_search)
+
+        api_module.set_config_json(
+            {"provider": "gemini", "api_key": "key", "rerank": "bm25"}
+        )
+        assert config_module.CONFIG_FILE.exists() is False
+
+        api_module.search("hello", path=tmp_path, mode="name")
+        req = captured["request"]
+        assert req.provider == "gemini"
+        assert req.api_key == "key"
+        assert req.rerank == "bm25"
+    finally:
+        api_module.set_config_json(None)
+        config_module.set_config_dir(original_config_dir)
+        cache_module.set_cache_dir(original_cache_dir)
+
+
+def test_set_config_json_rejects_invalid_payload(tmp_path) -> None:
+    from vexor import cache as cache_module
+    from vexor import config as config_module
+
+    original_config_dir = config_module.CONFIG_DIR
+    original_cache_dir = cache_module.CACHE_DIR
+
+    api_module.set_data_dir(tmp_path)
+    try:
+        with pytest.raises(api_module.VexorError):
+            api_module.set_config_json('["nope"]')
+    finally:
+        config_module.set_config_dir(original_config_dir)
+        cache_module.set_cache_dir(original_cache_dir)
+
+
+def test_search_accepts_config_override(tmp_path, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_perform_search(request):
+        captured["request"] = request
+        return SearchResponse(
+            base_path=tmp_path,
+            backend=None,
+            results=[SearchResult(path=tmp_path / "file.py", score=0.9)],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr(api_module, "perform_search", fake_perform_search)
+
+    api_module.search(
+        "hello",
+        path=tmp_path,
+        mode="name",
+        config={
+            "provider": "gemini",
+            "api_key": "key",
+            "rerank": "remote",
+            "remote_rerank": {
+                "base_url": "https://api.example.test/v1",
+                "api_key": "remote-key",
+                "model": "rerank-model",
+            },
+        },
+    )
+
+    req = captured["request"]
+    assert req.provider == "gemini"
+    assert req.api_key == "key"
+    assert req.rerank == "remote"
+    assert req.remote_rerank is not None
+    assert req.remote_rerank.base_url == "https://api.example.test/v1/rerank"
+
+
+def test_search_rejects_invalid_config_override(tmp_path) -> None:
+    with pytest.raises(api_module.VexorError):
+        api_module.search("hello", path=tmp_path, config='["nope"]')
+
+
 def test_search_validates_mode_and_query(tmp_path) -> None:
     with pytest.raises(api_module.VexorError):
         api_module.search("   ", path=tmp_path, use_config=False)

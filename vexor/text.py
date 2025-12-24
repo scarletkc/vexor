@@ -299,6 +299,8 @@ class Messages:
     ERROR_CONFIG_EDITOR_NOT_FOUND = "Unable to determine a text editor. Set $VISUAL or $EDITOR, or install nano/vi."
     ERROR_CONFIG_EDITOR_FAILED = "Editor exited with status {code}."
     ERROR_CONFIG_EDITOR_LAUNCH = "Failed to launch editor: {reason}."
+    ERROR_CONFIG_JSON_INVALID = "Config JSON must be an object."
+    ERROR_CONFIG_VALUE_INVALID = "Config JSON has invalid value for {field}."
     INFO_CONFIG_SUMMARY = (
         "API key set: {api}\n"
         "Default provider: {provider}\n"

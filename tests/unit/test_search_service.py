@@ -8,6 +8,7 @@ import pytest
 from vexor.services.index_service import IndexResult, IndexStatus
 from vexor.config import RemoteRerankConfig
 from vexor.services.search_service import SearchRequest, perform_search
+import vexor.search as search_module
 
 
 class DummySearcher:
@@ -55,7 +56,7 @@ def test_perform_search_auto_indexes_when_missing(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr("vexor.cache.load_index_vectors", fake_load_index_vectors)
     monkeypatch.setattr("vexor.services.index_service.build_index", fake_build_index)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
-    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
 
     request = SearchRequest(
         query="alpha",
@@ -85,6 +86,116 @@ def test_perform_search_auto_indexes_when_missing(monkeypatch, tmp_path: Path) -
     assert isinstance(calls["index_kwargs"], dict)
     assert calls["index_kwargs"]["directory"] == tmp_path
     assert calls["index_kwargs"]["mode"] == "name"
+
+
+def test_perform_search_uses_temporary_index(monkeypatch, tmp_path: Path) -> None:
+    calls: dict[str, int] = {"in_memory": 0}
+
+    def fake_build_index_in_memory(directory: Path, **kwargs):
+        calls["in_memory"] += 1
+        paths = [tmp_path / "a.txt", tmp_path / "b.txt"]
+        vectors = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+        metadata = {
+            "chunks": [
+                {"path": "a.txt", "chunk_index": 0, "preview": "a"},
+                {"path": "b.txt", "chunk_index": 0, "preview": "b"},
+            ],
+        }
+        return paths, vectors, metadata
+
+    def fail_cache_use(*_args, **_kwargs):
+        raise AssertionError("cache access should be skipped for temporary index")
+
+    monkeypatch.setattr(
+        "vexor.services.index_service.build_index_in_memory",
+        fake_build_index_in_memory,
+    )
+    monkeypatch.setattr("vexor.cache.load_index_vectors", fail_cache_use)
+    monkeypatch.setattr("vexor.cache.list_cache_entries", fail_cache_use)
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
+
+    request = SearchRequest(
+        query="alpha",
+        directory=tmp_path,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=True,
+        top_k=2,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key="k",
+        local_cuda=False,
+        exclude_patterns=(),
+        extensions=(),
+        auto_index=False,
+        temporary_index=True,
+    )
+    response = perform_search(request)
+
+    assert calls["in_memory"] == 1
+    assert response.index_empty is False
+    assert response.is_stale is False
+    assert response.results[0].path.name == "a.txt"
+
+
+def test_perform_search_skips_query_cache_when_no_cache(monkeypatch, tmp_path: Path) -> None:
+    calls: dict[str, int] = {"in_memory": 0}
+
+    def fake_build_index_in_memory(directory: Path, **kwargs):
+        calls["in_memory"] += 1
+        paths = [tmp_path / "a.txt", tmp_path / "b.txt"]
+        vectors = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+        metadata = {
+            "chunks": [
+                {"path": "a.txt", "chunk_index": 0, "preview": "a"},
+                {"path": "b.txt", "chunk_index": 0, "preview": "b"},
+            ],
+        }
+        return paths, vectors, metadata
+
+    def fail_cache_use(*_args, **_kwargs):
+        raise AssertionError("cache access should be skipped when no_cache=True")
+
+    monkeypatch.setattr(
+        "vexor.services.index_service.build_index_in_memory",
+        fake_build_index_in_memory,
+    )
+    monkeypatch.setattr("vexor.cache.load_index_vectors", fail_cache_use)
+    monkeypatch.setattr("vexor.cache.list_cache_entries", fail_cache_use)
+    monkeypatch.setattr("vexor.cache.load_query_vector", fail_cache_use)
+    monkeypatch.setattr("vexor.cache.load_embedding_cache", fail_cache_use)
+    monkeypatch.setattr("vexor.cache.store_embedding_cache", fail_cache_use)
+    monkeypatch.setattr("vexor.cache.store_query_vector", fail_cache_use)
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
+
+    request = SearchRequest(
+        query="alpha",
+        directory=tmp_path,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=True,
+        top_k=2,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key="k",
+        local_cuda=False,
+        exclude_patterns=(),
+        extensions=(),
+        auto_index=False,
+        no_cache=True,
+    )
+    response = perform_search(request)
+
+    assert calls["in_memory"] == 1
+    assert response.index_empty is False
+    assert response.is_stale is False
+    assert response.results[0].path.name == "a.txt"
 
 
 def test_perform_search_missing_index_raises_when_auto_index_disabled(monkeypatch, tmp_path: Path) -> None:
@@ -145,7 +256,7 @@ def test_perform_search_auto_indexes_when_stale(monkeypatch, tmp_path: Path) -> 
     monkeypatch.setattr("vexor.cache.load_index_vectors", fake_load_index_vectors)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", fake_is_cache_current)
     monkeypatch.setattr("vexor.services.index_service.build_index", fake_build_index)
-    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
 
     request = SearchRequest(
         query="alpha",
@@ -227,7 +338,7 @@ def test_perform_search_filters_exclude_patterns_with_superset(
     monkeypatch.setattr("vexor.cache.load_index_vectors", fake_load_index_vectors)
     monkeypatch.setattr("vexor.cache.list_cache_entries", fake_list_cache_entries)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
-    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
 
     request = SearchRequest(
         query="alpha",
@@ -304,7 +415,7 @@ def test_perform_search_uses_cached_query_vector(monkeypatch, tmp_path: Path) ->
             calls["embeds"] += 1
             return np.array([[1.0, 0.0]], dtype=np.float32)
 
-    monkeypatch.setattr("vexor.search.VexorSearcher", CountingSearcher)
+    monkeypatch.setattr(search_module, "VexorSearcher", CountingSearcher)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
 
     request = SearchRequest(
@@ -389,7 +500,7 @@ def test_perform_search_reuses_superset_index_for_extension_filter(
             return np.array([[1.0, 0.0]], dtype=np.float32)
 
     monkeypatch.setattr("vexor.services.index_service.build_index", fake_build_index)
-    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
 
     request = SearchRequest(
@@ -479,7 +590,7 @@ def test_perform_search_reindexes_superset_for_extension_filter(
         return state["count"] > 1
 
     monkeypatch.setattr("vexor.services.index_service.build_index", fake_build_index)
-    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", fake_is_cache_current)
 
     request = SearchRequest(
@@ -574,7 +685,7 @@ def test_perform_search_reuses_parent_index_for_subdir(
             return np.array([[1.0, 0.0]], dtype=np.float32)
 
     monkeypatch.setattr("vexor.services.index_service.build_index", fake_build_index)
-    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
 
     request = SearchRequest(
@@ -666,7 +777,7 @@ def test_perform_search_reindexes_parent_for_subdir_stale(
         return state["count"] > 1
 
     monkeypatch.setattr("vexor.services.index_service.build_index", fake_build_index)
-    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    monkeypatch.setattr(search_module, "VexorSearcher", DummySearcher)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", fake_is_cache_current)
 
     request = SearchRequest(

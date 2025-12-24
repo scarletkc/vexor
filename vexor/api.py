@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Sequence
 
 from .config import (
@@ -13,6 +14,7 @@ from .config import (
     Config,
     RemoteRerankConfig,
     SUPPORTED_RERANKERS,
+    config_from_json,
     load_config,
     resolve_default_model,
     set_config_dir,
@@ -49,10 +51,28 @@ class RuntimeSettings:
     remote_rerank: RemoteRerankConfig | None
 
 
+_RUNTIME_CONFIG: Config | None = None
+
+
 def set_data_dir(path: Path | str | None) -> None:
     """Set the base directory for config and cache data."""
     set_config_dir(path)
     set_cache_dir(path)
+
+
+def set_config_json(
+    payload: Mapping[str, object] | str | None, *, replace: bool = False
+) -> None:
+    """Set in-memory config for API calls from a JSON string or mapping."""
+    global _RUNTIME_CONFIG
+    if payload is None:
+        _RUNTIME_CONFIG = None
+        return
+    base = None if replace else (_RUNTIME_CONFIG or load_config())
+    try:
+        _RUNTIME_CONFIG = config_from_json(payload, base=base)
+    except ValueError as exc:
+        raise VexorError(str(exc)) from exc
 
 
 def search(
@@ -75,6 +95,9 @@ def search(
     local_cuda: bool | None = None,
     auto_index: bool | None = None,
     use_config: bool = True,
+    config: Config | Mapping[str, object] | str | None = None,
+    temporary_index: bool = False,
+    no_cache: bool = False,
 ) -> SearchResponse:
     """Run a semantic search and return ranked results."""
 
@@ -103,6 +126,8 @@ def search(
         local_cuda=local_cuda,
         auto_index=auto_index,
         use_config=use_config,
+        runtime_config=_RUNTIME_CONFIG,
+        config_override=config,
     )
 
     request = SearchRequest(
@@ -123,6 +148,8 @@ def search(
         exclude_patterns=normalized_excludes,
         extensions=normalized_exts,
         auto_index=settings.auto_index,
+        temporary_index=temporary_index,
+        no_cache=no_cache,
         rerank=settings.rerank,
         flashrank_model=settings.flashrank_model,
         remote_rerank=settings.remote_rerank,
@@ -147,6 +174,7 @@ def index(
     api_key: str | None = None,
     local_cuda: bool | None = None,
     use_config: bool = True,
+    config: Config | Mapping[str, object] | str | None = None,
 ) -> IndexResult:
     """Build or refresh the index for the given directory."""
 
@@ -167,6 +195,8 @@ def index(
         local_cuda=local_cuda,
         auto_index=None,
         use_config=use_config,
+        runtime_config=_RUNTIME_CONFIG,
+        config_override=config,
     )
 
     return build_index(
@@ -257,8 +287,16 @@ def _resolve_settings(
     local_cuda: bool | None,
     auto_index: bool | None,
     use_config: bool,
+    runtime_config: Config | None = None,
+    config_override: Config | Mapping[str, object] | str | None = None,
 ) -> RuntimeSettings:
-    config = load_config() if use_config else Config()
+    config = (
+        runtime_config if (use_config and runtime_config is not None) else None
+    )
+    if config is None:
+        config = load_config() if use_config else Config()
+    if config_override is not None:
+        config = _apply_config_override(config, config_override)
     provider_value = (provider or config.provider or DEFAULT_PROVIDER).lower()
     rerank_value = (config.rerank or DEFAULT_RERANK).strip().lower()
     if rerank_value not in SUPPORTED_RERANKERS:
@@ -288,3 +326,15 @@ def _resolve_settings(
         flashrank_model=config.flashrank_model,
         remote_rerank=config.remote_rerank,
     )
+
+
+def _apply_config_override(
+    base: Config,
+    override: Config | Mapping[str, object] | str,
+) -> Config:
+    if isinstance(override, Config):
+        return override
+    try:
+        return config_from_json(override, base=base)
+    except ValueError as exc:
+        raise VexorError(str(exc)) from exc

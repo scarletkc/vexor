@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .api import VexorError, clear_index, index, search, set_data_dir
+from .api import VexorError, clear_index, index, search, set_config_json, set_data_dir
 
 __all__ = [
     "__version__",
@@ -11,6 +11,7 @@ __all__ = [
     "get_version",
     "index",
     "search",
+    "set_config_json",
     "set_data_dir",
 ]
 

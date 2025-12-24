@@ -17,8 +17,6 @@
 **Vexor** is a semantic search engine that builds reusable indexes over files and code.
 It supports configurable embedding and reranking providers, and exposes the same core through a Python API, a CLI tool, and an optional desktop frontend.
 
-![GUI](https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/assets/gui_demo.png)
-
 <video src="https://github.com/user-attachments/assets/4d53eefd-ab35-4232-98a7-f8dc005983a9" controls="controls" style="max-width: 600px;">
       Vexor Demo Video
     </video>
@@ -35,8 +33,6 @@ Download standalone binary from [releases](https://github.com/scarletkc/vexor/re
 ```bash
 pip install vexor  # also works with pipx, uv
 ```
-
-> The desktop app is still in early alpha. May be unstable, try the CLI for production use. 
 
 ## Quick Start
 
@@ -72,14 +68,22 @@ vexor index --path ~/projects/demo --mode code
 ```
 Useful for CI warmup or when `auto_index` is disabled.
 
+## Desktop App (Experimental)
+
+> The desktop app is experimental and not actively maintained.
+> It may be unstable. For production use, prefer the CLI.
+
+![GUI](https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/assets/gui_demo.png)
+
+Download the desktop app from [releases](https://github.com/scarletkc/vexor/releases).
+
 ## Python API
 
 Vexor can also be imported and used directly from Python:
 
 ```python
-from vexor import index, search, set_data_dir
+from vexor import index, search
 
-set_data_dir("/path/to/vexor-data")  # optional: config/cache location
 index(path=".", mode="head")
 response = search("config loader", path=".", mode="name")
 
@@ -87,9 +91,8 @@ for hit in response.results:
     print(hit.path, hit.score)
 ```
 
-By default it reads `~/.vexor/config.json`. To ignore config and pass everything explicitly,
-set `use_config=False`.
-Use `set_data_dir(None)` to reset to `~/.vexor`.
+By default it reads `~/.vexor/config.json`. For runtime config overrides, cache
+controls, and per-call options, see [`docs/api/python.md`](https://github.com/scarletkc/vexor/tree/main/docs/api/python.md).
 
 ## Configuration
 

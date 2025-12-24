@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import MutableMapping, Sequence
@@ -51,6 +52,7 @@ def build_index(
     local_cuda: bool = False,
     exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
+    no_cache: bool = False,
 ) -> IndexResult:
     """Create or refresh the cached index for *directory*."""
 
@@ -187,6 +189,7 @@ def build_index(
                 exclude_patterns=exclude_patterns,
                 extensions=extensions,
                 stat_cache=stat_cache,
+                no_cache=no_cache,
             )
 
             line_backfill_targets = missing_line_files - changed_rel_paths - removed_rel_paths
@@ -220,6 +223,7 @@ def build_index(
         searcher=searcher,
         model_name=model_name,
         labels=file_labels,
+        no_cache=no_cache,
     )
     entries = _build_index_entries(payloads, embeddings, directory, stat_cache=stat_cache)
 
@@ -239,6 +243,150 @@ def build_index(
         cache_path=cache_path,
         files_indexed=len(files),
     )
+
+
+def build_index_in_memory(
+    directory: Path,
+    *,
+    include_hidden: bool,
+    respect_gitignore: bool = True,
+    mode: str,
+    recursive: bool,
+    model_name: str,
+    batch_size: int,
+    embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY,
+    provider: str,
+    base_url: str | None,
+    api_key: str | None,
+    local_cuda: bool = False,
+    exclude_patterns: Sequence[str] | None = None,
+    extensions: Sequence[str] | None = None,
+    no_cache: bool = False,
+) -> tuple[list[Path], np.ndarray, dict]:
+    """Build an index in memory without writing to disk."""
+
+    from ..search import VexorSearcher  # local import
+    from ..utils import collect_files  # local import
+
+    files = collect_files(
+        directory,
+        include_hidden=include_hidden,
+        recursive=recursive,
+        extensions=extensions,
+        exclude_patterns=exclude_patterns,
+        respect_gitignore=respect_gitignore,
+    )
+    if not files:
+        empty = np.empty((0, 0), dtype=np.float32)
+        metadata = {
+            "index_id": None,
+            "version": CACHE_VERSION,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "root": str(directory),
+            "model": model_name,
+            "include_hidden": include_hidden,
+            "respect_gitignore": respect_gitignore,
+            "recursive": recursive,
+            "mode": mode,
+            "dimension": 0,
+            "exclude_patterns": tuple(exclude_patterns or ()),
+            "extensions": tuple(extensions or ()),
+            "files": [],
+            "chunks": [],
+        }
+        return [], empty, metadata
+
+    stat_cache: dict[Path, os.stat_result] = {}
+    strategy = get_strategy(mode)
+    searcher = VexorSearcher(
+        model_name=model_name,
+        batch_size=batch_size,
+        embed_concurrency=embed_concurrency,
+        provider=provider,
+        base_url=base_url,
+        api_key=api_key,
+        local_cuda=local_cuda,
+    )
+    payloads = strategy.payloads_for_files(files)
+    if not payloads:
+        empty = np.empty((0, 0), dtype=np.float32)
+        metadata = {
+            "index_id": None,
+            "version": CACHE_VERSION,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "root": str(directory),
+            "model": model_name,
+            "include_hidden": include_hidden,
+            "respect_gitignore": respect_gitignore,
+            "recursive": recursive,
+            "mode": mode,
+            "dimension": 0,
+            "exclude_patterns": tuple(exclude_patterns or ()),
+            "extensions": tuple(extensions or ()),
+            "files": [],
+            "chunks": [],
+        }
+        return [], empty, metadata
+
+    labels = [payload.label for payload in payloads]
+    if no_cache:
+        embeddings = searcher.embed_texts(labels)
+        vectors = np.asarray(embeddings, dtype=np.float32)
+    else:
+        vectors = _embed_labels_with_cache(
+            searcher=searcher,
+            model_name=model_name,
+            labels=labels,
+        )
+    entries = _build_index_entries(
+        payloads,
+        vectors,
+        directory,
+        stat_cache=stat_cache,
+    )
+    paths = [entry.path for entry in entries]
+    file_snapshot: dict[str, dict] = {}
+    chunk_entries: list[dict] = []
+    for entry in entries:
+        rel_path = entry.rel_path
+        chunk_entries.append(
+            {
+                "path": rel_path,
+                "absolute": str(entry.path),
+                "mtime": entry.mtime,
+                "size": entry.size_bytes,
+                "preview": entry.preview,
+                "label_hash": entry.label_hash,
+                "chunk_index": entry.chunk_index,
+                "start_line": entry.start_line,
+                "end_line": entry.end_line,
+            }
+        )
+        if rel_path not in file_snapshot:
+            file_snapshot[rel_path] = {
+                "path": rel_path,
+                "absolute": str(entry.path),
+                "mtime": entry.mtime,
+                "size": entry.size_bytes,
+            }
+
+    metadata = {
+        "index_id": None,
+        "version": CACHE_VERSION,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "root": str(directory),
+        "model": model_name,
+        "include_hidden": include_hidden,
+        "respect_gitignore": respect_gitignore,
+        "recursive": recursive,
+        "mode": mode,
+        "dimension": int(vectors.shape[1]) if vectors.size else 0,
+        "exclude_patterns": tuple(exclude_patterns or ()),
+        "extensions": tuple(extensions or ()),
+        "files": list(file_snapshot.values()),
+        "chunks": chunk_entries,
+    }
+    return paths, vectors, metadata
 
 
 def clear_index_entries(
@@ -367,6 +515,7 @@ def _apply_incremental_update(
     exclude_patterns: Sequence[str] | None,
     extensions: Sequence[str] | None,
     stat_cache: MutableMapping[Path, os.stat_result] | None = None,
+    no_cache: bool = False,
 ) -> Path:
     payloads_to_embed, payloads_to_touch = _split_payloads_by_label(
         changed_payloads,
@@ -387,6 +536,7 @@ def _apply_incremental_update(
             searcher=searcher,
             model_name=model_name,
             labels=labels,
+            no_cache=no_cache,
         )
         changed_entries = _build_index_entries(
             payloads_to_embed,
@@ -424,9 +574,13 @@ def _embed_labels_with_cache(
     searcher,
     model_name: str,
     labels: Sequence[str],
+    no_cache: bool = False,
 ) -> np.ndarray:
     if not labels:
         return np.empty((0, 0), dtype=np.float32)
+    if no_cache:
+        vectors = searcher.embed_texts(labels)
+        return np.asarray(vectors, dtype=np.float32)
     from ..cache import embedding_cache_key, load_embedding_cache, store_embedding_cache
 
     hashes = [embedding_cache_key(label) for label in labels]

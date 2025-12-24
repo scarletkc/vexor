@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse, urlunparse
+
+from .text import Messages
 
 DEFAULT_CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CONFIG_DIR = DEFAULT_CONFIG_DIR
@@ -140,6 +143,26 @@ def set_config_dir(path: Path | str | None) -> None:
             raise NotADirectoryError(f"Path is not a directory: {dir_path}")
         CONFIG_DIR = dir_path
     CONFIG_FILE = CONFIG_DIR / "config.json"
+
+
+def config_from_json(
+    payload: str | Mapping[str, object], *, base: Config | None = None
+) -> Config:
+    """Return a Config from a JSON string or mapping without saving it."""
+    data = _coerce_config_payload(payload)
+    config = Config() if base is None else _clone_config(base)
+    _apply_config_payload(config, data)
+    return config
+
+
+def update_config_from_json(
+    payload: str | Mapping[str, object], *, replace: bool = False
+) -> Config:
+    """Update config from a JSON string or mapping and persist it."""
+    base = None if replace else load_config()
+    config = config_from_json(payload, base=base)
+    save_config(config)
+    return config
 
 
 def set_api_key(value: str | None) -> None:
@@ -294,3 +317,152 @@ def resolve_remote_rerank_api_key(configured: str | None) -> str | None:
     if env_key:
         return env_key
     return None
+
+
+def _coerce_config_payload(payload: str | Mapping[str, object]) -> Mapping[str, object]:
+    if isinstance(payload, str):
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise ValueError(Messages.ERROR_CONFIG_JSON_INVALID) from exc
+    elif isinstance(payload, Mapping):
+        data = dict(payload)
+    else:
+        raise ValueError(Messages.ERROR_CONFIG_JSON_INVALID)
+    if not isinstance(data, Mapping):
+        raise ValueError(Messages.ERROR_CONFIG_JSON_INVALID)
+    return data
+
+
+def _clone_config(config: Config) -> Config:
+    remote = config.remote_rerank
+    return Config(
+        api_key=config.api_key,
+        model=config.model,
+        batch_size=config.batch_size,
+        embed_concurrency=config.embed_concurrency,
+        provider=config.provider,
+        base_url=config.base_url,
+        auto_index=config.auto_index,
+        local_cuda=config.local_cuda,
+        rerank=config.rerank,
+        flashrank_model=config.flashrank_model,
+        remote_rerank=(
+            None
+            if remote is None
+            else RemoteRerankConfig(
+                base_url=remote.base_url,
+                api_key=remote.api_key,
+                model=remote.model,
+            )
+        ),
+    )
+
+
+def _apply_config_payload(config: Config, payload: Mapping[str, object]) -> None:
+    if "api_key" in payload:
+        config.api_key = _coerce_optional_str(payload["api_key"], "api_key")
+    if "model" in payload:
+        config.model = _coerce_required_str(payload["model"], "model", DEFAULT_MODEL)
+    if "batch_size" in payload:
+        config.batch_size = _coerce_int(
+            payload["batch_size"], "batch_size", DEFAULT_BATCH_SIZE
+        )
+    if "embed_concurrency" in payload:
+        config.embed_concurrency = _coerce_int(
+            payload["embed_concurrency"],
+            "embed_concurrency",
+            DEFAULT_EMBED_CONCURRENCY,
+        )
+    if "provider" in payload:
+        config.provider = _coerce_required_str(
+            payload["provider"], "provider", DEFAULT_PROVIDER
+        )
+    if "base_url" in payload:
+        config.base_url = _coerce_optional_str(payload["base_url"], "base_url")
+    if "auto_index" in payload:
+        config.auto_index = _coerce_bool(payload["auto_index"], "auto_index")
+    if "local_cuda" in payload:
+        config.local_cuda = _coerce_bool(payload["local_cuda"], "local_cuda")
+    if "rerank" in payload:
+        config.rerank = _normalize_rerank(payload["rerank"])
+    if "flashrank_model" in payload:
+        config.flashrank_model = _coerce_optional_str(
+            payload["flashrank_model"], "flashrank_model"
+        )
+    if "remote_rerank" in payload:
+        config.remote_rerank = _coerce_remote_rerank(payload["remote_rerank"])
+
+
+def _coerce_optional_str(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    raise ValueError(Messages.ERROR_CONFIG_VALUE_INVALID.format(field=field))
+
+
+def _coerce_required_str(value: object, field: str, default: str) -> str:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or default
+    raise ValueError(Messages.ERROR_CONFIG_VALUE_INVALID.format(field=field))
+
+
+def _coerce_int(value: object, field: str, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        raise ValueError(Messages.ERROR_CONFIG_VALUE_INVALID.format(field=field))
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if value.is_integer():
+            return int(value)
+        raise ValueError(Messages.ERROR_CONFIG_VALUE_INVALID.format(field=field))
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned:
+            return default
+        try:
+            return int(cleaned)
+        except ValueError as exc:
+            raise ValueError(Messages.ERROR_CONFIG_VALUE_INVALID.format(field=field)) from exc
+    raise ValueError(Messages.ERROR_CONFIG_VALUE_INVALID.format(field=field))
+
+
+def _coerce_bool(value: object, field: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in {"true", "1", "yes", "on"}:
+            return True
+        if cleaned in {"false", "0", "no", "off"}:
+            return False
+    raise ValueError(Messages.ERROR_CONFIG_VALUE_INVALID.format(field=field))
+
+
+def _normalize_rerank(value: object) -> str:
+    if value is None:
+        normalized = DEFAULT_RERANK
+    elif isinstance(value, str):
+        normalized = value.strip().lower() or DEFAULT_RERANK
+    else:
+        raise ValueError(Messages.ERROR_CONFIG_VALUE_INVALID.format(field="rerank"))
+    if normalized not in SUPPORTED_RERANKERS:
+        normalized = DEFAULT_RERANK
+    return normalized
+
+
+def _coerce_remote_rerank(value: object) -> RemoteRerankConfig | None:
+    if value is None:
+        return None
+    if isinstance(value, Mapping):
+        return _parse_remote_rerank(dict(value))
+    raise ValueError(Messages.ERROR_CONFIG_VALUE_INVALID.format(field="remote_rerank"))

@@ -45,6 +45,8 @@ class SearchRequest:
     exclude_patterns: tuple[str, ...]
     extensions: tuple[str, ...]
     auto_index: bool = True
+    temporary_index: bool = False
+    no_cache: bool = False
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY
     rerank: str = DEFAULT_RERANK
     flashrank_model: str | None = None
@@ -336,6 +338,9 @@ def _apply_remote_rerank(
 def perform_search(request: SearchRequest) -> SearchResponse:
     """Execute the semantic search flow and return ranked results."""
 
+    if request.temporary_index or request.no_cache:
+        return _perform_search_with_temporary_index(request)
+
     from ..cache import (  # local import
         embedding_cache_key,
         list_cache_entries,
@@ -381,6 +386,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             local_cuda=request.local_cuda,
             exclude_patterns=request.exclude_patterns,
             extensions=request.extensions,
+            no_cache=request.no_cache,
         )
         if result.status == IndexStatus.EMPTY:
             return SearchResponse(
@@ -461,6 +467,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             local_cuda=request.local_cuda,
             exclude_patterns=index_excludes,
             extensions=index_extensions,
+            no_cache=request.no_cache,
         )
         if result.status == IndexStatus.EMPTY:
             return SearchResponse(
@@ -542,9 +549,9 @@ def perform_search(request: SearchRequest) -> SearchResponse:
     )
     query_vector = None
     query_hash = None
-    query_text_hash = embedding_cache_key(request.query)
+    query_text_hash = None
     index_id = metadata.get("index_id")
-    if index_id is not None:
+    if index_id is not None and not request.no_cache:
         query_hash = query_cache_key(request.query, request.model_name)
         try:
             query_vector = load_query_vector(int(index_id), query_hash)
@@ -554,7 +561,8 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         if query_vector is not None and query_vector.size != file_vectors.shape[1]:
             query_vector = None
 
-    if query_vector is None:
+    if query_vector is None and not request.no_cache:
+        query_text_hash = embedding_cache_key(request.query)
         cached = load_embedding_cache(request.model_name, [query_text_hash])
         query_vector = cached.get(query_text_hash)
         if query_vector is not None and query_vector.size != file_vectors.shape[1]:
@@ -562,14 +570,22 @@ def perform_search(request: SearchRequest) -> SearchResponse:
 
     if query_vector is None:
         query_vector = searcher.embed_texts([request.query])[0]
-        try:
-            store_embedding_cache(
-                model=request.model_name,
-                embeddings={query_text_hash: query_vector},
-            )
-        except Exception:  # pragma: no cover - best-effort cache storage
-            pass
-    if query_vector is not None and index_id is not None and query_hash is not None:
+        if not request.no_cache:
+            if query_text_hash is None:
+                query_text_hash = embedding_cache_key(request.query)
+            try:
+                store_embedding_cache(
+                    model=request.model_name,
+                    embeddings={query_text_hash: query_vector},
+                )
+            except Exception:  # pragma: no cover - best-effort cache storage
+                pass
+    if (
+        not request.no_cache
+        and query_vector is not None
+        and index_id is not None
+        and query_hash is not None
+    ):
         try:
             store_query_vector(int(index_id), query_hash, request.query, query_vector)
         except Exception:  # pragma: no cover - best-effort cache storage
@@ -624,6 +640,129 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         backend=searcher.device,
         results=results,
         is_stale=stale,
+        index_empty=False,
+        reranker=reranker,
+    )
+
+
+def _perform_search_with_temporary_index(request: SearchRequest) -> SearchResponse:
+    from .index_service import build_index_in_memory  # local import
+
+    paths, file_vectors, metadata = build_index_in_memory(
+        request.directory,
+        include_hidden=request.include_hidden,
+        respect_gitignore=request.respect_gitignore,
+        mode=request.mode,
+        recursive=request.recursive,
+        model_name=request.model_name,
+        batch_size=request.batch_size,
+        embed_concurrency=request.embed_concurrency,
+        provider=request.provider,
+        base_url=request.base_url,
+        api_key=request.api_key,
+        local_cuda=request.local_cuda,
+        exclude_patterns=request.exclude_patterns,
+        extensions=request.extensions,
+        no_cache=request.no_cache,
+    )
+
+    if not len(paths):
+        return SearchResponse(
+            base_path=request.directory,
+            backend=None,
+            results=[],
+            is_stale=False,
+            index_empty=True,
+        )
+
+    from sklearn.metrics.pairwise import cosine_similarity  # local import
+    from ..search import SearchResult, VexorSearcher  # local import
+
+    searcher = VexorSearcher(
+        model_name=request.model_name,
+        batch_size=request.batch_size,
+        embed_concurrency=request.embed_concurrency,
+        provider=request.provider,
+        base_url=request.base_url,
+        api_key=request.api_key,
+        local_cuda=request.local_cuda,
+    )
+    query_vector = None
+    query_text_hash = None
+    if not request.no_cache:
+        from ..cache import embedding_cache_key, load_embedding_cache, store_embedding_cache
+
+        query_text_hash = embedding_cache_key(request.query)
+        cached = load_embedding_cache(request.model_name, [query_text_hash])
+        query_vector = cached.get(query_text_hash)
+        if query_vector is not None and query_vector.size != file_vectors.shape[1]:
+            query_vector = None
+
+    if query_vector is None:
+        query_vector = searcher.embed_texts([request.query])[0]
+        if not request.no_cache:
+            if query_text_hash is None:
+                from ..cache import embedding_cache_key, store_embedding_cache
+
+                query_text_hash = embedding_cache_key(request.query)
+            try:
+                store_embedding_cache(
+                    model=request.model_name,
+                    embeddings={query_text_hash: query_vector},
+                )
+            except Exception:  # pragma: no cover - best-effort cache storage
+                pass
+    similarities = cosine_similarity(
+        query_vector.reshape(1, -1),
+        file_vectors,
+    )[0]
+    chunk_entries = metadata.get("chunks", [])
+    scored = []
+    for idx, (path, score) in enumerate(zip(paths, similarities)):
+        chunk_meta = chunk_entries[idx] if idx < len(chunk_entries) else {}
+        start_line = chunk_meta.get("start_line")
+        end_line = chunk_meta.get("end_line")
+        scored.append(
+            SearchResult(
+                path=path,
+                score=float(score),
+                preview=chunk_meta.get("preview"),
+                chunk_index=int(chunk_meta.get("chunk_index", 0)),
+                start_line=int(start_line) if start_line is not None else None,
+                end_line=int(end_line) if end_line is not None else None,
+            )
+        )
+    scored.sort(key=lambda item: item.score, reverse=True)
+    reranker = None
+    rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
+    if rerank in {"bm25", "flashrank", "remote"}:
+        candidate_count = min(len(scored), request.top_k * 2)
+        candidates = scored[:candidate_count]
+        if rerank == "bm25":
+            candidates = _apply_bm25_rerank(request.query, candidates)
+            reranker = "bm25"
+        elif rerank == "flashrank":
+            candidates = _apply_flashrank_rerank(
+                request.query,
+                candidates,
+                request.flashrank_model,
+            )
+            reranker = "flashrank"
+        else:
+            candidates = _apply_remote_rerank(
+                request.query,
+                candidates,
+                request.remote_rerank,
+            )
+            reranker = "remote"
+        results = candidates[: request.top_k]
+    else:
+        results = scored[: request.top_k]
+    return SearchResponse(
+        base_path=request.directory,
+        backend=searcher.device,
+        results=results,
+        is_stale=False,
         index_empty=False,
         reranker=reranker,
     )

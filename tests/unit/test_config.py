@@ -161,6 +161,46 @@ def test_resolve_api_key_local_ignores_keys(monkeypatch):
     assert config_module.resolve_api_key("cfg-key", "local") is None
 
 
+def test_update_config_from_json_merges(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+
+    config_module.save_config(
+        config_module.Config(
+            provider="openai",
+            model=config_module.DEFAULT_MODEL,
+            batch_size=3,
+            embed_concurrency=4,
+            auto_index=True,
+            local_cuda=False,
+        )
+    )
+
+    payload = json.dumps(
+        {
+            "provider": "gemini",
+            "api_key": "key",
+            "batch_size": 9,
+            "rerank": "remote",
+            "remote_rerank": {
+                "base_url": "https://api.example.test/v1",
+                "api_key": "remote-key",
+                "model": "rerank-model",
+            },
+        }
+    )
+
+    config_module.update_config_from_json(payload)
+
+    cfg = config_module.load_config()
+    assert cfg.provider == "gemini"
+    assert cfg.api_key == "key"
+    assert cfg.batch_size == 9
+    assert cfg.embed_concurrency == 4
+    assert cfg.rerank == "remote"
+    assert cfg.remote_rerank is not None
+    assert cfg.remote_rerank.base_url == "https://api.example.test/v1/rerank"
+
+
 def test_resolve_remote_rerank_api_key_prefers_config(monkeypatch):
     monkeypatch.setenv(config_module.REMOTE_RERANK_ENV, "env-key")
     assert config_module.resolve_remote_rerank_api_key("cfg-key") == "cfg-key"
