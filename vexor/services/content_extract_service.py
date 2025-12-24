@@ -108,6 +108,12 @@ TEXT_EXTENSIONS = (
     ".vb",
     ".ps1",
     ".bash",
+    ".zsh",
+    ".fish",
+    ".vue",
+    ".jsx",
+    ".tsx",
+    ".scss",
 )
 
 
