@@ -131,8 +131,8 @@ Or via environment: `VEXOR_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENAI_API_KEY`
 
 ### Rerank
 
-Rerank reorders the semantic results with a secondary ranker. It uses 2x the requested
-`--top` as candidates (e.g., top 10 reranked to show 5).
+Rerank reorders the semantic results with a secondary ranker. Candidate sizing uses
+`clamp(int(--top * 2), 20, 150)`.
 
 Recommended defaults:
 - Keep `off` unless you want extra precision.

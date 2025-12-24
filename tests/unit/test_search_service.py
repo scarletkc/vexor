@@ -976,3 +976,16 @@ def test_remote_rerank_uses_env_api_key(monkeypatch, tmp_path: Path) -> None:
 
     assert response.reranker == "remote"
     assert response.results[0].path.name == "b.txt"
+
+
+def test_resolve_rerank_candidates() -> None:
+    from vexor.services import search_service as search_service_module
+
+    assert search_service_module._resolve_rerank_candidates(1) == 20
+    assert search_service_module._resolve_rerank_candidates(9) == 20
+    assert search_service_module._resolve_rerank_candidates(10) == 20
+    assert search_service_module._resolve_rerank_candidates(11) == 22
+    assert search_service_module._resolve_rerank_candidates(50) == 100
+    assert search_service_module._resolve_rerank_candidates(75) == 150
+    assert search_service_module._resolve_rerank_candidates(100) == 150
+    assert search_service_module._resolve_rerank_candidates(200) == 150

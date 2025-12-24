@@ -107,6 +107,11 @@ def _normalize_by_max(scores: Sequence[float]) -> list[float]:
     return [score / max_score for score in scores]
 
 
+def _resolve_rerank_candidates(top_k: int) -> int:
+    candidate = int(top_k * 2)
+    return max(20, min(candidate, 150))
+
+
 def _bm25_scores(
     query_tokens: Sequence[str],
     documents: Sequence[Sequence[str]],
@@ -613,7 +618,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
     reranker = None
     rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
     if rerank in {"bm25", "flashrank", "remote"}:
-        candidate_count = min(len(scored), request.top_k * 2)
+        candidate_count = min(len(scored), _resolve_rerank_candidates(request.top_k))
         candidates = scored[:candidate_count]
         if rerank == "bm25":
             candidates = _apply_bm25_rerank(request.query, candidates)
@@ -736,7 +741,7 @@ def _perform_search_with_temporary_index(request: SearchRequest) -> SearchRespon
     reranker = None
     rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
     if rerank in {"bm25", "flashrank", "remote"}:
-        candidate_count = min(len(scored), request.top_k * 2)
+        candidate_count = min(len(scored), _resolve_rerank_candidates(request.top_k))
         candidates = scored[:candidate_count]
         if rerank == "bm25":
             candidates = _apply_bm25_rerank(request.query, candidates)
