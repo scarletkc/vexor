@@ -20,6 +20,7 @@ DEFAULT_GEMINI_MODEL = "gemini-embedding-001"
 DEFAULT_LOCAL_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_BATCH_SIZE = 64
 DEFAULT_EMBED_CONCURRENCY = 2
+DEFAULT_EXTRACT_CONCURRENCY = max(1, min(4, os.cpu_count() or 1))
 DEFAULT_PROVIDER = "openai"
 DEFAULT_RERANK = "off"
 DEFAULT_FLASHRANK_MODEL = "ms-marco-TinyBERT-L-2-v2"
@@ -45,6 +46,7 @@ class Config:
     model: str = DEFAULT_MODEL
     batch_size: int = DEFAULT_BATCH_SIZE
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY
+    extract_concurrency: int = DEFAULT_EXTRACT_CONCURRENCY
     provider: str = DEFAULT_PROVIDER
     base_url: str | None = None
     auto_index: bool = True
@@ -81,6 +83,9 @@ def load_config() -> Config:
         model=raw.get("model") or DEFAULT_MODEL,
         batch_size=int(raw.get("batch_size", DEFAULT_BATCH_SIZE)),
         embed_concurrency=int(raw.get("embed_concurrency", DEFAULT_EMBED_CONCURRENCY)),
+        extract_concurrency=int(
+            raw.get("extract_concurrency", DEFAULT_EXTRACT_CONCURRENCY)
+        ),
         provider=raw.get("provider") or DEFAULT_PROVIDER,
         base_url=raw.get("base_url") or None,
         auto_index=bool(raw.get("auto_index", True)),
@@ -100,6 +105,7 @@ def save_config(config: Config) -> None:
         data["model"] = config.model
     data["batch_size"] = config.batch_size
     data["embed_concurrency"] = config.embed_concurrency
+    data["extract_concurrency"] = config.extract_concurrency
     if config.provider:
         data["provider"] = config.provider
     if config.base_url:
@@ -186,6 +192,12 @@ def set_batch_size(value: int) -> None:
 def set_embed_concurrency(value: int) -> None:
     config = load_config()
     config.embed_concurrency = value
+    save_config(config)
+
+
+def set_extract_concurrency(value: int) -> None:
+    config = load_config()
+    config.extract_concurrency = value
     save_config(config)
 
 
@@ -341,6 +353,7 @@ def _clone_config(config: Config) -> Config:
         model=config.model,
         batch_size=config.batch_size,
         embed_concurrency=config.embed_concurrency,
+        extract_concurrency=config.extract_concurrency,
         provider=config.provider,
         base_url=config.base_url,
         auto_index=config.auto_index,
@@ -373,6 +386,12 @@ def _apply_config_payload(config: Config, payload: Mapping[str, object]) -> None
             payload["embed_concurrency"],
             "embed_concurrency",
             DEFAULT_EMBED_CONCURRENCY,
+        )
+    if "extract_concurrency" in payload:
+        config.extract_concurrency = _coerce_int(
+            payload["extract_concurrency"],
+            "extract_concurrency",
+            DEFAULT_EXTRACT_CONCURRENCY,
         )
     if "provider" in payload:
         config.provider = _coerce_required_str(

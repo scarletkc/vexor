@@ -842,6 +842,8 @@ def test_config_set_and_show(tmp_path):
             "42",
             "--set-embed-concurrency",
             "3",
+            "--set-extract-concurrency",
+            "4",
             "--set-provider",
             "gemini",
             "--set-base-url",
@@ -860,6 +862,7 @@ def test_config_set_and_show(tmp_path):
     assert data["model"] == "custom-model"
     assert data["batch_size"] == 42
     assert data["embed_concurrency"] == 3
+    assert data["extract_concurrency"] == 4
     assert data["provider"] == "gemini"
     assert data["base_url"] == "https://proxy.example.com"
     assert data["auto_index"] is True
@@ -870,6 +873,7 @@ def test_config_set_and_show(tmp_path):
     result_show = runner.invoke(app, ["config", "--show"])
     assert "custom-model" in result_show.stdout
     assert "Embedding concurrency: 3" in strip_ansi(result_show.stdout)
+    assert "Extract concurrency: 4" in strip_ansi(result_show.stdout)
     assert "Rerank: bm25" in strip_ansi(result_show.stdout)
     assert "FlashRank model" not in strip_ansi(result_show.stdout)
 

@@ -42,6 +42,7 @@ class RuntimeSettings:
     model_name: str
     batch_size: int
     embed_concurrency: int
+    extract_concurrency: int
     base_url: str | None
     api_key: str | None
     local_cuda: bool
@@ -90,6 +91,7 @@ def search(
     model: str | None = None,
     batch_size: int | None = None,
     embed_concurrency: int | None = None,
+    extract_concurrency: int | None = None,
     base_url: str | None = None,
     api_key: str | None = None,
     local_cuda: bool | None = None,
@@ -121,6 +123,7 @@ def search(
         model=model,
         batch_size=batch_size,
         embed_concurrency=embed_concurrency,
+        extract_concurrency=extract_concurrency,
         base_url=base_url,
         api_key=api_key,
         local_cuda=local_cuda,
@@ -141,6 +144,7 @@ def search(
         model_name=settings.model_name,
         batch_size=settings.batch_size,
         embed_concurrency=settings.embed_concurrency,
+        extract_concurrency=settings.extract_concurrency,
         provider=settings.provider,
         base_url=settings.base_url,
         api_key=settings.api_key,
@@ -170,6 +174,7 @@ def index(
     model: str | None = None,
     batch_size: int | None = None,
     embed_concurrency: int | None = None,
+    extract_concurrency: int | None = None,
     base_url: str | None = None,
     api_key: str | None = None,
     local_cuda: bool | None = None,
@@ -190,6 +195,7 @@ def index(
         model=model,
         batch_size=batch_size,
         embed_concurrency=embed_concurrency,
+        extract_concurrency=extract_concurrency,
         base_url=base_url,
         api_key=api_key,
         local_cuda=local_cuda,
@@ -208,6 +214,7 @@ def index(
         model_name=settings.model_name,
         batch_size=settings.batch_size,
         embed_concurrency=settings.embed_concurrency,
+        extract_concurrency=settings.extract_concurrency,
         provider=settings.provider,
         base_url=settings.base_url,
         api_key=settings.api_key,
@@ -282,6 +289,7 @@ def _resolve_settings(
     model: str | None,
     batch_size: int | None,
     embed_concurrency: int | None,
+    extract_concurrency: int | None,
     base_url: str | None,
     api_key: str | None,
     local_cuda: bool | None,
@@ -313,11 +321,17 @@ def _resolve_settings(
     embed_value = (
         embed_concurrency if embed_concurrency is not None else config.embed_concurrency
     )
+    extract_value = (
+        extract_concurrency
+        if extract_concurrency is not None
+        else config.extract_concurrency
+    )
     return RuntimeSettings(
         provider=provider_value,
         model_name=model_name,
         batch_size=batch_value,
         embed_concurrency=embed_value,
+        extract_concurrency=extract_value,
         base_url=base_url if base_url is not None else config.base_url,
         api_key=api_key if api_key is not None else config.api_key,
         local_cuda=bool(local_cuda if local_cuda is not None else config.local_cuda),

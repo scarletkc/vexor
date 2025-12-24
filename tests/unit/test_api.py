@@ -13,6 +13,7 @@ def test_search_uses_config_defaults(tmp_path, monkeypatch) -> None:
         model=DEFAULT_MODEL,
         batch_size=7,
         embed_concurrency=3,
+        extract_concurrency=4,
         provider="gemini",
         base_url="https://example.test",
         auto_index=False,
@@ -49,6 +50,7 @@ def test_search_uses_config_defaults(tmp_path, monkeypatch) -> None:
     assert req.model_name == DEFAULT_GEMINI_MODEL
     assert req.batch_size == 7
     assert req.embed_concurrency == 3
+    assert req.extract_concurrency == 4
     assert req.base_url == "https://example.test"
     assert req.api_key == "key"
     assert req.auto_index is False
@@ -65,6 +67,7 @@ def test_search_overrides_config(tmp_path, monkeypatch) -> None:
         model=DEFAULT_MODEL,
         batch_size=1,
         embed_concurrency=2,
+        extract_concurrency=3,
         provider="gemini",
         base_url="https://config.test",
         auto_index=True,
@@ -93,6 +96,7 @@ def test_search_overrides_config(tmp_path, monkeypatch) -> None:
         model="text-embedding-3-large",
         batch_size=8,
         embed_concurrency=5,
+        extract_concurrency=6,
         base_url="https://override.test",
         api_key="override-key",
         local_cuda=True,
@@ -104,6 +108,7 @@ def test_search_overrides_config(tmp_path, monkeypatch) -> None:
     assert req.model_name == "text-embedding-3-large"
     assert req.batch_size == 8
     assert req.embed_concurrency == 5
+    assert req.extract_concurrency == 6
     assert req.base_url == "https://override.test"
     assert req.api_key == "override-key"
     assert req.auto_index is False

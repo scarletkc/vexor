@@ -401,6 +401,7 @@ def search(
     model_name = resolve_default_model(provider, config.model)
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
     embed_concurrency = config.embed_concurrency
+    extract_concurrency = config.extract_concurrency
     base_url = config.base_url
     api_key = config.api_key
     auto_index = bool(config.auto_index)
@@ -438,6 +439,7 @@ def search(
         model_name=model_name,
         batch_size=batch_size,
         embed_concurrency=embed_concurrency,
+        extract_concurrency=extract_concurrency,
         provider=provider,
         base_url=base_url,
         api_key=api_key,
@@ -577,6 +579,7 @@ def index(
     model_name = resolve_default_model(provider, config.model)
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
     embed_concurrency = config.embed_concurrency
+    extract_concurrency = config.extract_concurrency
     base_url = config.base_url
     api_key = config.api_key
 
@@ -673,6 +676,7 @@ def index(
             model_name=model_name,
             batch_size=batch_size,
             embed_concurrency=embed_concurrency,
+            extract_concurrency=extract_concurrency,
             provider=provider,
             base_url=base_url,
             api_key=api_key,
@@ -733,6 +737,11 @@ def config(
         None,
         "--set-embed-concurrency",
         help=Messages.HELP_SET_EMBED_CONCURRENCY,
+    ),
+    set_extract_concurrency_option: int | None = typer.Option(
+        None,
+        "--set-extract-concurrency",
+        help=Messages.HELP_SET_EXTRACT_CONCURRENCY,
     ),
     set_provider_option: str | None = typer.Option(
         None,
@@ -810,6 +819,8 @@ def config(
         raise typer.BadParameter(Messages.ERROR_BATCH_NEGATIVE)
     if set_embed_concurrency_option is not None and set_embed_concurrency_option < 1:
         raise typer.BadParameter(Messages.ERROR_CONCURRENCY_INVALID)
+    if set_extract_concurrency_option is not None and set_extract_concurrency_option < 1:
+        raise typer.BadParameter(Messages.ERROR_EXTRACT_CONCURRENCY_INVALID)
     if set_base_url_option and clear_base_url:
         raise typer.BadParameter(Messages.ERROR_BASE_URL_CONFLICT)
     flashrank_model_reset = False
@@ -850,6 +861,7 @@ def config(
             set_model_option is not None,
             set_batch_option is not None,
             set_embed_concurrency_option is not None,
+            set_extract_concurrency_option is not None,
             set_provider_option is not None,
             set_base_url_option is not None,
             clear_base_url,
@@ -962,6 +974,7 @@ def config(
         model=set_model_option,
         batch_size=set_batch_option,
         embed_concurrency=set_embed_concurrency_option,
+        extract_concurrency=set_extract_concurrency_option,
         provider=set_provider_option,
         base_url=set_base_url_option,
         clear_base_url=clear_base_url,
@@ -990,6 +1003,15 @@ def config(
         console.print(
             _styled(
                 Messages.INFO_EMBED_CONCURRENCY_SET.format(value=set_embed_concurrency_option),
+                Styles.SUCCESS,
+            )
+        )
+    if updates.extract_concurrency_set and set_extract_concurrency_option is not None:
+        console.print(
+            _styled(
+                Messages.INFO_EXTRACT_CONCURRENCY_SET.format(
+                    value=set_extract_concurrency_option
+                ),
                 Styles.SUCCESS,
             )
         )
@@ -1139,6 +1161,7 @@ def config(
                     model=resolve_default_model(provider, cfg.model),
                     batch=cfg.batch_size if cfg.batch_size is not None else DEFAULT_BATCH_SIZE,
                     concurrency=cfg.embed_concurrency,
+                    extract_concurrency=cfg.extract_concurrency,
                     auto_index="yes" if cfg.auto_index else "no",
                     rerank=rerank,
                     flashrank_line=flashrank_line,

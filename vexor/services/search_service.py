@@ -13,6 +13,7 @@ from urllib import request as urlrequest
 
 from ..config import (
     DEFAULT_EMBED_CONCURRENCY,
+    DEFAULT_EXTRACT_CONCURRENCY,
     DEFAULT_FLASHRANK_MAX_LENGTH,
     DEFAULT_FLASHRANK_MODEL,
     DEFAULT_RERANK,
@@ -48,6 +49,7 @@ class SearchRequest:
     temporary_index: bool = False
     no_cache: bool = False
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY
+    extract_concurrency: int = DEFAULT_EXTRACT_CONCURRENCY
     rerank: str = DEFAULT_RERANK
     flashrank_model: str | None = None
     remote_rerank: RemoteRerankConfig | None = None
@@ -385,6 +387,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             model_name=request.model_name,
             batch_size=request.batch_size,
             embed_concurrency=request.embed_concurrency,
+            extract_concurrency=request.extract_concurrency,
             provider=request.provider,
             base_url=request.base_url,
             api_key=request.api_key,
@@ -466,6 +469,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             model_name=request.model_name,
             batch_size=request.batch_size,
             embed_concurrency=request.embed_concurrency,
+            extract_concurrency=request.extract_concurrency,
             provider=request.provider,
             base_url=request.base_url,
             api_key=request.api_key,
@@ -662,6 +666,7 @@ def _perform_search_with_temporary_index(request: SearchRequest) -> SearchRespon
         model_name=request.model_name,
         batch_size=request.batch_size,
         embed_concurrency=request.embed_concurrency,
+        extract_concurrency=request.extract_concurrency,
         provider=request.provider,
         base_url=request.base_url,
         api_key=request.api_key,

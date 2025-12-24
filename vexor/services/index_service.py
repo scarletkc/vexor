@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -15,7 +16,7 @@ from .cache_service import load_index_metadata_safe
 from .content_extract_service import TEXT_EXTENSIONS
 from .js_parser import JSTS_EXTENSIONS
 from ..cache import CACHE_VERSION, IndexedChunk, backfill_chunk_lines
-from ..config import DEFAULT_EMBED_CONCURRENCY
+from ..config import DEFAULT_EMBED_CONCURRENCY, DEFAULT_EXTRACT_CONCURRENCY
 from ..modes import get_strategy, ModePayload
 
 INCREMENTAL_CHANGE_THRESHOLD = 0.5
@@ -36,6 +37,33 @@ class IndexResult:
     files_indexed: int = 0
 
 
+def _resolve_extract_concurrency(value: int) -> int:
+    return max(int(value or 1), 1)
+
+
+def _payloads_for_files(
+    strategy,
+    files: Sequence[Path],
+    *,
+    extract_concurrency: int,
+) -> list[ModePayload]:
+    if not files:
+        return []
+    concurrency = _resolve_extract_concurrency(extract_concurrency)
+    if concurrency <= 1 or len(files) <= 1:
+        return strategy.payloads_for_files(files)
+    max_workers = min(concurrency, len(files))
+
+    def _extract_one(path: Path) -> list[ModePayload]:
+        return strategy.payloads_for_files([path])
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = executor.map(_extract_one, files)
+        payloads: list[ModePayload] = []
+        for batch in results:
+            payloads.extend(batch)
+        return payloads
+
+
 def build_index(
     directory: Path,
     *,
@@ -46,6 +74,7 @@ def build_index(
     model_name: str,
     batch_size: int,
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY,
+    extract_concurrency: int = DEFAULT_EXTRACT_CONCURRENCY,
     provider: str,
     base_url: str | None,
     api_key: str | None,
@@ -71,6 +100,7 @@ def build_index(
     if not files:
         return IndexResult(status=IndexStatus.EMPTY)
     stat_cache: dict[Path, os.stat_result] = {}
+    extract_concurrency = _resolve_extract_concurrency(extract_concurrency)
 
     existing_meta = load_index_metadata_safe(
         directory,
@@ -111,6 +141,7 @@ def build_index(
                     files=files,
                     missing_rel_paths=missing_line_files,
                     root=directory,
+                    extract_concurrency=extract_concurrency,
                 )
                 cache_path = backfill_chunk_lines(
                     root=directory,
@@ -169,7 +200,13 @@ def build_index(
                 path for rel, path in files_with_rel if rel in changed_rel_paths
             ]
             changed_payloads = (
-                strategy.payloads_for_files(changed_files) if changed_files else []
+                _payloads_for_files(
+                    strategy,
+                    changed_files,
+                    extract_concurrency=extract_concurrency,
+                )
+                if changed_files
+                else []
             )
 
             cache_path = _apply_incremental_update(
@@ -199,6 +236,7 @@ def build_index(
                     files=files,
                     missing_rel_paths=line_backfill_targets,
                     root=directory,
+                    extract_concurrency=extract_concurrency,
                 )
                 cache_path = backfill_chunk_lines(
                     root=directory,
@@ -217,7 +255,11 @@ def build_index(
                 files_indexed=len(files),
             )
 
-    payloads = strategy.payloads_for_files(files)
+    payloads = _payloads_for_files(
+        strategy,
+        files,
+        extract_concurrency=extract_concurrency,
+    )
     file_labels = [payload.label for payload in payloads]
     embeddings = _embed_labels_with_cache(
         searcher=searcher,
@@ -255,6 +297,7 @@ def build_index_in_memory(
     model_name: str,
     batch_size: int,
     embed_concurrency: int = DEFAULT_EMBED_CONCURRENCY,
+    extract_concurrency: int = DEFAULT_EXTRACT_CONCURRENCY,
     provider: str,
     base_url: str | None,
     api_key: str | None,
@@ -307,7 +350,11 @@ def build_index_in_memory(
         api_key=api_key,
         local_cuda=local_cuda,
     )
-    payloads = strategy.payloads_for_files(files)
+    payloads = _payloads_for_files(
+        strategy,
+        files,
+        extract_concurrency=extract_concurrency,
+    )
     if not payloads:
         empty = np.empty((0, 0), dtype=np.float32)
         metadata = {
@@ -809,6 +856,7 @@ def _build_line_backfill_updates(
     files: Sequence[Path],
     missing_rel_paths: set[str],
     root: Path,
+    extract_concurrency: int,
 ) -> list[tuple[str, int, int | None, int | None]]:
     if not missing_rel_paths:
         return []
@@ -816,7 +864,11 @@ def _build_line_backfill_updates(
     targets = [files_by_rel[rel] for rel in missing_rel_paths if rel in files_by_rel]
     if not targets:
         return []
-    payloads = strategy.payloads_for_files(targets)
+    payloads = _payloads_for_files(
+        strategy,
+        targets,
+        extract_concurrency=extract_concurrency,
+    )
     return [
         (
             _relative_to_root(payload.file, root),
