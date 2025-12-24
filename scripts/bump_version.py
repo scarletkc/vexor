@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Bump Vexor versions in one command.
 
+By default, this updates the Python package + plugin manifest.
+Use --gui to also update the GUI (gui/package.json and gui/package-lock.json).
+
 Usage:
-  python scripts/bump_version.py 0.6.4
-  python scripts/bump_version.py v0.6.4
+    python scripts/bump_version.py 0.6.4
+    python scripts/bump_version.py v0.6.4
+    python scripts/bump_version.py --gui 0.6.4
 """
 
 from __future__ import annotations
@@ -21,36 +25,70 @@ _SEMVER_PATTERN = re.compile(
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[1] in {"-h", "--help"}:
+    if any(arg in {"-h", "--help"} for arg in argv[1:]):
         print(__doc__.strip())
         return 2
 
-    raw = argv[1].strip()
+    version, update_gui = _parse_args(argv)
+    return _run(version=version, update_gui=update_gui, repo_root=Path(__file__).resolve().parents[1])
+
+
+def _parse_args(argv: list[str]) -> tuple[str, bool]:
+    """Parse CLI args.
+
+    Accepted forms:
+      bump_version.py 0.1.2
+      bump_version.py v0.1.2
+      bump_version.py --gui 0.1.2
+      bump_version.py 0.1.2 --gui
+    """
+    update_gui = False
+    positional: list[str] = []
+    for arg in argv[1:]:
+        if arg == "--gui":
+            update_gui = True
+            continue
+        if arg.startswith("-"):
+            raise SystemExit(f"Unknown option '{arg}'. Use --help for usage.")
+        positional.append(arg)
+
+    if len(positional) != 1:
+        print(__doc__.strip())
+        raise SystemExit(2)
+
+    raw_input = positional[0]
+    raw = raw_input.strip()
     if raw.startswith("v"):
         raw = raw[1:]
     if not raw or not _VERSION_PATTERN.fullmatch(raw):
-        raise SystemExit(f"Invalid version '{argv[1]}'. Expected like 0.6.4")
+        raise SystemExit(f"Invalid version '{raw_input}'. Expected like 0.6.4")
+    return raw, update_gui
 
-    repo_root = Path(__file__).resolve().parents[1]
+
+def _run(*, version: str, update_gui: bool, repo_root: Path) -> int:
     package_init = repo_root / "vexor" / "__init__.py"
     plugin_manifest = repo_root / "plugins" / "vexor" / ".claude-plugin" / "plugin.json"
-    gui_package_json = repo_root / "gui" / "package.json"
-    gui_package_lock = repo_root / "gui" / "package-lock.json"
 
-    gui_version = _to_gui_semver(raw)
-    _set_python_version(package_init, raw)
-    _set_plugin_version(plugin_manifest, raw)
-    _set_gui_version(gui_package_json, gui_version)
-    _set_gui_lock_version(gui_package_lock, gui_version)
+    _set_python_version(package_init, version)
+    _set_plugin_version(plugin_manifest, version)
 
-    print(f"Updated version to {raw}")
-    if gui_version != raw:
-        print(f"GUI version normalized to {gui_version}")
+    print(f"Updated version to {version}")
     print(f"- {package_init}")
     print(f"- {plugin_manifest}")
-    print(f"- {gui_package_json}")
-    if gui_package_lock.exists():
-        print(f"- {gui_package_lock}")
+
+    if update_gui:
+        gui_package_json = repo_root / "gui" / "package.json"
+        gui_package_lock = repo_root / "gui" / "package-lock.json"
+        gui_version = _to_gui_semver(version)
+        _set_gui_version(gui_package_json, gui_version)
+        _set_gui_lock_version(gui_package_lock, gui_version)
+
+        if gui_version != version:
+            print(f"GUI version normalized to {gui_version}")
+        print(f"- {gui_package_json}")
+        if gui_package_lock.exists():
+            print(f"- {gui_package_lock}")
+
     return 0
 
 
