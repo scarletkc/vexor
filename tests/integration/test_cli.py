@@ -117,6 +117,41 @@ def test_search_no_respect_gitignore_flag_sets_false(tmp_path, monkeypatch):
     assert captured["respect_gitignore"] is False
 
 
+def test_search_no_cache_flag_sets_true(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.txt"
+    sample_file.write_text("data")
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["no_cache"] = request.no_cache
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[SearchResult(path=sample_file, score=0.99)],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "alpha",
+            "--path",
+            str(tmp_path),
+            "--no-cache",
+            "--format",
+            "porcelain",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["no_cache"] is True
+
+
 def test_search_prints_index_message_when_auto_index_missing(tmp_path, monkeypatch):
     runner = CliRunner()
     sample_file = tmp_path / "alpha.txt"

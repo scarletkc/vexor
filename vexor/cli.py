@@ -389,6 +389,11 @@ def search(
         "--format",
         help=Messages.HELP_SEARCH_FORMAT,
     ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help=Messages.HELP_NO_CACHE,
+    ),
 ) -> None:
     """Run the semantic search."""
     config = load_config()
@@ -440,20 +445,35 @@ def search(
         exclude_patterns=normalized_excludes,
         extensions=normalized_exts,
         auto_index=auto_index,
+        no_cache=no_cache,
         rerank=rerank,
         flashrank_model=flashrank_model,
         remote_rerank=remote_rerank,
     )
     if output_format == SearchOutputFormat.rich:
-        should_index_first = _should_index_before_search(request) if auto_index else False
-        if should_index_first:
+        if no_cache:
             console.print(
-                _styled(Messages.INFO_INDEX_RUNNING.format(path=directory), Styles.INFO)
+                _styled(
+                    Messages.INFO_SEARCH_RUNNING_NO_CACHE.format(path=directory),
+                    Styles.INFO,
+                )
             )
         else:
-            console.print(
-                _styled(Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO)
+            should_index_first = (
+                _should_index_before_search(request) if auto_index else False
             )
+            if should_index_first:
+                console.print(
+                    _styled(
+                        Messages.INFO_INDEX_RUNNING.format(path=directory), Styles.INFO
+                    )
+                )
+            else:
+                console.print(
+                    _styled(
+                        Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO
+                    )
+                )
     try:
         response = perform_search(request)
     except FileNotFoundError:

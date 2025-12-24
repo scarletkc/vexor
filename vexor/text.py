@@ -19,6 +19,7 @@ class Messages:
     HELP_SEARCH_FORMAT = (
         "Output format (rich=table, porcelain=tab-separated for scripts, porcelain-z=NUL-delimited)."
     )
+    HELP_NO_CACHE = "Disable all disk caches (index + embedding/query)."
     HELP_INCLUDE_HIDDEN = "Use the index built with hidden files included."
     HELP_INDEX_PATH = "Root directory to scan for indexing."
     HELP_INDEX_INCLUDE = "Include hidden files and directories when building the index."
@@ -317,6 +318,7 @@ class Messages:
     INFO_FLASHRANK_MODEL_SUMMARY = "FlashRank model: {value}"
     INFO_REMOTE_RERANK_SUMMARY = "Remote rerank: {value}"
     INFO_SEARCH_RUNNING = "Searching cached index under {path}..."
+    INFO_SEARCH_RUNNING_NO_CACHE = "Searching in-memory index under {path}..."
     INFO_DOCTOR_CHECKING = "Checking if `vexor` is on PATH..."
     INFO_DOCTOR_FOUND = "`vexor` command is available at {path}."
     ERROR_DOCTOR_MISSING = (

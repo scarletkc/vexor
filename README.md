@@ -44,10 +44,11 @@ The wizard also runs automatically on first use when no config exists.
 
 ### 1. Search
 ```bash
-vexor "api client config"  # defaults to search
-vexor search "api client config"  # searches current directory
+vexor "api client config"  # defaults to search current directory
 # or explicit path:
 vexor search "api client config" --path ~/projects/demo --top 5
+# in-memory search only:
+vexor search "api client config" --no-cache 
 ```
 
 Vexor auto-indexes on first search. Example output:
