@@ -239,6 +239,7 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 | `--no-respect-gitignore` | Include gitignored files |
 | `--format porcelain` | Script-friendly TSV output |
 | `--format porcelain-z` | NUL-delimited output |
+| `--no-cache` | In-memory only; do not read/write index cache |
 
 Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`, `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
 
