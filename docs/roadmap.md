@@ -8,7 +8,10 @@
 - TODO: Search performance improvements.
   - Replace SQLite vector blobs with `vectors.npy` + `metadata.json` (memmap) to reuse across searches.
 - TODO: API performance improvements.
-  - Add process-local index/vector LRU caching keyed by index metadata for long-lived API sessions.
-  - Reuse query embeddings/results within a session (opt-out when `no_cache` is set).
+  - Add process-local embedding LRU cache for long-lived API sessions (query + chunk embeddings, opt-out when `no_cache` is set).
+  - Adaptive embedding concurrency based on 429/timeout signals (in-process only; do not persist config changes).
+  - Async embedding backends (AsyncOpenAI/Async Gemini) with asyncio concurrency to reduce thread overhead and improve connection reuse.
+  - Adaptive embedding batch size for remote providers (guarded by safe min/max and backoff on 429/413).
+  - Batch query search API to embed multiple queries per call and reuse loaded index vectors (reduce repeated I/O).
 - Evaluate migrating the similarity store to FAISS or another vector database for faster search and scalable metadata filtering.
 - Official Vexor API relay service to offload local credentials and speed up indexing.
