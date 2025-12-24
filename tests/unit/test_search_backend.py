@@ -120,6 +120,39 @@ def test_gemini_backend_no_embeddings(monkeypatch):
     assert "no embeddings" in str(exc.value)
 
 
+def test_gemini_backend_retries_transient_errors(monkeypatch):
+    calls = {"count": 0}
+
+    class DummyClientError(Exception):
+        def __init__(self, message: str, status: int = 503) -> None:
+            super().__init__(message)
+            self.message = message
+            self.status = status
+
+    monkeypatch.setattr(gemini_backend.genai_errors, "ClientError", DummyClientError)
+
+    class FlakyModels:
+        def embed_content(self, *_args, **_kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise DummyClientError("rate limit")
+            embeddings = [SimpleNamespace(values=[1.0, 0.0])]
+            return SimpleNamespace(embeddings=embeddings)
+
+    monkeypatch.setattr(
+        gemini_backend.genai,
+        "Client",
+        lambda **_kwargs: SimpleNamespace(models=FlakyModels()),
+    )
+    monkeypatch.setattr(gemini_backend, "_sleep", lambda _seconds: None)
+
+    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=None, api_key="cfg-key")
+    vectors = backend.embed(["x"])
+
+    assert calls["count"] == 2
+    assert vectors.shape == (1, 2)
+
+
 def test_format_genai_error_messages():
     class FakeError:
         def __init__(self, message):
@@ -259,6 +292,40 @@ def test_openai_backend_no_embeddings(monkeypatch):
         backend.embed(["input"])
 
     assert "no embeddings" in str(exc.value).lower()
+
+
+def test_openai_backend_retries_transient_errors(monkeypatch):
+    calls = {"count": 0}
+
+    class DummyError(Exception):
+        def __init__(self) -> None:
+            super().__init__("rate limit")
+            self.message = "rate limit"
+            self.status_code = 429
+
+    class FlakyEmbeddings:
+        def create(self, *_args, **_kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise DummyError()
+            data = [SimpleNamespace(embedding=[1.0, 0.0])]
+            return SimpleNamespace(data=data)
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            self.embeddings = FlakyEmbeddings()
+
+    monkeypatch.setattr(openai_backend, "OpenAI", FakeClient)
+    monkeypatch.setattr(openai_backend, "_sleep", lambda _seconds: None)
+
+    backend = openai_backend.OpenAIEmbeddingBackend(
+        model_name="text-embedding-3-small",
+        api_key="sk-test",
+    )
+    vectors = backend.embed(["x"])
+
+    assert calls["count"] == 2
+    assert vectors.shape == (1, 2)
 
 
 def test_openai_chunk_helper():
