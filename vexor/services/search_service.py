@@ -7,6 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 import json
 import re
+import numpy as np
 from typing import Sequence, TYPE_CHECKING
 from urllib import error as urlerror
 from urllib import request as urlrequest
@@ -112,6 +113,15 @@ def _normalize_by_max(scores: Sequence[float]) -> list[float]:
 def _resolve_rerank_candidates(top_k: int) -> int:
     candidate = int(top_k * 2)
     return max(20, min(candidate, 150))
+
+
+def _top_indices(scores: np.ndarray, limit: int) -> list[int]:
+    if limit <= 0:
+        return []
+    if limit >= scores.size:
+        return sorted(range(scores.size), key=lambda idx: (-scores[idx], idx))
+    indices = np.argpartition(-scores, limit - 1)[:limit]
+    return sorted(indices.tolist(), key=lambda idx: (-scores[idx], idx))
 
 
 def _bm25_scores(
@@ -545,7 +555,6 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             index_empty=True,
         )
 
-    from sklearn.metrics.pairwise import cosine_similarity  # local import
     from ..search import SearchResult, VexorSearcher  # local import
     searcher = VexorSearcher(
         model_name=request.model_name,
@@ -599,12 +608,22 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             store_query_vector(int(index_id), query_hash, request.query, query_vector)
         except Exception:  # pragma: no cover - best-effort cache storage
             pass
-    similarities = cosine_similarity(
-        query_vector.reshape(1, -1),
-        file_vectors,
-    )[0]
-    scored = []
-    for idx, (path, score) in enumerate(zip(paths, similarities)):
+    reranker = None
+    rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
+    use_rerank = rerank in {"bm25", "flashrank", "remote"}
+    if use_rerank:
+        candidate_limit = _resolve_rerank_candidates(request.top_k)
+    else:
+        candidate_limit = request.top_k
+    candidate_count = min(len(paths), candidate_limit)
+
+    query_vector = np.asarray(query_vector, dtype=np.float32).ravel()
+    similarities = np.asarray(file_vectors @ query_vector, dtype=np.float32)
+    top_indices = _top_indices(similarities, candidate_count)
+    scored: list[SearchResult] = []
+    for idx in top_indices:
+        path = paths[idx]
+        score = similarities[idx]
         chunk_meta = chunk_entries[idx] if idx < len(chunk_entries) else {}
         start_line = chunk_meta.get("start_line")
         end_line = chunk_meta.get("end_line")
@@ -618,12 +637,8 @@ def perform_search(request: SearchRequest) -> SearchResponse:
                 end_line=int(end_line) if end_line is not None else None,
             )
         )
-    scored.sort(key=lambda item: item.score, reverse=True)
-    reranker = None
-    rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
-    if rerank in {"bm25", "flashrank", "remote"}:
-        candidate_count = min(len(scored), _resolve_rerank_candidates(request.top_k))
-        candidates = scored[:candidate_count]
+    if use_rerank:
+        candidates = scored
         if rerank == "bm25":
             candidates = _apply_bm25_rerank(request.query, candidates)
             reranker = "bm25"
@@ -685,7 +700,6 @@ def _perform_search_with_temporary_index(request: SearchRequest) -> SearchRespon
             index_empty=True,
         )
 
-    from sklearn.metrics.pairwise import cosine_similarity  # local import
     from ..search import SearchResult, VexorSearcher  # local import
 
     searcher = VexorSearcher(
@@ -722,13 +736,23 @@ def _perform_search_with_temporary_index(request: SearchRequest) -> SearchRespon
                 )
             except Exception:  # pragma: no cover - best-effort cache storage
                 pass
-    similarities = cosine_similarity(
-        query_vector.reshape(1, -1),
-        file_vectors,
-    )[0]
+    reranker = None
+    rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
+    use_rerank = rerank in {"bm25", "flashrank", "remote"}
+    if use_rerank:
+        candidate_limit = _resolve_rerank_candidates(request.top_k)
+    else:
+        candidate_limit = request.top_k
+    candidate_count = min(len(paths), candidate_limit)
+
+    query_vector = np.asarray(query_vector, dtype=np.float32).ravel()
+    similarities = np.asarray(file_vectors @ query_vector, dtype=np.float32)
+    top_indices = _top_indices(similarities, candidate_count)
     chunk_entries = metadata.get("chunks", [])
-    scored = []
-    for idx, (path, score) in enumerate(zip(paths, similarities)):
+    scored: list[SearchResult] = []
+    for idx in top_indices:
+        path = paths[idx]
+        score = similarities[idx]
         chunk_meta = chunk_entries[idx] if idx < len(chunk_entries) else {}
         start_line = chunk_meta.get("start_line")
         end_line = chunk_meta.get("end_line")
@@ -742,12 +766,8 @@ def _perform_search_with_temporary_index(request: SearchRequest) -> SearchRespon
                 end_line=int(end_line) if end_line is not None else None,
             )
         )
-    scored.sort(key=lambda item: item.score, reverse=True)
-    reranker = None
-    rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
-    if rerank in {"bm25", "flashrank", "remote"}:
-        candidate_count = min(len(scored), _resolve_rerank_candidates(request.top_k))
-        candidates = scored[:candidate_count]
+    if use_rerank:
+        candidates = scored
         if rerank == "bm25":
             candidates = _apply_bm25_rerank(request.query, candidates)
             reranker = "bm25"

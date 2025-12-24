@@ -6,5 +6,11 @@
 - Additional embedding providers (Azure). 
 - Add AST-aware `code` mode chunking for Go and Rust (tree-sitter support).
 - Optional reranker stage to improve result relevance for ambiguous/short queries.
+- TODO: Search performance improvements.
+  - Replace SQLite vector blobs with `vectors.npy` + `metadata.json` (memmap) to reuse across searches.
+  - Reduce disk IO by splitting metadata tables and fetching only needed columns.
+- TODO: API performance improvements.
+  - Add process-local index/vector LRU caching keyed by index metadata for long-lived API sessions.
+  - Reuse query embeddings/results within a session (opt-out when `no_cache` is set).
 - Evaluate migrating the similarity store to FAISS or another vector database for faster search and scalable metadata filtering.
 - Official Vexor API relay service to offload local credentials and speed up indexing.
