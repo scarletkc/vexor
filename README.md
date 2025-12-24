@@ -14,7 +14,8 @@
 
 ---
 
-**Vexor** is a vector-powered CLI and desktop app for semantic file search. It uses configurable embedding models and ranks results by cosine similarity.
+**Vexor** is a semantic search engine that builds reusable indexes over files and code.
+It supports configurable embedding and reranking providers, and exposes the same core through a Python API, a CLI tool, and an optional desktop frontend.
 
 ![GUI](https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/assets/gui_demo.png)
 
