@@ -14,7 +14,8 @@ import numpy as np
 
 from .utils import collect_files
 
-CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
+DEFAULT_CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
+CACHE_DIR = DEFAULT_CACHE_DIR
 CACHE_VERSION = 5
 DB_FILENAME = "index.db"
 EMBED_CACHE_TTL_DAYS = 30
@@ -117,6 +118,17 @@ def _chunk_values(values: Sequence[str], size: int) -> Iterable[Sequence[str]]:
 def ensure_cache_dir() -> Path:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return CACHE_DIR
+
+
+def set_cache_dir(path: Path | str | None) -> None:
+    global CACHE_DIR
+    if path is None:
+        CACHE_DIR = DEFAULT_CACHE_DIR
+        return
+    dir_path = Path(path).expanduser().resolve()
+    if dir_path.exists() and not dir_path.is_dir():
+        raise NotADirectoryError(f"Path is not a directory: {dir_path}")
+    CACHE_DIR = dir_path
 
 
 def cache_db_path() -> Path:

@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse, urlunparse
 
-CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
+DEFAULT_CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
+CONFIG_DIR = DEFAULT_CONFIG_DIR
 CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_MODEL = "text-embedding-3-small"
 DEFAULT_GEMINI_MODEL = "gemini-embedding-001"
@@ -127,6 +128,18 @@ def flashrank_cache_dir(*, create: bool = True) -> Path:
     if create:
         cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
+
+
+def set_config_dir(path: Path | str | None) -> None:
+    global CONFIG_DIR, CONFIG_FILE
+    if path is None:
+        CONFIG_DIR = DEFAULT_CONFIG_DIR
+    else:
+        dir_path = Path(path).expanduser().resolve()
+        if dir_path.exists() and not dir_path.is_dir():
+            raise NotADirectoryError(f"Path is not a directory: {dir_path}")
+        CONFIG_DIR = dir_path
+    CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
 def set_api_key(value: str | None) -> None:

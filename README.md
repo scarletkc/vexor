@@ -77,8 +77,9 @@ Useful for CI warmup or when `auto_index` is disabled.
 Vexor can also be imported and used directly from Python:
 
 ```python
-from vexor import index, search
+from vexor import index, search, set_data_dir
 
+set_data_dir("/path/to/vexor-data")  # optional: config/cache location
 index(path=".", mode="head")
 response = search("config loader", path=".", mode="name")
 
@@ -88,6 +89,7 @@ for hit in response.results:
 
 By default it reads `~/.vexor/config.json`. To ignore config and pass everything explicitly,
 set `use_config=False`.
+Use `set_data_dir(None)` to reset to `~/.vexor`.
 
 ## Configuration
 

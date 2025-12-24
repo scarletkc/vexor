@@ -15,7 +15,9 @@ from .config import (
     SUPPORTED_RERANKERS,
     load_config,
     resolve_default_model,
+    set_config_dir,
 )
+from .cache import set_cache_dir
 from .modes import available_modes, get_strategy
 from .services.index_service import IndexResult, build_index, clear_index_entries
 from .services.search_service import SearchRequest, SearchResponse, perform_search
@@ -45,6 +47,12 @@ class RuntimeSettings:
     rerank: str
     flashrank_model: str | None
     remote_rerank: RemoteRerankConfig | None
+
+
+def set_data_dir(path: Path | str | None) -> None:
+    """Set the base directory for config and cache data."""
+    set_config_dir(path)
+    set_cache_dir(path)
 
 
 def search(
@@ -218,6 +226,8 @@ def _validate_mode(mode: str) -> str:
             Messages.ERROR_MODE_INVALID.format(value=mode, allowed=allowed)
         ) from exc
     return mode
+
+
 
 
 def _normalize_extensions(values: Sequence[str] | str | None) -> tuple[str, ...]:

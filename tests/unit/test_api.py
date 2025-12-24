@@ -110,6 +110,23 @@ def test_search_overrides_config(tmp_path, monkeypatch) -> None:
     assert req.local_cuda is True
 
 
+def test_set_data_dir_updates_config_and_cache(tmp_path) -> None:
+    from vexor import cache as cache_module
+    from vexor import config as config_module
+
+    original_config_dir = config_module.CONFIG_DIR
+    original_cache_dir = cache_module.CACHE_DIR
+
+    api_module.set_data_dir(tmp_path)
+    try:
+        assert config_module.CONFIG_DIR == tmp_path
+        assert config_module.CONFIG_FILE == tmp_path / "config.json"
+        assert cache_module.CACHE_DIR == tmp_path
+    finally:
+        config_module.set_config_dir(original_config_dir)
+        cache_module.set_cache_dir(original_cache_dir)
+
+
 def test_search_validates_mode_and_query(tmp_path) -> None:
     with pytest.raises(api_module.VexorError):
         api_module.search("   ", path=tmp_path, use_config=False)
