@@ -95,6 +95,17 @@ for hit in response.results:
 By default it reads `~/.vexor/config.json`. For runtime config overrides, cache
 controls, and per-call options, see [`docs/api/python.md`](https://github.com/scarletkc/vexor/tree/main/docs/api/python.md).
 
+## AI Agent Skill
+
+This repo includes a skill for AI agents to use Vexor effectively:
+
+```bash
+vexor install --skills claude  # Claude Code
+vexor install --skills codex   # Codex
+```
+
+Skill source: [`plugins/vexor/skills/vexor-cli`](https://github.com/scarletkc/vexor/raw/refs/heads/main/plugins/vexor/skills/vexor-cli/SKILL.md)
+
 ## Configuration
 
 ```bash
@@ -242,17 +253,6 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 | `--no-cache` | In-memory only; do not read/write index cache |
 
 Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`, `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
-
-## AI Agent Skill
-
-This repo includes a skill for AI agents to use Vexor effectively:
-
-```bash
-vexor install --skills claude  # Claude Code
-vexor install --skills codex   # Codex
-```
-
-Skill source: [`plugins/vexor/skills/vexor-cli`](https://github.com/scarletkc/vexor/raw/refs/heads/main/plugins/vexor/skills/vexor-cli/SKILL.md)
 
 ## Documentation
 
