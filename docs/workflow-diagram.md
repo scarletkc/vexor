@@ -37,7 +37,7 @@
        ┌──────────────────┐  ┌──────────────────┐
        │  build_release   │  │  publish_pypi    │
        │ (pyinstaller +   │  │ (build + upload) │
-       │  electron zip)   │  │                  │
+       │  GUI zip/reuse)  │  │                  │
        └────────┬─────────┘  └──────────────────┘
                 │
                 ▼
@@ -57,15 +57,16 @@
 
 **阶段 2: 发布准备**
 - 条件: push 到 main 且测试通过
-- 检测版本号是否变化
+- 检测版本号是否变化 (以 `vexor/__init__.py` 的 `__version__` 与上一提交相比为准)
 
 **阶段 3: 构建与发布**
 - 版本变化时同时进行:
   - 构建多平台发行版 (Windows + Linux)
-  - 构建 Electron GUI ZIP (Windows + Linux)
+  - GUI 版本号相对上一版 Release 有变化时构建 Electron GUI ZIP (Windows + Linux)
+  - GUI 版本号未变化时复用上一次 Release 的 GUI 产物并跳过 Electron 构建
   - 发布到 PyPI
 - 最后创建 GitHub Release
 
 > `pytest` 仅在 diff 中包含 `.py` 文件时才会运行；纯文档 / 资源改动会跳过。
-> 只有 push 到 main 且 `vexor/__init__.py` 的版本号改变时，才会进入
-> 构建可执行 / 发布 GitHub Release / 推送 PyPI 的阶段；否则直接结束。
+> 只有 push 到 main 且版本号改变时，才会进入构建可执行 / 发布 GitHub Release /
+> 推送 PyPI 的阶段；否则直接结束。GUI 产物命名使用 GUI 版本号。

@@ -104,53 +104,88 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
-      release_changed: ${{ steps.detect_release.outputs.changed }}
-      version: ${{ steps.version.outputs.value }}
+      release_changed: ${{ steps.versions.outputs.release_changed }}
+      version: ${{ steps.versions.outputs.version }}
+      gui_changed: ${{ steps.versions.outputs.gui_changed }}
+      gui_version: ${{ steps.versions.outputs.gui_version }}
+      prev_gui_version: ${{ steps.versions.outputs.prev_gui_version }}
+      prev_tag: ${{ steps.versions.outputs.prev_tag }}
+      reuse_gui: ${{ steps.versions.outputs.reuse_gui }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - name: Detect version change
-        id: detect_release
+      - name: Detect version changes
+        id: versions
         shell: bash
         run: |
-          if [ "$(git rev-list --count HEAD)" -le 1 ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif git diff --quiet HEAD^ HEAD -- vexor/__init__.py; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Setup Python
-        if: steps.detect_release.outputs.changed == 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          cache: 'pip'
-          cache-dependency-path: pyproject.toml
-
-      - name: Extract version
-        id: version
-        if: steps.detect_release.outputs.changed == 'true'
-        shell: bash
-        run: |
+          set -euo pipefail
           python - <<'PY'
+          import json
           import os
           import pathlib
           import re
+          import subprocess
 
-          init_file = pathlib.Path("vexor/__init__.py")
-          text = init_file.read_text(encoding="utf-8")
-          match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", text)
-          if not match:
-              raise SystemExit("Unable to find __version__ in vexor/__init__.py")
-          version = match.group(1)
+          def read_version_from_text(text: str) -> str:
+              match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", text)
+              if not match:
+                  raise SystemExit("Unable to find __version__ in vexor/__init__.py")
+              return match.group(1)
+
+          def read_file_from_ref(ref: str, path: str):
+              try:
+                  return subprocess.check_output(
+                      ["git", "show", f"{ref}:{path}"],
+                      text=True,
+                  )
+              except subprocess.CalledProcessError:
+                  return None
+
+          current_init = pathlib.Path("vexor/__init__.py").read_text(encoding="utf-8")
+          current_version = read_version_from_text(current_init)
+
+          current_gui_text = pathlib.Path("gui/package.json").read_text(encoding="utf-8")
+          current_gui_version = json.loads(current_gui_text).get("version", "")
+
+          prev_init = read_file_from_ref("HEAD^", "vexor/__init__.py")
+          if prev_init is None:
+              release_changed = True
+              prev_version = ""
+          else:
+              prev_version = read_version_from_text(prev_init)
+              release_changed = current_version != prev_version
+
+          current_tag = f"v{current_version}"
+          try:
+              tag_list = subprocess.check_output(
+                  ["git", "tag", "--list", "v*", "--sort=-version:refname"],
+                  text=True,
+              ).splitlines()
+          except subprocess.CalledProcessError:
+              tag_list = []
+
+          prev_tag = next((tag for tag in tag_list if tag != current_tag), "")
+          prev_gui = read_file_from_ref(prev_tag, "gui/package.json") if prev_tag else None
+          if prev_gui is None:
+              gui_changed = True
+              prev_gui_version = ""
+          else:
+              prev_gui_version = json.loads(prev_gui).get("version", "")
+              gui_changed = current_gui_version != prev_gui_version
+          reuse_gui = (not gui_changed) and bool(prev_tag)
+
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"value={version}\n")
+              handle.write(f"release_changed={'true' if release_changed else 'false'}\n")
+              handle.write(f"version={current_version}\n")
+              handle.write(f"gui_changed={'true' if gui_changed else 'false'}\n")
+              handle.write(f"gui_version={current_gui_version}\n")
+              handle.write(f"prev_gui_version={prev_gui_version}\n")
+              handle.write(f"prev_tag={prev_tag}\n")
+              handle.write(f"reuse_gui={'true' if reuse_gui else 'false'}\n")
           PY
 
   build_release:
@@ -211,7 +246,59 @@ jobs:
           mkdir -p release
           cp "${{ matrix.built-binary }}" "release/vexor-${VERSION}-${{ matrix.artifact-suffix }}"
 
+      - name: Reuse previous GUI release asset
+        if: needs.prepare_release.outputs.reuse_gui == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREV_TAG: ${{ needs.prepare_release.outputs.prev_tag }}
+          PREV_GUI_VERSION: ${{ needs.prepare_release.outputs.prev_gui_version }}
+          GUI_VERSION: ${{ needs.prepare_release.outputs.gui_version }}
+          GUI_SUFFIX: ${{ matrix.gui-zip-suffix }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ.get("GITHUB_TOKEN", "")
+          prev_tag = os.environ["PREV_TAG"]
+          prev_gui_version = os.environ["PREV_GUI_VERSION"]
+          gui_version = os.environ["GUI_VERSION"]
+          suffix = os.environ["GUI_SUFFIX"]
+          asset_name = f"vexor-desktop-{prev_gui_version}-{suffix}"
+
+          api_url = f"https://api.github.com/repos/{repo}/releases/tags/{prev_tag}"
+          headers = {"Accept": "application/vnd.github+json"}
+          if token:
+              headers["Authorization"] = f"Bearer {token}"
+          request = urllib.request.Request(api_url, headers=headers)
+          with urllib.request.urlopen(request) as response:
+              data = json.load(response)
+
+          assets = data.get("assets", [])
+          match = next((asset for asset in assets if asset.get("name") == asset_name), None)
+          if not match:
+              raise SystemExit(f"Missing GUI asset {asset_name} in {prev_tag}")
+          download_url = match.get("browser_download_url")
+          if not download_url:
+              raise SystemExit(f"Missing download URL for {asset_name}")
+
+          os.makedirs("release", exist_ok=True)
+          dest_path = os.path.join("release", f"vexor-desktop-{gui_version}-{suffix}")
+          download_headers = {}
+          if token:
+              download_headers["Authorization"] = f"Bearer {token}"
+          download_request = urllib.request.Request(download_url, headers=download_headers)
+          with urllib.request.urlopen(download_request) as response, open(dest_path, "wb") as handle:
+              handle.write(response.read())
+          print(f"Reused {asset_name} -> {dest_path}")
+          PY
+
       - name: Setup Node
+        if: needs.prepare_release.outputs.reuse_gui != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -219,26 +306,29 @@ jobs:
           cache-dependency-path: gui/package-lock.json
 
       - name: Install GUI dependencies
+        if: needs.prepare_release.outputs.reuse_gui != 'true'
         shell: bash
         working-directory: gui
         run: npm ci
 
       - name: Build GUI zip
+        if: needs.prepare_release.outputs.reuse_gui != 'true'
         shell: bash
         working-directory: gui
         run: npm run make
 
       - name: Prepare GUI release asset
+        if: needs.prepare_release.outputs.reuse_gui != 'true'
         shell: bash
         run: |
-          VERSION="${{ needs.prepare_release.outputs.version }}"
+          GUI_VERSION="${{ needs.prepare_release.outputs.gui_version }}"
           ZIP_PATH="$(ls ${{ matrix.gui-zip-glob }} 2>/dev/null | head -n 1)"
           if [ -z "${ZIP_PATH}" ]; then
             echo "Missing GUI zip at ${{ matrix.gui-zip-glob }}" >&2
             ls -R gui/out/make/zip || true
             exit 1
           fi
-          cp "${ZIP_PATH}" "release/vexor-desktop-${VERSION}-${{ matrix.gui-zip-suffix }}"
+          cp "${ZIP_PATH}" "release/vexor-desktop-${GUI_VERSION}-${{ matrix.gui-zip-suffix }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
