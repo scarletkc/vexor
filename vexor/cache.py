@@ -143,8 +143,17 @@ def cache_file(root: Path, model: str, include_hidden: bool) -> Path:  # pragma:
     return cache_db_path()
 
 
-def _connect(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
+def _connect(
+    db_path: Path,
+    *,
+    readonly: bool = False,
+    query_only: bool = False,
+) -> sqlite3.Connection:
+    if readonly:
+        db_uri = f"file:{db_path.as_posix()}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+    else:
+        conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA journal_mode = WAL;")
@@ -155,7 +164,21 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA temp_store = MEMORY;")
     conn.execute("PRAGMA busy_timeout = 5000;")
     conn.execute("PRAGMA foreign_keys = ON;")
+    if readonly or query_only:
+        conn.execute("PRAGMA query_only = ON;")
     return conn
+
+
+def _ensure_schema_readonly(
+    conn: sqlite3.Connection,
+    *,
+    tables: Sequence[str],
+) -> None:
+    if _schema_needs_reset(conn):
+        raise sqlite3.OperationalError("Schema reset required")
+    for table in tables:
+        if not _table_exists(conn, table):
+            raise sqlite3.OperationalError(f"Missing table: {table}")
 
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
@@ -883,9 +906,15 @@ def load_index(
     if not db_path.exists():
         raise FileNotFoundError(db_path)
 
-    conn = _connect(db_path)
+    conn = _connect(db_path, readonly=True)
     try:
-        _ensure_schema(conn)
+        try:
+            _ensure_schema_readonly(
+                conn,
+                tables=("index_metadata", "indexed_file", "indexed_chunk", "chunk_meta"),
+            )
+        except sqlite3.OperationalError:
+            raise FileNotFoundError(db_path)
         key = _cache_key(
             root,
             include_hidden,
@@ -993,9 +1022,20 @@ def load_index_vectors(
     if not db_path.exists():
         raise FileNotFoundError(db_path)
 
-    conn = _connect(db_path)
+    conn = _connect(db_path, readonly=True)
     try:
-        _ensure_schema(conn)
+        try:
+            _ensure_schema_readonly(
+                conn,
+                tables=(
+                    "index_metadata",
+                    "indexed_file",
+                    "indexed_chunk",
+                    "chunk_embedding",
+                ),
+            )
+        except sqlite3.OperationalError:
+            raise FileNotFoundError(db_path)
         key = _cache_key(
             root,
             include_hidden,
@@ -1149,12 +1189,15 @@ def load_chunk_metadata(
     db_path = cache_db_path()
     owns_connection = conn is None
     try:
-        connection = conn or _connect(db_path)
+        connection = conn or _connect(db_path, readonly=True)
     except sqlite3.OperationalError:
         return {}
     try:
         try:
-            _ensure_schema(connection)
+            _ensure_schema_readonly(
+                connection,
+                tables=("indexed_chunk", "chunk_meta"),
+            )
         except sqlite3.OperationalError:
             return {}
         results: dict[int, dict] = {}
@@ -1193,12 +1236,12 @@ def load_query_vector(
     db_path = cache_db_path()
     owns_connection = conn is None
     try:
-        connection = conn or _connect(db_path)
+        connection = conn or _connect(db_path, readonly=True)
     except sqlite3.OperationalError:
         return None
     try:
         try:
-            _ensure_schema(connection)
+            _ensure_schema_readonly(connection, tables=("query_cache",))
         except sqlite3.OperationalError:
             return None
         row = connection.execute(
@@ -1270,12 +1313,12 @@ def load_embedding_cache(
     db_path = cache_db_path()
     owns_connection = conn is None
     try:
-        connection = conn or _connect(db_path)
+        connection = conn or _connect(db_path, readonly=True)
     except sqlite3.OperationalError:
         return {}
     try:
         try:
-            _ensure_schema(connection)
+            _ensure_schema_readonly(connection, tables=("embedding_cache",))
         except sqlite3.OperationalError:
             return {}
         results: dict[str, np.ndarray] = {}
@@ -1433,12 +1476,12 @@ def list_cache_entries() -> list[dict[str, object]]:
         return []
 
     try:
-        conn = _connect(db_path)
+        conn = _connect(db_path, readonly=True)
     except sqlite3.OperationalError:
         return []
     try:
         try:
-            _ensure_schema(conn)
+            _ensure_schema_readonly(conn, tables=("index_metadata", "indexed_file"))
         except sqlite3.OperationalError:
             return []
         rows = conn.execute(
