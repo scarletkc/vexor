@@ -15,3 +15,6 @@
   - Batch query search API to embed multiple queries per call and reuse loaded index vectors (reduce repeated I/O).
 - Evaluate migrating the similarity store to FAISS or another vector database for faster search and scalable metadata filtering.
 - Official Vexor API relay service to offload local credentials and speed up indexing.
+- VS Code extension integration.
+- Project-level local cache (per-folder cache root override).
+- Support `.vexorignore` for per-project ignore rules.
