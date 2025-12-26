@@ -101,7 +101,7 @@ controls, and per-call options, see [`docs/api/python.md`](https://github.com/sc
 
 ## AI Agent Skill
 
-> Vexor is featured in [Awesome Claude Skills](https://github.com/VoltAgent/awesome-claude-skills).
+> Vexor is featured in [Awesome Claude Skills](https://github.com/VoltAgent/awesome-claude-skills?tab=readme-ov-file#development-and-testing).
 
 This repo includes a skill for AI agents to use Vexor effectively:
 
