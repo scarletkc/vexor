@@ -260,7 +260,11 @@ Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`, `start_lin
 
 See [docs](https://github.com/scarletkc/vexor/tree/main/docs) for more details.
 
+## Contributing
+
 Contributions, issues, and PRs welcome! Star if you find it helpful.
+
+[![Star History Chart](https://api.star-history.com/svg?repos=scarletkc/vexor&type=Date)](https://star-history.com/#scarletkc/vexor&Date)
 
 ## License
 
