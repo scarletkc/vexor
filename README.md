@@ -10,10 +10,6 @@
 [![Codecov](https://img.shields.io/codecov/c/github/scarletkc/vexor/main)](https://codecov.io/github/scarletkc/vexor)
 [![License](https://img.shields.io/github/license/scarletkc/vexor.svg)](https://github.com/scarletkc/vexor/blob/main/LICENSE)
 
-<p align="center">
-  Selected in <a href="https://www.ruanyifeng.com/blog/2025/12/weekly-issue-379.html"><b>Ruan Yifeng's Weekly (Issue #379)</b></a>
-</p>
-
 </div>
 
 ---
@@ -24,6 +20,13 @@ It supports configurable embedding and reranking providers, and exposes the same
 <video src="https://github.com/user-attachments/assets/4d53eefd-ab35-4232-98a7-f8dc005983a9" controls="controls" style="max-width: 600px;">
       Vexor Demo Video
     </video>
+
+## Featured In
+
+Vexor has been recognized and featured by the community:
+
+- **[Ruan Yifeng's Weekly (Issue #379)](https://github.com/ruanyf/weekly/blob/master/docs/issue-379.md#ai-%E7%9B%B8%E5%85%B3)** - A leading tech newsletter in the Chinese developer community.
+- **[Awesome Claude Skills](https://github.com/VoltAgent/awesome-claude-skills?tab=readme-ov-file#development-and-testing)** - Curated list of best-in-class skills for AI agent.
 
 ## Why Vexor?
 
@@ -100,8 +103,6 @@ By default it reads `~/.vexor/config.json`. For runtime config overrides, cache
 controls, and per-call options, see [`docs/api/python.md`](https://github.com/scarletkc/vexor/tree/main/docs/api/python.md).
 
 ## AI Agent Skill
-
-> Vexor is featured in [Awesome Claude Skills](https://github.com/VoltAgent/awesome-claude-skills?tab=readme-ov-file#development-and-testing).
 
 This repo includes a skill for AI agents to use Vexor effectively:
 
