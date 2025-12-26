@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+from collections import OrderedDict
 from dataclasses import dataclass
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from threading import Lock
 from typing import Iterable, Mapping, Sequence
 
 import numpy as np
@@ -26,6 +28,10 @@ CACHE_VERSION = 6
 DB_FILENAME = "index.db"
 EMBED_CACHE_TTL_DAYS = 30
 EMBED_CACHE_MAX_ENTRIES = 50_000
+EMBED_MEMORY_CACHE_MAX_ENTRIES = 2_048
+
+_EMBED_MEMORY_CACHE: "OrderedDict[tuple[str, str], np.ndarray]" = OrderedDict()
+_EMBED_MEMORY_LOCK = Lock()
 
 
 @dataclass(slots=True)
@@ -88,6 +94,55 @@ def embedding_cache_key(text: str) -> str:
 
     clean_text = text or ""
     return hashlib.sha1(clean_text.encode("utf-8")).hexdigest()
+
+
+def _clear_embedding_memory_cache() -> None:
+    if EMBED_MEMORY_CACHE_MAX_ENTRIES <= 0:
+        return
+    with _EMBED_MEMORY_LOCK:
+        _EMBED_MEMORY_CACHE.clear()
+
+
+def _load_embedding_memory_cache(
+    model: str,
+    text_hashes: Sequence[str],
+) -> dict[str, np.ndarray]:
+    if EMBED_MEMORY_CACHE_MAX_ENTRIES <= 0:
+        return {}
+    results: dict[str, np.ndarray] = {}
+    with _EMBED_MEMORY_LOCK:
+        for text_hash in text_hashes:
+            if not text_hash:
+                continue
+            key = (model, text_hash)
+            vector = _EMBED_MEMORY_CACHE.pop(key, None)
+            if vector is None:
+                continue
+            _EMBED_MEMORY_CACHE[key] = vector
+            results[text_hash] = vector
+    return results
+
+
+def _store_embedding_memory_cache(
+    *,
+    model: str,
+    embeddings: Mapping[str, np.ndarray],
+) -> None:
+    if EMBED_MEMORY_CACHE_MAX_ENTRIES <= 0 or not embeddings:
+        return
+    with _EMBED_MEMORY_LOCK:
+        for text_hash, vector in embeddings.items():
+            if not text_hash:
+                continue
+            array = np.asarray(vector, dtype=np.float32)
+            if array.size == 0:
+                continue
+            key = (model, text_hash)
+            if key in _EMBED_MEMORY_CACHE:
+                _EMBED_MEMORY_CACHE.pop(key, None)
+            _EMBED_MEMORY_CACHE[key] = array
+        while len(_EMBED_MEMORY_CACHE) > EMBED_MEMORY_CACHE_MAX_ENTRIES:
+            _EMBED_MEMORY_CACHE.popitem(last=False)
 
 
 def _serialize_extensions(extensions: Sequence[str] | None) -> str:
@@ -1339,19 +1394,23 @@ def load_embedding_cache(
     unique_hashes = list(dict.fromkeys([value for value in text_hashes if value]))
     if not unique_hashes:
         return {}
+    results = _load_embedding_memory_cache(model, unique_hashes)
+    missing = [value for value in unique_hashes if value not in results]
+    if not missing:
+        return results
     db_path = cache_db_path()
     owns_connection = conn is None
     try:
         connection = conn or _connect(db_path, readonly=True)
     except sqlite3.OperationalError:
-        return {}
+        return results
     try:
         try:
             _ensure_schema_readonly(connection, tables=("embedding_cache",))
         except sqlite3.OperationalError:
-            return {}
-        results: dict[str, np.ndarray] = {}
-        for chunk in _chunk_values(unique_hashes, 900):
+            return results
+        disk_results: dict[str, np.ndarray] = {}
+        for chunk in _chunk_values(missing, 900):
             placeholders = ", ".join("?" for _ in chunk)
             rows = connection.execute(
                 f"""
@@ -1368,7 +1427,10 @@ def load_embedding_cache(
                 vector = np.frombuffer(blob, dtype=np.float32)
                 if vector.size == 0:
                     continue
-                results[row["text_hash"]] = vector
+                disk_results[row["text_hash"]] = vector
+        if disk_results:
+            _store_embedding_memory_cache(model=model, embeddings=disk_results)
+            results.update(disk_results)
         return results
     finally:
         if owns_connection:
@@ -1385,6 +1447,7 @@ def store_embedding_cache(
 
     if not embeddings:
         return
+    _store_embedding_memory_cache(model=model, embeddings=embeddings)
     db_path = cache_db_path()
     owns_connection = conn is None
     connection = conn or _connect(db_path)

@@ -8,7 +8,6 @@
 - TODO: Search performance improvements.
   - Replace SQLite vector blobs with `vectors.npy` + `metadata.json` (memmap) to reuse across searches.
 - TODO: API performance improvements.
-  - Add process-local embedding LRU cache for long-lived API sessions (query + chunk embeddings, opt-out when `no_cache` is set).
   - Adaptive embedding concurrency based on 429/timeout signals (in-process only; do not persist config changes).
   - Async embedding backends (AsyncOpenAI/Async Gemini) with asyncio concurrency to reduce thread overhead and improve connection reuse.
   - Adaptive embedding batch size for remote providers (guarded by safe min/max and backoff on 429/413).

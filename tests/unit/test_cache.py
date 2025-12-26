@@ -105,6 +105,23 @@ def test_embedding_cache_round_trip(tmp_path, monkeypatch):
     assert cache.load_embedding_cache("other-model", [text_hash]) == {}
 
 
+def test_embedding_cache_memory_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    cache._clear_embedding_memory_cache()
+
+    text_hash = cache.embedding_cache_key("memory-only")
+    vector = np.array([4.0, 5.0], dtype=np.float32)
+    cache.store_embedding_cache(model="model", embeddings={text_hash: vector})
+
+    db_path = cache.cache_db_path()
+    if db_path.exists():
+        db_path.unlink()
+
+    loaded = cache.load_embedding_cache("model", [text_hash])
+    assert text_hash in loaded
+    assert np.allclose(loaded[text_hash], vector)
+
+
 def test_embedding_cache_prunes_by_ttl_and_capacity(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
     monkeypatch.setattr(cache, "EMBED_CACHE_TTL_DAYS", 1)

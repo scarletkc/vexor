@@ -373,6 +373,7 @@ def test_perform_search_uses_cached_query_vector(monkeypatch, tmp_path: Path) ->
     import vexor.cache as cache
 
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
+    cache._clear_embedding_memory_cache()
     root = tmp_path / "project"
     root.mkdir()
     (root / "a.txt").write_text("data")

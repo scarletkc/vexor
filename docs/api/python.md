@@ -149,6 +149,7 @@ explicitly via function arguments or `config=...`.
 - Default: index + embedding/query caches are stored on disk.
 - `temporary_index=True`: no index cache read/write; embedding/query caches still used.
 - `no_cache=True`: disables all disk caches; forces in-memory indexing and embeddings.
+- When `no_cache=False`, a process-local LRU may reuse recent embeddings.
 
 ## Examples
 
