@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Dict
@@ -15,6 +17,10 @@ from .text import Messages
 DEFAULT_CONFIG_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CONFIG_DIR = DEFAULT_CONFIG_DIR
 CONFIG_FILE = CONFIG_DIR / "config.json"
+_CONFIG_DIR_OVERRIDE: ContextVar[Path | None] = ContextVar(
+    "vexor_config_dir_override",
+    default=None,
+)
 DEFAULT_MODEL = "text-embedding-3-small"
 DEFAULT_GEMINI_MODEL = "gemini-embedding-001"
 DEFAULT_LOCAL_MODEL = "intfloat/multilingual-e5-small"
@@ -74,10 +80,40 @@ def _parse_remote_rerank(raw: object) -> RemoteRerankConfig | None:
     )
 
 
+def _resolve_config_dir() -> Path:
+    override = _CONFIG_DIR_OVERRIDE.get()
+    return override if override is not None else CONFIG_DIR
+
+
+def _resolve_config_file() -> Path:
+    override = _CONFIG_DIR_OVERRIDE.get()
+    if override is not None:
+        return override / "config.json"
+    return CONFIG_FILE
+
+
+@contextmanager
+def config_dir_context(path: Path | str | None):
+    """Temporarily override the config directory for the current context."""
+
+    if path is None:
+        yield
+        return
+    dir_path = Path(path).expanduser().resolve()
+    if dir_path.exists() and not dir_path.is_dir():
+        raise NotADirectoryError(f"Path is not a directory: {dir_path}")
+    token = _CONFIG_DIR_OVERRIDE.set(dir_path)
+    try:
+        yield
+    finally:
+        _CONFIG_DIR_OVERRIDE.reset(token)
+
+
 def load_config() -> Config:
-    if not CONFIG_FILE.exists():
+    config_file = _resolve_config_file()
+    if not config_file.exists():
         return Config()
-    raw = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    raw = json.loads(config_file.read_text(encoding="utf-8"))
     rerank = (raw.get("rerank") or DEFAULT_RERANK).strip().lower()
     if rerank not in SUPPORTED_RERANKERS:
         rerank = DEFAULT_RERANK
@@ -101,7 +137,8 @@ def load_config() -> Config:
 
 
 def save_config(config: Config) -> None:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    config_dir = _resolve_config_dir()
+    config_dir.mkdir(parents=True, exist_ok=True)
     data: Dict[str, Any] = {}
     if config.api_key:
         data["api_key"] = config.api_key
@@ -130,15 +167,19 @@ def save_config(config: Config) -> None:
             remote_data["model"] = config.remote_rerank.model
         if remote_data:
             data["remote_rerank"] = remote_data
-    CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    config_file = _resolve_config_file()
+    config_file.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def local_model_dir() -> Path:
-    return CONFIG_DIR / "models"
+    return _resolve_config_dir() / "models"
 
 
 def flashrank_cache_dir(*, create: bool = True) -> Path:
-    cache_dir = CONFIG_DIR / "flashrank"
+    cache_dir = _resolve_config_dir() / "flashrank"
     if create:
         cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir

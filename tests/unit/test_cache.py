@@ -84,6 +84,14 @@ def test_store_and_load_index(tmp_path, monkeypatch):
     assert meta["extensions"] == ()
 
 
+def test_cache_dir_context_overrides_cache_db_path(tmp_path):
+    original_cache_dir = cache.CACHE_DIR
+    with cache.cache_dir_context(tmp_path):
+        db_path = cache.cache_db_path()
+        assert db_path.parent == tmp_path
+    assert cache.CACHE_DIR == original_cache_dir
+
+
 def test_embedding_cache_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
 

@@ -6,6 +6,8 @@ import hashlib
 import os
 import sqlite3
 from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
@@ -16,6 +18,10 @@ from .utils import collect_files
 
 DEFAULT_CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CACHE_DIR = DEFAULT_CACHE_DIR
+_CACHE_DIR_OVERRIDE: ContextVar[Path | None] = ContextVar(
+    "vexor_cache_dir_override",
+    default=None,
+)
 CACHE_VERSION = 6
 DB_FILENAME = "index.db"
 EMBED_CACHE_TTL_DAYS = 30
@@ -115,9 +121,32 @@ def _chunk_values(values: Sequence[object], size: int) -> Iterable[Sequence[obje
         yield values[idx : idx + size]
 
 
+def _resolve_cache_dir() -> Path:
+    override = _CACHE_DIR_OVERRIDE.get()
+    return override if override is not None else CACHE_DIR
+
+
+@contextmanager
+def cache_dir_context(path: Path | str | None):
+    """Temporarily override the cache directory for the current context."""
+
+    if path is None:
+        yield
+        return
+    dir_path = Path(path).expanduser().resolve()
+    if dir_path.exists() and not dir_path.is_dir():
+        raise NotADirectoryError(f"Path is not a directory: {dir_path}")
+    token = _CACHE_DIR_OVERRIDE.set(dir_path)
+    try:
+        yield
+    finally:
+        _CACHE_DIR_OVERRIDE.reset(token)
+
+
 def ensure_cache_dir() -> Path:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return CACHE_DIR
+    cache_dir = _resolve_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
 
 
 def set_cache_dir(path: Path | str | None) -> None:
@@ -134,8 +163,8 @@ def set_cache_dir(path: Path | str | None) -> None:
 def cache_db_path() -> Path:
     """Return the absolute path to the shared SQLite cache database."""
 
-    ensure_cache_dir()
-    return CACHE_DIR / DB_FILENAME
+    cache_dir = ensure_cache_dir()
+    return cache_dir / DB_FILENAME
 
 
 def cache_file(root: Path, model: str, include_hidden: bool) -> Path:  # pragma: no cover - kept for API parity

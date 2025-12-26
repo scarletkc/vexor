@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from vexor import api as api_module
@@ -268,3 +269,151 @@ def test_index_normalizes_extensions_and_excludes(tmp_path, monkeypatch) -> None
     assert captured["directory"] == tmp_path.resolve()
     assert kwargs["extensions"] == (".md", ".py")
     assert kwargs["exclude_patterns"] == ("tests/**",)
+
+
+def test_search_uses_data_dir_override(tmp_path, monkeypatch) -> None:
+    from vexor import config as config_module
+
+    config_file = tmp_path / "config.json"
+    config_file.write_text(
+        '{"provider": "gemini", "api_key": "key", "model": "text-embedding-3-small"}'
+    )
+    captured: dict[str, object] = {}
+
+    def fake_perform_search(request):
+        captured["request"] = request
+        return SearchResponse(
+            base_path=tmp_path,
+            backend=None,
+            results=[SearchResult(path=tmp_path / "file.py", score=0.9)],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    original_config_dir = config_module.CONFIG_DIR
+    monkeypatch.setattr(api_module, "perform_search", fake_perform_search)
+
+    api_module.search("hello", path=tmp_path, mode="name", data_dir=tmp_path)
+
+    req = captured["request"]
+    assert req.provider == "gemini"
+    assert config_module.CONFIG_DIR == original_config_dir
+
+
+def test_client_config_context_scopes_runtime_config(tmp_path, monkeypatch) -> None:
+    base_config = Config(provider="openai")
+    monkeypatch.setattr(api_module, "load_config", lambda: base_config)
+    captured: list[object] = []
+
+    def fake_perform_search(request):
+        captured.append(request)
+        return SearchResponse(
+            base_path=tmp_path,
+            backend=None,
+            results=[SearchResult(path=tmp_path / "file.py", score=0.9)],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr(api_module, "perform_search", fake_perform_search)
+
+    client = api_module.VexorClient()
+    client.search("hello", path=tmp_path, mode="name")
+    assert captured[-1].provider == "openai"
+
+    with client.config_context({"provider": "gemini", "api_key": "key"}):
+        client.search("hello", path=tmp_path, mode="name")
+        assert captured[-1].provider == "gemini"
+
+    client.search("hello", path=tmp_path, mode="name")
+    assert captured[-1].provider == "openai"
+
+
+def test_index_in_memory_builds_index(tmp_path, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_build_index_in_memory(directory, **kwargs):
+        captured["directory"] = directory
+        captured["kwargs"] = kwargs
+        paths = [directory / "file.py"]
+        vectors = np.array([[1.0, 0.0]], dtype=np.float32)
+        metadata = {
+            "include_hidden": False,
+            "respect_gitignore": True,
+            "recursive": True,
+            "mode": "name",
+            "exclude_patterns": (),
+            "extensions": (),
+            "chunks": [{"preview": "file.py", "chunk_index": 0}],
+        }
+        return paths, vectors, metadata
+
+    monkeypatch.setattr(api_module, "build_index_in_memory", fake_build_index_in_memory)
+
+    result = api_module.index_in_memory(tmp_path, mode="name", use_config=False)
+
+    assert isinstance(result, api_module.InMemoryIndex)
+    assert result.base_path == tmp_path.resolve()
+    assert result.paths[0].name == "file.py"
+    assert captured["directory"] == tmp_path.resolve()
+    assert captured["kwargs"]["no_cache"] is True
+
+
+def test_in_memory_index_search_uses_search_from_vectors(tmp_path, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_search_from_vectors(request, *, paths, file_vectors, metadata, is_stale=False):
+        captured["request"] = request
+        return SearchResponse(
+            base_path=tmp_path,
+            backend=None,
+            results=[SearchResult(path=tmp_path / "file.py", score=0.9)],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr(api_module, "search_from_vectors", fake_search_from_vectors)
+
+    index = api_module.InMemoryIndex(
+        base_path=tmp_path,
+        paths=[tmp_path / "file.py"],
+        vectors=np.array([[1.0, 0.0]], dtype=np.float32),
+        metadata={"mode": "name", "chunks": []},
+        model_name="text-embedding-3-small",
+        batch_size=1,
+        embed_concurrency=1,
+        provider="openai",
+        base_url=None,
+        api_key=None,
+        local_cuda=False,
+    )
+
+    index.search("hello", top=3)
+
+    req = captured["request"]
+    assert req.top_k == 3
+    assert req.mode == "name"
+    assert req.no_cache is True
+
+
+def test_config_context_yields_configured_client(tmp_path, monkeypatch) -> None:
+    base_config = Config(provider="openai")
+    monkeypatch.setattr(api_module, "load_config", lambda: base_config)
+    captured: dict[str, object] = {}
+
+    def fake_perform_search(request):
+        captured["request"] = request
+        return SearchResponse(
+            base_path=tmp_path,
+            backend=None,
+            results=[SearchResult(path=tmp_path / "file.py", score=0.9)],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr(api_module, "perform_search", fake_perform_search)
+
+    with api_module.config_context({"provider": "gemini", "api_key": "key"}) as client:
+        client.search("hello", path=tmp_path, mode="name")
+
+    assert captured["request"].provider == "gemini"

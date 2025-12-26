@@ -689,35 +689,22 @@ def perform_search(request: SearchRequest) -> SearchResponse:
     )
 
 
-def _perform_search_with_temporary_index(request: SearchRequest) -> SearchResponse:
-    from .index_service import build_index_in_memory  # local import
-
-    paths, file_vectors, metadata = build_index_in_memory(
-        request.directory,
-        include_hidden=request.include_hidden,
-        respect_gitignore=request.respect_gitignore,
-        mode=request.mode,
-        recursive=request.recursive,
-        model_name=request.model_name,
-        batch_size=request.batch_size,
-        embed_concurrency=request.embed_concurrency,
-        extract_concurrency=request.extract_concurrency,
-        extract_backend=request.extract_backend,
-        provider=request.provider,
-        base_url=request.base_url,
-        api_key=request.api_key,
-        local_cuda=request.local_cuda,
-        exclude_patterns=request.exclude_patterns,
-        extensions=request.extensions,
-        no_cache=request.no_cache,
-    )
+def search_from_vectors(
+    request: SearchRequest,
+    *,
+    paths: Sequence[Path],
+    file_vectors: np.ndarray,
+    metadata: dict,
+    is_stale: bool = False,
+) -> SearchResponse:
+    """Return ranked results from an in-memory index."""
 
     if not len(paths):
         return SearchResponse(
             base_path=request.directory,
             backend=None,
             results=[],
-            is_stale=False,
+            is_stale=is_stale,
             index_empty=True,
         )
 
@@ -813,9 +800,40 @@ def _perform_search_with_temporary_index(request: SearchRequest) -> SearchRespon
         base_path=request.directory,
         backend=searcher.device,
         results=results,
-        is_stale=False,
+        is_stale=is_stale,
         index_empty=False,
         reranker=reranker,
+    )
+
+
+def _perform_search_with_temporary_index(request: SearchRequest) -> SearchResponse:
+    from .index_service import build_index_in_memory  # local import
+
+    paths, file_vectors, metadata = build_index_in_memory(
+        request.directory,
+        include_hidden=request.include_hidden,
+        respect_gitignore=request.respect_gitignore,
+        mode=request.mode,
+        recursive=request.recursive,
+        model_name=request.model_name,
+        batch_size=request.batch_size,
+        embed_concurrency=request.embed_concurrency,
+        extract_concurrency=request.extract_concurrency,
+        extract_backend=request.extract_backend,
+        provider=request.provider,
+        base_url=request.base_url,
+        api_key=request.api_key,
+        local_cuda=request.local_cuda,
+        exclude_patterns=request.exclude_patterns,
+        extensions=request.extensions,
+        no_cache=request.no_cache,
+    )
+    return search_from_vectors(
+        request,
+        paths=paths,
+        file_vectors=file_vectors,
+        metadata=metadata,
+        is_stale=False,
     )
 
 

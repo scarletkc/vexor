@@ -28,6 +28,16 @@ def test_load_config_defaults(tmp_path, monkeypatch):
     assert cfg.remote_rerank is None
 
 
+def test_config_dir_context_overrides_config_file(tmp_path):
+    original_config_dir = config_module.CONFIG_DIR
+    with config_module.config_dir_context(tmp_path):
+        config_module.save_config(config_module.Config(provider="gemini"))
+        loaded = config_module.load_config()
+        assert loaded.provider == "gemini"
+        assert (tmp_path / "config.json").exists()
+    assert config_module.CONFIG_DIR == original_config_dir
+
+
 def test_resolve_default_model_gemini_defaults() -> None:
     assert (
         config_module.resolve_default_model("gemini", None)
