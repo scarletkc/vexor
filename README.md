@@ -268,7 +268,9 @@ See [docs](https://github.com/scarletkc/vexor/tree/main/docs) for more details.
 
 Contributions, issues, and PRs welcome! Star if you find it helpful.
 
-[![Star History Chart](https://api.star-history.com/svg?repos=scarletkc/vexor&type=Date)](https://star-history.com/#scarletkc/vexor&Date)
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=scarletkc/vexor&type=date&legend=top-left)](https://www.star-history.com/#scarletkc/vexor&type=date&legend=top-left)
 
 ## License
 
