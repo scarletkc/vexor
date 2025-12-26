@@ -10,6 +10,10 @@
 [![Codecov](https://img.shields.io/codecov/c/github/scarletkc/vexor/main)](https://codecov.io/github/scarletkc/vexor)
 [![License](https://img.shields.io/github/license/scarletkc/vexor.svg)](https://github.com/scarletkc/vexor/blob/main/LICENSE)
 
+<p align="center">
+  Selected in <a href="https://www.ruanyifeng.com/blog/2025/12/weekly-issue-379.html"><b>Ruan Yifeng's Weekly (Issue #379)</b></a>
+</p>
+
 </div>
 
 ---
