@@ -24,12 +24,14 @@ class OpenAIEmbeddingBackend:
         chunk_size: int | None = None,
         concurrency: int = 1,
         base_url: str | None = None,
+        dimensions: int | None = None,
     ) -> None:
         load_dotenv()
         self.model_name = model_name
         self.chunk_size = chunk_size if chunk_size and chunk_size > 0 else None
         self.concurrency = max(int(concurrency or 1), 1)
         self.api_key = api_key
+        self.dimensions = dimensions if dimensions and dimensions > 0 else None
         if not self.api_key:
             raise RuntimeError(Messages.ERROR_API_KEY_MISSING)
         client_kwargs: dict[str, object] = {"api_key": self.api_key}
@@ -73,10 +75,18 @@ class OpenAIEmbeddingBackend:
         attempt = 0
         while True:
             try:
-                response = self._client.embeddings.create(
-                    model=self.model_name,
-                    input=list(batch),
-                )
+                create_kwargs: dict[str, object] = {
+                    "model": self.model_name,
+                    "input": list(batch),
+                }
+                if self.dimensions is not None:
+                    # Voyage AI uses output_dimension, OpenAI uses dimensions
+                    if self.model_name.startswith("voyage"):
+                        # Pass Voyage-specific params via extra_body
+                        create_kwargs["extra_body"] = {"output_dimension": self.dimensions}
+                    else:
+                        create_kwargs["dimensions"] = self.dimensions
+                response = self._client.embeddings.create(**create_kwargs)
                 break
             except Exception as exc:  # pragma: no cover - API client variations
                 if _should_retry_openai_error(exc) and attempt < _MAX_RETRIES:

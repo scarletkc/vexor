@@ -15,6 +15,7 @@ from .config import (
     DEFAULT_PROVIDER,
     SUPPORTED_PROVIDERS,
     resolve_api_key,
+    resolve_base_url,
 )
 from .providers.gemini import GeminiEmbeddingBackend
 from .providers.local import LocalEmbeddingBackend
@@ -56,14 +57,16 @@ class VexorSearcher:
         base_url: str | None = None,
         api_key: str | None = None,
         local_cuda: bool = False,
+        embedding_dimensions: int | None = None,
     ) -> None:
         self.model_name = model_name
         self.batch_size = max(batch_size, 0)
         self.embed_concurrency = max(int(embed_concurrency or 1), 1)
         self.provider = (provider or DEFAULT_PROVIDER).lower()
-        self.base_url = base_url
+        self.base_url = resolve_base_url(self.provider, base_url)
         self.api_key = resolve_api_key(api_key, self.provider)
         self.local_cuda = bool(local_cuda)
+        self.embedding_dimensions = embedding_dimensions if embedding_dimensions and embedding_dimensions > 0 else None
         if backend is not None:
             self._backend = backend
             self._device = getattr(backend, "device", "Custom embedding backend")
@@ -142,6 +145,16 @@ class VexorSearcher:
                 concurrency=self.embed_concurrency,
                 cuda=self.local_cuda,
             )
+        if self.provider == "voyageai":
+            self._device = f"{self.model_name} via Voyage AI API"
+            return OpenAIEmbeddingBackend(
+                model_name=self.model_name,
+                chunk_size=self.batch_size,
+                concurrency=self.embed_concurrency,
+                base_url=self.base_url,
+                api_key=self.api_key,
+                dimensions=self.embedding_dimensions,
+            )
         if self.provider == "custom":
             base_url = (self.base_url or "").strip()
             if not base_url:
@@ -155,6 +168,7 @@ class VexorSearcher:
                 concurrency=self.embed_concurrency,
                 base_url=base_url,
                 api_key=self.api_key,
+                dimensions=self.embedding_dimensions,
             )
         if self.provider == "openai":
             self._device = f"{self.model_name} via OpenAI API"
@@ -164,6 +178,7 @@ class VexorSearcher:
                 concurrency=self.embed_concurrency,
                 base_url=self.base_url,
                 api_key=self.api_key,
+                dimensions=self.embedding_dimensions,
             )
         allowed = ", ".join(SUPPORTED_PROVIDERS)
         raise RuntimeError(

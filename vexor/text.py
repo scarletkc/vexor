@@ -90,6 +90,11 @@ class Messages:
     HELP_LOCAL_CLEANUP = "Delete the local model cache stored under ~/.vexor/models."
     HELP_LOCAL_CUDA = "Enable CUDA for local embedding (requires onnxruntime-gpu)."
     HELP_LOCAL_CPU = "Disable CUDA and use CPU for local embedding."
+    HELP_SET_EMBEDDING_DIMENSIONS = (
+        "Set the embedding dimensions for providers that support it "
+        "(e.g., Voyage AI: 256, 512, 1024, 2048; OpenAI text-embedding-3: 256-3072)."
+    )
+    HELP_CLEAR_EMBEDDING_DIMENSIONS = "Clear the embedding dimensions setting (use model default)."
 
     ERROR_API_KEY_MISSING = (
         "API key is missing or still set to the placeholder. "
@@ -293,6 +298,9 @@ class Messages:
     INFO_LOCAL_SETUP_DONE = "Local model ready: {model}. Provider set to local."
     INFO_LOCAL_CUDA_ENABLED = "Local embeddings will use CUDA."
     INFO_LOCAL_CUDA_DISABLED = "Local embeddings will use CPU."
+    INFO_EMBEDDING_DIMENSIONS_SET = "Embedding dimensions set to {value}."
+    INFO_EMBEDDING_DIMENSIONS_CLEARED = "Embedding dimensions cleared (using model default)."
+    ERROR_EMBEDDING_DIMENSIONS_INVALID = "Embedding dimensions must be a positive integer."
     INFO_FLASHRANK_SETUP_START = "Preparing FlashRank model..."
     INFO_FLASHRANK_SETUP_DONE = "FlashRank model ready."
     DOCTOR_LOCAL_CUDA_MISSING = "CUDA provider not available for local embeddings"
@@ -314,6 +322,7 @@ class Messages:
         "API key set: {api}\n"
         "Default provider: {provider}\n"
         "Default model: {model}\n"
+        "Embedding dimensions: {embedding_dimensions}\n"
         "Default batch size: {batch}\n"
         "Embedding concurrency: {concurrency}\n"
         "Extract concurrency: {extract_concurrency}\n"

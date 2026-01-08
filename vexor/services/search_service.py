@@ -56,6 +56,7 @@ class SearchRequest:
     rerank: str = DEFAULT_RERANK
     flashrank_model: str | None = None
     remote_rerank: RemoteRerankConfig | None = None
+    embedding_dimensions: int | None = None
 
 
 @dataclass(slots=True)
@@ -409,6 +410,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             exclude_patterns=request.exclude_patterns,
             extensions=request.extensions,
             no_cache=request.no_cache,
+            embedding_dimensions=request.embedding_dimensions,
         )
         if result.status == IndexStatus.EMPTY:
             return SearchResponse(
@@ -493,6 +495,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             exclude_patterns=index_excludes,
             extensions=index_extensions,
             no_cache=request.no_cache,
+            embedding_dimensions=request.embedding_dimensions,
         )
         if result.status == IndexStatus.EMPTY:
             return SearchResponse(
@@ -570,6 +573,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         base_url=request.base_url,
         api_key=request.api_key,
         local_cuda=request.local_cuda,
+        embedding_dimensions=request.embedding_dimensions,
     )
     query_vector = None
     query_hash = None
@@ -718,6 +722,7 @@ def search_from_vectors(
         base_url=request.base_url,
         api_key=request.api_key,
         local_cuda=request.local_cuda,
+        embedding_dimensions=request.embedding_dimensions,
     )
     query_vector = None
     query_text_hash = None
@@ -827,6 +832,7 @@ def _perform_search_with_temporary_index(request: SearchRequest) -> SearchRespon
         exclude_patterns=request.exclude_patterns,
         extensions=request.extensions,
         no_cache=request.no_cache,
+        embedding_dimensions=request.embedding_dimensions,
     )
     return search_from_vectors(
         request,
@@ -863,6 +869,18 @@ def _load_index_vectors_for_request(
             request.extensions,
             respect_gitignore=request.respect_gitignore,
         )
+        # Check dimension compatibility when both are explicitly set
+        cached_dimension = metadata.get("dimension")
+        requested_dimension = request.embedding_dimensions
+        if (
+            cached_dimension is not None
+            and requested_dimension is not None
+            and cached_dimension != requested_dimension
+        ):
+            raise FileNotFoundError(
+                f"Cached index has dimension {cached_dimension}, "
+                f"but requested {requested_dimension}"
+            )
         return (
             paths,
             file_vectors,
@@ -932,6 +950,15 @@ def _select_cache_superset(
         if request.recursive and not entry_recursive:
             continue
         if entry.get("mode") != request.mode:
+            continue
+        # Check embedding dimension compatibility when both are explicitly set
+        cached_dimension = entry.get("dimension")
+        requested_dimension = request.embedding_dimensions
+        if (
+            cached_dimension is not None
+            and requested_dimension is not None
+            and cached_dimension != requested_dimension
+        ):
             continue
         cached_excludes = tuple(entry.get("exclude_patterns") or ())
         cached_exclude_set = set(normalize_exclude_patterns(cached_excludes))

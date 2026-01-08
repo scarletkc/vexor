@@ -11,6 +11,7 @@ from ..config import (
     set_base_url,
     set_batch_size,
     set_embed_concurrency,
+    set_embedding_dimensions,
     set_extract_concurrency,
     set_extract_backend,
     set_auto_index,
@@ -43,6 +44,8 @@ class ConfigUpdateResult:
     remote_rerank_model_set: bool = False
     remote_rerank_api_key_set: bool = False
     remote_rerank_cleared: bool = False
+    embedding_dimensions_set: bool = False
+    embedding_dimensions_cleared: bool = False
 
     @property
     def changed(self) -> bool:
@@ -66,6 +69,8 @@ class ConfigUpdateResult:
                 self.remote_rerank_model_set,
                 self.remote_rerank_api_key_set,
                 self.remote_rerank_cleared,
+                self.embedding_dimensions_set,
+                self.embedding_dimensions_cleared,
             )
         )
 
@@ -90,6 +95,8 @@ def apply_config_updates(
     remote_rerank_model: str | None = None,
     remote_rerank_api_key: str | None = None,
     clear_remote_rerank: bool = False,
+    embedding_dimensions: int | None = None,
+    clear_embedding_dimensions: bool = False,
 ) -> ConfigUpdateResult:
     """Apply config mutations and report which fields were updated."""
 
@@ -152,6 +159,12 @@ def apply_config_updates(
         result.remote_rerank_model_set = remote_rerank_model is not None
         result.remote_rerank_api_key_set = remote_rerank_api_key is not None
         result.remote_rerank_cleared = clear_remote_rerank
+    if embedding_dimensions is not None:
+        set_embedding_dimensions(embedding_dimensions)
+        result.embedding_dimensions_set = True
+    if clear_embedding_dimensions:
+        set_embedding_dimensions(None)
+        result.embedding_dimensions_cleared = True
     return result
 
 

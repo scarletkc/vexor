@@ -142,6 +142,7 @@ def build_index(
     exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
     no_cache: bool = False,
+    embedding_dimensions: int | None = None,
 ) -> IndexResult:
     """Create or refresh the cached index for *directory*."""
 
@@ -183,8 +184,23 @@ def build_index(
         base_url=base_url,
         api_key=api_key,
         local_cuda=local_cuda,
+        embedding_dimensions=embedding_dimensions,
     )
 
+    # Check if dimensions changed - if so, force full rebuild with no embedding cache
+    force_no_cache = False
+    if cached_files:
+        cached_dimension = existing_meta.get("dimension") if existing_meta else None
+        dimension_changed = (
+            cached_dimension is not None
+            and embedding_dimensions is not None
+            and cached_dimension != embedding_dimensions
+        )
+        if dimension_changed:
+            # Dimensions changed, need full rebuild without embedding cache
+            # (cached embeddings have wrong dimensions)
+            cached_files = []
+            force_no_cache = True
     if cached_files:
         cached_version = int(existing_meta.get("version", 0) or 0) if existing_meta else 0
         full_max_bytes = (
@@ -333,7 +349,7 @@ def build_index(
         searcher=searcher,
         model_name=model_name,
         labels=file_labels,
-        no_cache=no_cache,
+        no_cache=no_cache or force_no_cache,
     )
     entries = _build_index_entries(payloads, embeddings, directory, stat_cache=stat_cache)
 
@@ -374,6 +390,7 @@ def build_index_in_memory(
     exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
     no_cache: bool = False,
+    embedding_dimensions: int | None = None,
 ) -> tuple[list[Path], np.ndarray, dict]:
     """Build an index in memory without writing to disk."""
 
@@ -418,6 +435,7 @@ def build_index_in_memory(
         base_url=base_url,
         api_key=api_key,
         local_cuda=local_cuda,
+        embedding_dimensions=embedding_dimensions,
     )
     payloads = _payloads_for_files(
         strategy,
