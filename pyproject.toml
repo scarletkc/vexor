@@ -27,7 +27,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
-    "google-genai>=0.5.0",
+    "google-genai>=1.57.0",
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
     "pathspec>=0.12.1",
