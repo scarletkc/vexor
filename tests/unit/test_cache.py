@@ -618,3 +618,72 @@ def test_clear_all_cache_removes_database(tmp_path, monkeypatch):
     assert not db_path.exists()
     assert cache.list_cache_entries() == []
     assert cache.clear_all_cache() == 0
+
+
+def test_cache_key_serialization_context_and_memory_cache(tmp_path, monkeypatch):
+    key_a = cache._cache_key(
+        tmp_path,
+        include_hidden=False,
+        respect_gitignore=True,
+        recursive=True,
+        mode="name",
+    )
+    key_b = cache._cache_key(
+        tmp_path,
+        include_hidden=False,
+        respect_gitignore=True,
+        recursive=True,
+        mode="name",
+        extensions=(".py", ".md"),
+        exclude_patterns=("build/", "*.tmp"),
+    )
+    assert key_a != key_b
+    assert cache._deserialize_extensions("a,,b") == ("a", "b")
+    assert cache._deserialize_exclude_patterns("a\n\nb") == ("a", "b")
+    assert list(cache._chunk_values([1, 2, 3], 2)) == [[1, 2], [3]]
+    assert cache.embedding_cache_key("hello") != cache.embedding_cache_key("hello", dimension=3)
+
+    original_dir = cache.CACHE_DIR
+    override_dir = tmp_path / "override"
+    with cache.cache_dir_context(override_dir):
+        assert cache.ensure_cache_dir() == override_dir.resolve()
+        assert cache.cache_db_path() == override_dir.resolve() / cache.DB_FILENAME
+    assert cache.CACHE_DIR == original_dir
+
+    marker = tmp_path / "not-a-dir"
+    marker.write_text("x", encoding="utf-8")
+    with pytest.raises(NotADirectoryError):
+        with cache.cache_dir_context(marker):
+            pass
+    with pytest.raises(NotADirectoryError):
+        cache.set_cache_dir(marker)
+    cache.set_cache_dir(tmp_path / "explicit")
+    assert cache.CACHE_DIR == (tmp_path / "explicit").resolve()
+    cache.set_cache_dir(None)
+    assert cache.CACHE_DIR == cache.DEFAULT_CACHE_DIR
+
+    monkeypatch.setattr(cache, "EMBED_MEMORY_CACHE_MAX_ENTRIES", 2)
+    cache._clear_embedding_memory_cache()
+    cache._store_embedding_memory_cache(
+        model="model",
+        embeddings={
+            "": np.array([9.0], dtype=np.float32),
+            "empty": np.array([], dtype=np.float32),
+            "a": np.array([1.0], dtype=np.float32),
+            "b": np.array([2.0], dtype=np.float32),
+            "c": np.array([3.0], dtype=np.float32),
+        },
+        dimension=2,
+    )
+    assert cache._load_embedding_memory_cache("model", ["a"], dimension=2) == {}
+    loaded = cache._load_embedding_memory_cache("model", ["b", "c", ""], dimension=2)
+    assert set(loaded) == {"b", "c"}
+    assert cache._load_embedding_memory_cache("model", ["b"], dimension=3) == {}
+
+    monkeypatch.setattr(cache, "EMBED_MEMORY_CACHE_MAX_ENTRIES", 0)
+    cache._clear_embedding_memory_cache()
+    cache._store_embedding_memory_cache(
+        model="model",
+        embeddings={"x": np.array([1.0], dtype=np.float32)},
+    )
+    assert cache._load_embedding_memory_cache("model", ["x"]) == {}

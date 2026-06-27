@@ -176,7 +176,7 @@ def test_search_prints_index_message_when_auto_index_missing(tmp_path, monkeypat
     assert result.exit_code == 0
     output = strip_ansi(result.stdout)
     assert "Indexing files under" in output
-    assert str(tmp_path) in output
+    assert str(tmp_path) in output.replace("\n", "")
     assert "Searching cached index under" not in output
 
 
@@ -208,7 +208,7 @@ def test_search_prints_index_message_when_auto_index_stale(tmp_path, monkeypatch
     assert result.exit_code == 0
     output = strip_ansi(result.stdout)
     assert "Indexing files under" in output
-    assert str(tmp_path) in output
+    assert str(tmp_path) in output.replace("\n", "")
     assert "Searching cached index under" not in output
 
 
@@ -460,6 +460,7 @@ def test_install_skills_to_custom_path(tmp_path):
 def test_install_skills_presets_claude_and_codex(tmp_path, monkeypatch):
     runner = CliRunner()
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
     result = runner.invoke(app, ["install", "--skills", "claude/codex"])
 
@@ -480,7 +481,7 @@ def test_install_skills_requires_force_when_destination_differs(tmp_path):
 
     forced = runner.invoke(app, ["install", "--skills", str(destination), "--force"])
     assert forced.exit_code == 0
-    assert "Vexor CLI" in (skill_dir / "SKILL.md").read_text()
+    assert "Vexor CLI" in (skill_dir / "SKILL.md").read_text(encoding="utf-8")
 
 
 def test_search_missing_index_prompts_user(tmp_path, monkeypatch):

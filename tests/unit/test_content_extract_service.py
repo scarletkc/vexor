@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from docx import Document
 from pptx import Presentation
@@ -397,3 +398,208 @@ def test_extract_code_chunks_without_end_lineno_falls_back(tmp_path, monkeypatch
     chunks = extract_code_chunks(py_path)
     assert chunks
     assert chunks[0].name == "foo"
+
+
+def test_text_readers_fallback_to_charset_detection(monkeypatch, tmp_path):
+    data_path = tmp_path / "latin.txt"
+    data_path.write_bytes(b"\xff\xfe")
+
+    assert ces._read_text_head(data_path) is None
+    assert ces._read_text_full(data_path) is None
+
+    class EmptyResult:
+        def __len__(self):
+            return 0
+
+    monkeypatch.setattr(ces, "from_path", lambda _path: EmptyResult())
+    assert ces._read_text_head(data_path) is None
+    assert ces._read_text_full(data_path) is None
+
+    class NoBest:
+        def __len__(self):
+            return 1
+
+        def best(self):
+            return None
+
+    monkeypatch.setattr(ces, "from_path", lambda _path: NoBest())
+    assert ces._read_text_head(data_path) is None
+    assert ces._read_text_full(data_path) is None
+
+    class EmptyBest:
+        def __len__(self):
+            return 1
+
+        def best(self):
+            return ""
+
+    monkeypatch.setattr(ces, "from_path", lambda _path: EmptyBest())
+    assert ces._read_text_head(data_path) is None
+    assert ces._read_text_full(data_path) is None
+
+    class GoodBest:
+        def __len__(self):
+            return 1
+
+        def best(self):
+            return " Alpha \n Beta "
+
+    monkeypatch.setattr(ces, "from_path", lambda _path: GoodBest())
+    assert ces._read_text_head(data_path, char_limit=20) == "Alpha Beta"
+    assert ces._read_text_full(data_path, char_limit=6) == " Alpha"
+    assert ces._read_text_full(data_path, char_limit=0) == " Alpha \n Beta "
+
+
+def test_read_text_utf8_oserror_and_zero_limit(tmp_path):
+    missing = tmp_path / "missing.txt"
+    assert ces._read_text_utf8(missing, char_limit=10) is None
+
+    text_path = tmp_path / "sample.txt"
+    text_path.write_text("abcdef", encoding="utf-8")
+    assert ces._read_text_utf8(text_path, char_limit=0) == "abcdef"
+    assert ces._read_text_utf8(text_path, char_limit=3) == "abc"
+
+
+def test_pdf_extractor_error_and_empty_paths(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF")
+
+    monkeypatch.setattr(ces, "PdfReader", lambda _path: (_ for _ in ()).throw(RuntimeError("bad pdf")))
+    assert ces._pdf_extractor(pdf_path) is None
+
+    class ErrorPage:
+        def extract_text(self):
+            raise RuntimeError("bad page")
+
+    class BlankPage:
+        def extract_text(self):
+            return "   "
+
+    class Reader:
+        pages = [ErrorPage(), BlankPage()]
+
+    monkeypatch.setattr(ces, "PdfReader", lambda _path: Reader())
+    assert ces._pdf_extractor(pdf_path) is None
+
+
+def test_docx_extractor_error_and_empty(monkeypatch, tmp_path):
+    doc_path = tmp_path / "sample.docx"
+    doc_path.write_bytes(b"bad")
+
+    monkeypatch.setattr(ces, "Document", lambda _path: (_ for _ in ()).throw(RuntimeError("bad docx")))
+    assert ces._docx_extractor(doc_path) is None
+
+    monkeypatch.setattr(ces, "Document", lambda _path: SimpleNamespace(paragraphs=[]))
+    assert ces._docx_extractor(doc_path) is None
+
+    monkeypatch.setattr(
+        ces,
+        "Document",
+        lambda _path: SimpleNamespace(
+            paragraphs=[
+                SimpleNamespace(text="  "),
+                SimpleNamespace(text="Alpha"),
+                SimpleNamespace(text="Beta"),
+            ]
+        ),
+    )
+    assert ces._docx_extractor(doc_path, char_limit=6) == "Alpha "
+
+
+def test_pptx_extractor_error_empty_and_shape_text(monkeypatch, tmp_path):
+    ppt_path = tmp_path / "sample.pptx"
+    ppt_path.write_bytes(b"bad")
+
+    monkeypatch.setattr(ces, "Presentation", lambda _path: (_ for _ in ()).throw(RuntimeError("bad pptx")))
+    assert ces._pptx_extractor(ppt_path) is None
+
+    monkeypatch.setattr(ces, "Presentation", lambda _path: SimpleNamespace(slides=[]))
+    assert ces._pptx_extractor(ppt_path) is None
+
+    shape_with_text = SimpleNamespace(text_frame=None, text=" Fallback text ")
+    paragraph_with_runs = SimpleNamespace(
+        runs=[SimpleNamespace(text="Run "), SimpleNamespace(text="Text")],
+        text="ignored",
+    )
+    paragraph_without_runs = SimpleNamespace(runs=[], text=" Paragraph text ")
+    shape_with_frame = SimpleNamespace(
+        text_frame=SimpleNamespace(
+            paragraphs=[
+                SimpleNamespace(runs=[], text=" "),
+                paragraph_with_runs,
+                paragraph_without_runs,
+            ]
+        )
+    )
+    empty_shape = SimpleNamespace(
+        text_frame=SimpleNamespace(paragraphs=[SimpleNamespace(runs=[], text=" ")])
+    )
+    slide = SimpleNamespace(shapes=[empty_shape, shape_with_text, shape_with_frame])
+    monkeypatch.setattr(
+        ces,
+        "Presentation",
+        lambda _path: SimpleNamespace(slides=[slide]),
+    )
+
+    extracted = ces._pptx_extractor(ppt_path, char_limit=100)
+
+    assert extracted == "Fallback text Run Text Paragraph text"
+    assert ces._extract_shape_text(empty_shape) is None
+    assert ces._extract_shape_text(SimpleNamespace(text_frame=None, text=" ")) is None
+
+
+def test_extract_full_chunks_with_lines_empty_and_non_text(monkeypatch, tmp_path):
+    unknown = tmp_path / "data.bin"
+    unknown.write_bytes(b"data")
+    assert extract_full_chunks_with_lines(unknown) == []
+
+    empty = tmp_path / "empty.txt"
+    empty.write_text("", encoding="utf-8")
+    assert extract_full_chunks_with_lines(empty) == []
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF")
+    monkeypatch.setattr(ces, "_pdf_extractor", lambda *_args, **_kwargs: "PDF text")
+    chunks = extract_full_chunks_with_lines(pdf_path, chunk_size=10, overlap=0)
+    assert chunks
+    assert chunks[0].start_line is None
+
+
+def test_outline_parser_edge_cases(tmp_path):
+    md_path = tmp_path / "edge.md"
+    md_path.write_text(
+        (
+            """---
+title: Demo
+---
+# ignored in front matter window
+
+"""
+            + "###   \n"
+            + """
+
+# Title ###
+Body
+
+# Already heading
+---
+
+````
+## ignored
+```
+still fenced
+````
+
+## Child
+"""
+            + ("x" * 50)
+        ),
+        encoding="utf-8",
+    )
+
+    chunks = extract_outline_chunks(md_path, context_char_limit=10)
+
+    assert chunks
+    assert any(chunk.title == "Title" for chunk in chunks)
+    assert not any(chunk.title == "ignored" for chunk in chunks)
+    assert all(len(chunk.text) <= 10 for chunk in chunks)

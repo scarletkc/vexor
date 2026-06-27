@@ -1,10 +1,12 @@
+import importlib
 from pathlib import Path
 
 import numpy as np
 
 import vexor.cache as cache
+import vexor.modes as modes
 from vexor.services import index_service
-from vexor.services.index_service import IndexStatus, build_index
+from vexor.services.index_service import IndexStatus, build_index, build_index_in_memory
 
 import sqlite3
 
@@ -29,9 +31,14 @@ def _patch_cache_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "CACHE_DIR", cache_dir)
 
 
+def _patch_searcher(monkeypatch, searcher_cls=DummySearcher):
+    search_module = importlib.import_module("vexor.search")
+    monkeypatch.setattr(search_module, "VexorSearcher", searcher_cls)
+
+
 def test_build_index_runs_incremental_update(tmp_path, monkeypatch):
     _patch_cache_dir(tmp_path, monkeypatch)
-    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    _patch_searcher(monkeypatch)
     DummySearcher.calls = []
 
     root = tmp_path / "project"
@@ -118,7 +125,7 @@ def test_embed_labels_with_cache_reuses_embeddings(tmp_path, monkeypatch):
 
 def test_build_index_falls_back_to_full_rebuild(tmp_path, monkeypatch):
     _patch_cache_dir(tmp_path, monkeypatch)
-    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    _patch_searcher(monkeypatch)
     DummySearcher.calls = []
 
     root = tmp_path / "project"
@@ -141,7 +148,7 @@ def test_build_index_falls_back_to_full_rebuild(tmp_path, monkeypatch):
 
 def test_build_index_backfills_line_metadata_when_missing(tmp_path, monkeypatch):
     _patch_cache_dir(tmp_path, monkeypatch)
-    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    _patch_searcher(monkeypatch)
     DummySearcher.calls = []
 
     root = tmp_path / "project"
@@ -303,3 +310,186 @@ def test_stat_for_path_without_cache(tmp_path):
     file_path.write_text("x", encoding="utf-8")
     stat = index_service._stat_for_path(file_path, cache=None)  # type: ignore[attr-defined]
     assert stat.st_size == 1
+
+
+def test_build_index_in_memory_returns_empty_when_no_files(tmp_path, monkeypatch):
+    monkeypatch.setattr("vexor.utils.collect_files", lambda *_args, **_kwargs: [])
+
+    paths, vectors, metadata = build_index_in_memory(
+        tmp_path,
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key=None,
+    )
+
+    assert paths == []
+    assert vectors.shape == (0, 0)
+    assert metadata["dimension"] == 0
+    assert metadata["files"] == []
+    assert metadata["chunks"] == []
+
+
+def test_build_index_in_memory_returns_empty_when_strategy_yields_no_payloads(
+    tmp_path,
+    monkeypatch,
+):
+    file_path = tmp_path / "a.txt"
+    file_path.write_text("a", encoding="utf-8")
+    monkeypatch.setattr("vexor.utils.collect_files", lambda *_args, **_kwargs: [file_path])
+
+    class EmptyStrategy:
+        def payloads_for_files(self, _files):
+            return []
+
+    monkeypatch.setattr(index_service, "get_strategy", lambda _mode: EmptyStrategy())
+    _patch_searcher(monkeypatch)
+
+    paths, vectors, metadata = build_index_in_memory(
+        tmp_path,
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key=None,
+    )
+
+    assert paths == []
+    assert vectors.shape == (0, 0)
+    assert metadata["mode"] == "name"
+
+
+def test_build_index_in_memory_builds_metadata_and_uses_no_cache(
+    tmp_path,
+    monkeypatch,
+):
+    file_a = tmp_path / "a.txt"
+    file_b = tmp_path / "b.txt"
+    file_a.write_text("alpha", encoding="utf-8")
+    file_b.write_text("beta", encoding="utf-8")
+    monkeypatch.setattr("vexor.utils.collect_files", lambda *_args, **_kwargs: [file_a, file_b])
+
+    class PayloadStrategy:
+        def payloads_for_files(self, files):
+            return [
+                modes.ModePayload(
+                    file=file,
+                    label=f"label:{file.name}",
+                    preview=f"preview:{file.name}",
+                    chunk_index=idx,
+                    start_line=idx + 1,
+                    end_line=idx + 2,
+                )
+                for idx, file in enumerate(files)
+            ]
+
+    class CountingSearcher:
+        calls = []
+        device = "memory"
+
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def embed_texts(self, labels):
+            CountingSearcher.calls.append(list(labels))
+            return np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+
+    monkeypatch.setattr(index_service, "get_strategy", lambda _mode: PayloadStrategy())
+    _patch_searcher(monkeypatch, CountingSearcher)
+    monkeypatch.setattr(
+        index_service,
+        "_embed_labels_with_cache",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("cache should be skipped")),
+    )
+
+    paths, vectors, metadata = build_index_in_memory(
+        tmp_path,
+        include_hidden=False,
+        respect_gitignore=False,
+        mode="name",
+        recursive=False,
+        model_name="model",
+        batch_size=4,
+        embed_concurrency=2,
+        extract_concurrency=1,
+        provider="gemini",
+        base_url="https://example.com",
+        api_key="key",
+        local_cuda=True,
+        exclude_patterns=("*.tmp",),
+        extensions=(".txt",),
+        no_cache=True,
+        embedding_dimensions=2,
+    )
+
+    assert paths == [file_a, file_b]
+    assert vectors.shape == (2, 2)
+    assert CountingSearcher.calls == [["label:a.txt", "label:b.txt"]]
+    assert metadata["dimension"] == 2
+    assert metadata["respect_gitignore"] is False
+    assert metadata["recursive"] is False
+    assert metadata["exclude_patterns"] == ("*.tmp",)
+    assert metadata["extensions"] == (".txt",)
+    assert [entry["path"] for entry in metadata["files"]] == ["a.txt", "b.txt"]
+    assert metadata["chunks"][0]["preview"] == "preview:a.txt"
+    assert metadata["chunks"][1]["start_line"] == 2
+
+
+def test_build_index_in_memory_uses_embedding_cache_path(tmp_path, monkeypatch):
+    file_path = tmp_path / "a.txt"
+    file_path.write_text("alpha", encoding="utf-8")
+    monkeypatch.setattr("vexor.utils.collect_files", lambda *_args, **_kwargs: [file_path])
+
+    class PayloadStrategy:
+        def payloads_for_files(self, files):
+            return [
+                modes.ModePayload(
+                    file=files[0],
+                    label="label:a",
+                    preview="preview:a",
+                )
+            ]
+
+    class Searcher:
+        def __init__(self, **_kwargs):
+            pass
+
+        def embed_texts(self, _labels):
+            raise AssertionError("cache path should be used")
+
+    captured = {}
+
+    def fake_embed_labels_with_cache(**kwargs):
+        captured.update(kwargs)
+        return np.array([[0.5, 0.5]], dtype=np.float32)
+
+    monkeypatch.setattr(index_service, "get_strategy", lambda _mode: PayloadStrategy())
+    _patch_searcher(monkeypatch, Searcher)
+    monkeypatch.setattr(index_service, "_embed_labels_with_cache", fake_embed_labels_with_cache)
+
+    paths, vectors, metadata = build_index_in_memory(
+        tmp_path,
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key=None,
+        no_cache=False,
+        embedding_dimensions=2,
+    )
+
+    assert paths == [file_path]
+    assert vectors.tolist() == [[0.5, 0.5]]
+    assert captured["labels"] == ["label:a"]
+    assert captured["embedding_dimension"] == 2
+    assert metadata["chunks"][0]["label_hash"]

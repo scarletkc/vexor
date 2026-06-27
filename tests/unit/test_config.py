@@ -415,3 +415,141 @@ def test_apply_config_updates_allows_model_change_when_dimensions_cleared(tmp_pa
     assert cfg.embedding_dimensions is None
     assert updates.embedding_dimensions_set is False
     assert updates.embedding_dimensions_cleared is True
+
+
+def test_config_private_coercion_helpers_cover_invalid_inputs(monkeypatch):
+    with pytest.raises(ValueError):
+        config_module._coerce_config_payload("{")
+    with pytest.raises(ValueError):
+        config_module._coerce_config_payload(["not", "mapping"])  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        config_module._coerce_config_payload("[]")
+
+    assert config_module._coerce_optional_str(None, "api_key") is None
+    assert config_module._coerce_optional_str("  ", "api_key") is None
+    assert config_module._coerce_optional_str(" value ", "api_key") == "value"
+    with pytest.raises(ValueError):
+        config_module._coerce_optional_str(1, "api_key")
+
+    assert config_module._coerce_required_str(None, "model", "default") == "default"
+    assert config_module._coerce_required_str("  ", "model", "default") == "default"
+    assert config_module._coerce_required_str(" model ", "model", "default") == "model"
+    with pytest.raises(ValueError):
+        config_module._coerce_required_str(False, "model", "default")
+
+    assert config_module._coerce_int(None, "batch_size", 7) == 7
+    assert config_module._coerce_int(2, "batch_size", 7) == 2
+    assert config_module._coerce_int(2.0, "batch_size", 7) == 2
+    assert config_module._coerce_int("", "batch_size", 7) == 7
+    assert config_module._coerce_int(" 3 ", "batch_size", 7) == 3
+    for value in (True, 2.5, "bad", object()):
+        with pytest.raises(ValueError):
+            config_module._coerce_int(value, "batch_size", 7)
+
+    assert config_module._coerce_bool(True, "auto_index") is True
+    assert config_module._coerce_bool(0, "auto_index") is False
+    assert config_module._coerce_bool("yes", "auto_index") is True
+    assert config_module._coerce_bool("off", "auto_index") is False
+    with pytest.raises(ValueError):
+        config_module._coerce_bool("maybe", "auto_index")
+
+    assert config_module._coerce_optional_int(None) is None
+    assert config_module._coerce_optional_int(True) is None
+    assert config_module._coerce_optional_int(-1) is None
+    assert config_module._coerce_optional_int(4) == 4
+    assert config_module._coerce_optional_int(4.0) == 4
+    assert config_module._coerce_optional_int(4.5) is None
+    assert config_module._coerce_optional_int("") is None
+    assert config_module._coerce_optional_int("8") == 8
+    assert config_module._coerce_optional_int("bad") is None
+    assert config_module._coerce_optional_int(object()) is None
+
+
+def test_config_normalizers_and_remote_rerank_parsing():
+    assert config_module._normalize_extract_backend(None) == config_module.DEFAULT_EXTRACT_BACKEND
+    assert config_module._normalize_extract_backend("THREAD") == "thread"
+    with pytest.raises(ValueError):
+        config_module._normalize_extract_backend("bad")
+
+    assert config_module._coerce_extract_backend(None) == config_module.DEFAULT_EXTRACT_BACKEND
+    assert config_module._coerce_extract_backend("process") == "process"
+    assert config_module._coerce_extract_backend("bad") == config_module.DEFAULT_EXTRACT_BACKEND
+
+    assert config_module._normalize_rerank(None) == config_module.DEFAULT_RERANK
+    assert config_module._normalize_rerank(" BM25 ") == "bm25"
+    assert config_module._normalize_rerank("bad") == config_module.DEFAULT_RERANK
+    with pytest.raises(ValueError):
+        config_module._normalize_rerank(3)
+
+    assert config_module._coerce_remote_rerank(None) is None
+    remote = config_module._coerce_remote_rerank(
+        {
+            "base_url": "https://api.example.com",
+            "api_key": " secret ",
+            "model": " model ",
+        }
+    )
+    assert remote is not None
+    assert remote.base_url == "https://api.example.com/rerank"
+    assert remote.api_key == "secret"
+    assert remote.model == "model"
+    with pytest.raises(ValueError):
+        config_module._coerce_remote_rerank("bad")
+    incomplete = config_module._coerce_remote_rerank({"base_url": "", "model": "m"})
+    assert incomplete is not None
+    assert incomplete.base_url is None
+    assert incomplete.model == "m"
+
+
+def test_apply_config_payload_and_clone_cover_all_fields():
+    config = config_module.Config()
+    payload = {
+        "api_key": " key ",
+        "model": " model ",
+        "batch_size": "4",
+        "embed_concurrency": 3.0,
+        "extract_concurrency": None,
+        "extract_backend": "process",
+        "provider": " voyageai ",
+        "base_url": " https://proxy.example.com ",
+        "auto_index": "false",
+        "local_cuda": 1,
+        "rerank": "remote",
+        "flashrank_model": " ranker ",
+        "remote_rerank": {
+            "base_url": "https://rerank.example.com",
+            "api_key": "rk",
+            "model": "rm",
+        },
+        "embedding_dimensions": "512",
+    }
+
+    config_module._apply_config_payload(config, payload)
+    cloned = config_module._clone_config(config)
+
+    assert cloned.api_key == "key"
+    assert cloned.model == "model"
+    assert cloned.batch_size == 4
+    assert cloned.embed_concurrency == 3
+    assert cloned.extract_concurrency == config_module.DEFAULT_EXTRACT_CONCURRENCY
+    assert cloned.extract_backend == "process"
+    assert cloned.provider == "voyageai"
+    assert cloned.base_url == "https://proxy.example.com"
+    assert cloned.auto_index is False
+    assert cloned.local_cuda is True
+    assert cloned.rerank == "remote"
+    assert cloned.flashrank_model == "ranker"
+    assert cloned.remote_rerank is not None
+    assert cloned.remote_rerank.base_url == "https://rerank.example.com/rerank"
+    assert cloned.embedding_dimensions == 512
+    assert cloned.remote_rerank is not config.remote_rerank
+
+
+def test_api_key_resolution_voyage_and_empty_remote_key(monkeypatch):
+    monkeypatch.delenv(config_module.ENV_API_KEY, raising=False)
+    monkeypatch.delenv(config_module.OPENAI_ENV, raising=False)
+    monkeypatch.setenv(config_module.VOYAGE_ENV, "voyage-env")
+    assert config_module.resolve_api_key(None, "voyageai") == "voyage-env"
+
+    monkeypatch.delenv(config_module.REMOTE_RERANK_ENV, raising=False)
+    assert config_module.resolve_remote_rerank_api_key(None) is None

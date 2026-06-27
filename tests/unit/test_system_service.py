@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
+import subprocess
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -166,3 +170,405 @@ def test_check_rerank_remote_skipped():
 
     assert result is not None
     assert result.passed is True
+
+
+def test_command_config_api_key_and_cache_checks(monkeypatch, tmp_path):
+    monkeypatch.setattr(system_service, "find_command_on_path", lambda _cmd: "C:/bin/vexor.exe")
+    assert system_service.check_command_on_path().passed is True
+
+    monkeypatch.setattr(system_service, "find_command_on_path", lambda _cmd: None)
+    missing = system_service.check_command_on_path()
+    assert missing.passed is False
+    assert missing.detail
+
+    config_file = tmp_path / "config.json"
+    config_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("vexor.config.CONFIG_FILE", config_file)
+    assert system_service.check_config_exists().passed is True
+    config_file.unlink()
+    assert system_service.check_config_exists().passed is True
+
+    assert system_service.check_api_key_configured("local", None).passed is True
+    assert system_service.check_api_key_configured("openai", None).passed is False
+    assert system_service.check_api_key_configured("openai", "abcd1234wxyz9999").passed is True
+
+    config_dir = tmp_path / "cache"
+    monkeypatch.setattr("vexor.config.CONFIG_DIR", config_dir)
+    created = system_service.check_cache_directory()
+    assert created.passed is True
+    writable = system_service.check_cache_directory()
+    assert writable.passed is True
+
+
+def test_check_cache_directory_reports_create_and_write_failures(monkeypatch, tmp_path):
+    config_dir = tmp_path / "cache"
+    monkeypatch.setattr("vexor.config.CONFIG_DIR", config_dir)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "mkdir", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("nope")))
+        created = system_service.check_cache_directory()
+
+    assert created.passed is False
+
+    config_dir.mkdir()
+
+    def fail_write(self, *_args, **_kwargs):
+        raise OSError("readonly")
+
+    monkeypatch.setattr(Path, "write_text", fail_write)
+    writable = system_service.check_cache_directory()
+    assert writable.passed is False
+
+
+def test_api_connectivity_local_success_unexpected_and_errors(monkeypatch):
+    class ReadyLocalBackend:
+        def __init__(self, *, model_name, cuda):
+            assert model_name == "local-model"
+            assert cuda is False
+
+        def embed(self, _texts):
+            import numpy as np
+
+            return np.ones((1, 3), dtype=np.float32)
+
+    monkeypatch.setattr("vexor.providers.local.LocalEmbeddingBackend", ReadyLocalBackend)
+    ready = system_service.check_api_connectivity("local", "local-model", None, None)
+    assert ready.passed is True
+
+    class EmptyLocalBackend:
+        def __init__(self, **_kwargs):
+            pass
+
+        def embed(self, _texts):
+            import numpy as np
+
+            return np.empty((0, 0), dtype=np.float32)
+
+    monkeypatch.setattr("vexor.providers.local.LocalEmbeddingBackend", EmptyLocalBackend)
+    unexpected = system_service.check_api_connectivity("local", "local-model", None, None)
+    assert unexpected.passed is False
+
+    class BrokenLocalBackend:
+        def __init__(self, **_kwargs):
+            raise RuntimeError("cannot load")
+
+    monkeypatch.setattr("vexor.providers.local.LocalEmbeddingBackend", BrokenLocalBackend)
+    failed = system_service.check_api_connectivity("local", "local-model", None, None)
+    assert failed.passed is False
+    assert failed.detail == "cannot load"
+
+
+def test_api_connectivity_local_cuda_validation(monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "onnxruntime", None)
+    missing = system_service.check_api_connectivity("local", "m", None, None, local_cuda=True)
+    assert missing.passed is False
+
+    fake_ort = SimpleNamespace(get_available_providers=lambda: ["CPUExecutionProvider"])
+    monkeypatch.setitem(sys.modules, "onnxruntime", fake_ort)
+    no_cuda = system_service.check_api_connectivity("local", "m", None, None, local_cuda=True)
+    assert no_cuda.passed is False
+
+
+def test_api_connectivity_remote_validation_and_success(monkeypatch):
+    assert system_service.check_api_connectivity("custom", "m", "key", None).passed is False
+    assert system_service.check_api_connectivity("custom", "", "key", "https://x").passed is False
+    assert system_service.check_api_connectivity("openai", "m", None, None).passed is False
+
+    class ReadyBackend:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def embed(self, _texts):
+            import numpy as np
+
+            return np.ones((1, 2), dtype=np.float32)
+
+    monkeypatch.setattr("vexor.providers.openai.OpenAIEmbeddingBackend", ReadyBackend)
+    reachable = system_service.check_api_connectivity("openai", "m", "key", "https://x")
+    assert reachable.passed is True
+
+    class BrokenBackend:
+        def __init__(self, **_kwargs):
+            pass
+
+        def embed(self, _texts):
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr("vexor.providers.gemini.GeminiEmbeddingBackend", BrokenBackend)
+    failed = system_service.check_api_connectivity("gemini", "m", "key", None)
+    assert failed.passed is False
+    assert failed.detail == "network down"
+
+
+def test_rerank_variants(monkeypatch):
+    invalid = system_service.check_rerank_configured(
+        "bogus",
+        flashrank_model=None,
+        remote_rerank=None,
+        skip_api_test=False,
+    )
+    assert invalid is not None and invalid.passed is False
+
+    monkeypatch.setattr(system_service.importlib.util, "find_spec", lambda name: object())
+    bm25 = system_service.check_rerank_configured(
+        "bm25",
+        flashrank_model=None,
+        remote_rerank=None,
+        skip_api_test=False,
+    )
+    assert bm25 is not None and bm25.passed is True
+
+    monkeypatch.setattr(system_service.importlib.util, "find_spec", lambda name: None)
+    flashrank = system_service.check_rerank_configured(
+        "flashrank",
+        flashrank_model=None,
+        remote_rerank=None,
+        skip_api_test=False,
+    )
+    assert flashrank is not None and flashrank.passed is False
+
+
+def test_remote_rerank_api_failure_and_success(monkeypatch):
+    remote = RemoteRerankConfig(
+        base_url="https://example.com/rerank",
+        api_key="secret",
+        model="model-x",
+    )
+
+    def fail_request(**_kwargs):
+        raise RuntimeError("bad gateway")
+
+    monkeypatch.setattr("vexor.services.search_service._remote_rerank_request", fail_request)
+    failed = system_service.check_rerank_configured(
+        "remote",
+        flashrank_model=None,
+        remote_rerank=remote,
+        skip_api_test=False,
+    )
+    assert failed is not None and failed.passed is False
+
+    monkeypatch.setattr(
+        "vexor.services.search_service._remote_rerank_request",
+        lambda **_kwargs: {"results": [{"index": 0}]},
+    )
+    ready = system_service.check_rerank_configured(
+        "remote",
+        flashrank_model=None,
+        remote_rerank=remote,
+        skip_api_test=False,
+    )
+    assert ready is not None and ready.passed is True
+
+
+def test_run_all_doctor_checks_respects_skip_api(monkeypatch):
+    monkeypatch.setattr(system_service, "check_command_on_path", lambda: system_service.DoctorCheckResult("cmd", True, "ok"))
+    monkeypatch.setattr(system_service, "check_config_exists", lambda: system_service.DoctorCheckResult("cfg", True, "ok"))
+    monkeypatch.setattr(system_service, "check_cache_directory", lambda: system_service.DoctorCheckResult("cache", True, "ok"))
+    monkeypatch.setattr(system_service, "check_api_key_configured", lambda *_args: system_service.DoctorCheckResult("key", True, "ok"))
+    monkeypatch.setattr(system_service, "check_api_connectivity", lambda *_args, **_kwargs: pytest.fail("should skip"))
+
+    results = system_service.run_all_doctor_checks(
+        provider="openai",
+        model="m",
+        api_key=None,
+        base_url=None,
+        skip_api_test=True,
+        rerank="off",
+    )
+
+    assert [result.name for result in results] == ["cmd", "cfg", "cache", "key"]
+
+
+def test_fetch_pypi_versions_and_latest(monkeypatch):
+    payload = json.dumps(
+        {
+            "releases": {
+                "1.0.0": [{"filename": "pkg.whl"}],
+                "1.1.0a1": [{"filename": "pkg.whl"}],
+                "broken": [{"filename": "pkg.whl"}],
+                "0.1.0": [],
+            }
+        }
+    )
+    monkeypatch.setattr(
+        system_service.request,
+        "urlopen",
+        lambda *_args, **_kwargs: DummyResponse(status=200, body=payload),
+    )
+
+    versions = system_service.fetch_pypi_versions("vexor", timeout=0.1)
+
+    assert versions == ["1.0.0", "1.1.0a1", "broken"]
+    assert system_service.fetch_latest_pypi_version("vexor") == "1.0.0"
+    assert system_service.fetch_latest_pypi_version("vexor", include_prerelease=True) == "1.1.0a1"
+
+
+def test_fetch_pypi_versions_rejects_bad_http_and_json(monkeypatch):
+    monkeypatch.setattr(
+        system_service.request,
+        "urlopen",
+        lambda *_args, **_kwargs: DummyResponse(status=500, body="nope"),
+    )
+    with pytest.raises(RuntimeError, match="HTTP 500"):
+        system_service.fetch_pypi_versions("vexor")
+
+    monkeypatch.setattr(
+        system_service.request,
+        "urlopen",
+        lambda *_args, **_kwargs: DummyResponse(status=200, body="{"),
+    )
+    with pytest.raises(RuntimeError, match="Invalid PyPI response"):
+        system_service.fetch_pypi_versions("vexor")
+
+    with pytest.raises(RuntimeError, match="No matching versions"):
+        system_service.select_latest_version(["bad"], include_prerelease=False)
+
+
+def test_detect_install_method_variants(monkeypatch, tmp_path):
+    monkeypatch.setattr(system_service.sys, "frozen", True, raising=False)
+    frozen = system_service.detect_install_method()
+    assert frozen.method == system_service.InstallMethod.STANDALONE
+
+    monkeypatch.setattr(system_service.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(system_service, "find_command_on_path", lambda _cmd: None)
+    monkeypatch.setattr(system_service.sys, "prefix", str(tmp_path / "venv"))
+    monkeypatch.setattr(system_service.sys, "base_prefix", str(tmp_path / "base"), raising=False)
+    venv = system_service.detect_install_method()
+    assert venv.method == system_service.InstallMethod.PIP_VENV
+
+
+def test_detect_install_method_editable_user_system_and_unknown(monkeypatch, tmp_path):
+    class DummyDist:
+        def __init__(self, location: Path, direct_url: str | None):
+            self.location = location
+            self.direct_url = direct_url
+
+        def locate_file(self, _name):
+            return self.location
+
+        def read_text(self, name):
+            assert name == "direct_url.json"
+            return self.direct_url
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    direct_url = json.dumps(
+        {"url": repo.as_uri(), "dir_info": {"editable": True}}
+    )
+    monkeypatch.setattr(system_service.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(system_service.sys, "prefix", str(tmp_path / "base"))
+    monkeypatch.setattr(system_service.sys, "base_prefix", str(tmp_path / "base"), raising=False)
+    monkeypatch.setattr(system_service, "find_command_on_path", lambda _cmd: str(tmp_path / "vexor.exe"))
+    monkeypatch.setattr("importlib.metadata.distribution", lambda _name: DummyDist(repo, direct_url))
+    editable = system_service.detect_install_method()
+    assert editable.method == system_service.InstallMethod.GIT_EDITABLE
+
+    site_dir = tmp_path / "site"
+    dist_dir = site_dir / "vexor"
+    dist_dir.mkdir(parents=True)
+    monkeypatch.setattr("importlib.metadata.distribution", lambda _name: DummyDist(dist_dir, None))
+    monkeypatch.setattr("site.getusersitepackages", lambda: str(site_dir))
+    user = system_service.detect_install_method()
+    assert user.method == system_service.InstallMethod.PIP_USER
+
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    monkeypatch.setattr("importlib.metadata.distribution", lambda _name: DummyDist(other_dir, None))
+    system = system_service.detect_install_method()
+    assert system.method == system_service.InstallMethod.PIP_SYSTEM
+
+    def raise_distribution(_name):
+        raise RuntimeError("missing")
+
+    monkeypatch.setattr("importlib.metadata.distribution", raise_distribution)
+    unknown = system_service.detect_install_method()
+    assert unknown.method == system_service.InstallMethod.UNKNOWN
+
+
+def test_detect_install_method_pipx_and_uv(monkeypatch, tmp_path):
+    monkeypatch.setattr(system_service.sys, "frozen", False, raising=False)
+    monkeypatch.setattr("importlib.metadata.distribution", lambda _name: (_ for _ in ()).throw(RuntimeError("none")))
+    monkeypatch.setattr(system_service, "find_command_on_path", lambda _cmd: None)
+    monkeypatch.setattr(system_service.sys, "base_prefix", str(tmp_path / "base"), raising=False)
+
+    pipx_prefix = tmp_path / "pipx" / "venvs" / "vexor"
+    monkeypatch.setattr(system_service.sys, "prefix", str(pipx_prefix))
+    assert system_service.detect_install_method().method == system_service.InstallMethod.PIPX
+
+    uv_prefix = tmp_path / "uv" / "tools" / "vexor"
+    monkeypatch.setattr(system_service.sys, "prefix", str(uv_prefix))
+    assert system_service.detect_install_method().method == system_service.InstallMethod.UV
+
+
+def test_upgrade_commands_download_urls_and_runners(monkeypatch, tmp_path):
+    editable = system_service.InstallInfo(
+        method=system_service.InstallMethod.GIT_EDITABLE,
+        executable=None,
+        editable_root=tmp_path,
+        dist_location=None,
+    )
+    assert system_service.build_upgrade_commands(editable)[0][:3] == ["git", "-C", str(tmp_path)]
+
+    pipx = system_service.InstallInfo(system_service.InstallMethod.PIPX, None, None, None)
+    assert "--pre" in system_service.build_upgrade_commands(pipx, include_prerelease=True)[0]
+
+    uv = system_service.InstallInfo(system_service.InstallMethod.UV, None, None, None)
+    assert "allow" in system_service.build_upgrade_commands(uv, include_prerelease=True)[0]
+
+    user = system_service.InstallInfo(system_service.InstallMethod.PIP_USER, None, None, None)
+    assert "--user" in system_service.build_upgrade_commands(user)[0]
+
+    monkeypatch.setattr(system_service.platform, "system", lambda: "Windows")
+    asset, url = system_service.build_standalone_download_url("1.2.3")
+    assert asset == "vexor-1.2.3-windows.exe"
+    assert url.endswith(asset)
+
+    monkeypatch.setattr(system_service.platform, "system", lambda: "Darwin")
+    asset, url = system_service.build_standalone_download_url("1.2.3")
+    assert asset is None
+    assert url.endswith("/v1.2.3")
+
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(system_service.subprocess, "run", fake_run)
+    assert system_service.run_upgrade_commands([["ok"], ["also-ok"]]) == 0
+    assert calls == [["ok"], ["also-ok"]]
+
+    monkeypatch.setattr(system_service.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=7))
+    assert system_service.run_upgrade_commands([["bad"]]) == 7
+
+    monkeypatch.setattr(system_service.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()))
+    assert system_service.run_upgrade_commands([["missing"]]) == 127
+
+    monkeypatch.setattr(system_service.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("x", 1)))
+    assert system_service.run_upgrade_commands([["slow"]]) == 124
+
+
+def test_git_worktree_dirty_handles_success_clean_and_errors(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        system_service.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=" M file.py\n"),
+    )
+    assert system_service.git_worktree_is_dirty(tmp_path) is True
+
+    monkeypatch.setattr(
+        system_service.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=""),
+    )
+    assert system_service.git_worktree_is_dirty(tmp_path) is False
+
+    monkeypatch.setattr(
+        system_service.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("git missing")),
+    )
+    assert system_service.git_worktree_is_dirty(tmp_path) is False
