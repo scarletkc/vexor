@@ -432,6 +432,10 @@ def test_detect_install_method_variants(monkeypatch, tmp_path):
     assert frozen.method == system_service.InstallMethod.STANDALONE
 
     monkeypatch.setattr(system_service.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(
+        "importlib.metadata.distribution",
+        lambda _name: (_ for _ in ()).throw(RuntimeError("none")),
+    )
     monkeypatch.setattr(system_service, "find_command_on_path", lambda _cmd: None)
     monkeypatch.setattr(system_service.sys, "prefix", str(tmp_path / "venv"))
     monkeypatch.setattr(system_service.sys, "base_prefix", str(tmp_path / "base"), raising=False)
