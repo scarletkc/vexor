@@ -17,3 +17,13 @@
 - VS Code extension integration.
 - Project-level local cache (per-folder cache root override).
 - Support `.vexorignore` for per-project ignore rules.
+
+## Engineering TODO
+- Align release version semantics across Python, plugin, and GUI packages.
+  - Python/package releases can currently move ahead while the desktop GUI remains on its own version. This is workable, but release notes and asset naming should make the split explicit, or the GUI should get an independent documented release track.
+- Split provider-specific config validation out of `config.py` if provider support keeps growing.
+  - `config.py` now owns default model resolution, provider environment variables, base URLs, embedding dimension validation, and config persistence. Keep it stable for now, but consider moving provider capability metadata into a dedicated module before adding more provider-specific rules.
+- Make user-facing error handling more systematic.
+  - Most messages are centralized in `text.py`, but several runtime validation paths still build detailed errors inline. Consider adding structured error helpers so CLI, API, and tests can rely on consistent wording and recovery guidance.
+- Revisit provider adapter boundaries for OpenAI-compatible services.
+  - Reusing the OpenAI-compatible backend for Voyage AI and custom providers is pragmatic. If more provider-specific request parameters appear, introduce dedicated adapter classes instead of adding more conditional logic inside the shared OpenAI backend.
