@@ -22,9 +22,9 @@
     "@electron-forge/maker-squirrel": "^7.10.2",
     "@electron-forge/maker-zip": "^7.10.2",
     "@vitejs/plugin-vue": "^6.0.3",
-    "concurrently": "^9.2.1",
-    "electron": "^39.2.7",
-    "vite": "^7.3.0",
+    "concurrently": "^9.2.3",
+    "electron": "^39.8.5",
+    "vite": "^8.1.2",
     "wait-on": "^9.0.3"
   }
 }
