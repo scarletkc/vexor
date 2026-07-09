@@ -14,11 +14,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Sequence, TYPE_CHECKING
 
-import click
 import typer
 from rich.console import Console
 from rich.table import Table
 from typer.core import TyperGroup
+
+try:
+    from typer._click.core import Command, Context
+    from typer._click.exceptions import UsageError
+except ImportError:  # pragma: no cover - Typer before the vendored Click runtime
+    from click import Command, Context, UsageError
 
 from . import __version__, config as config_module
 from .cache import clear_all_cache, list_cache_entries
@@ -115,18 +120,18 @@ def _normalize_flashrank_model_args(args: list[str]) -> list[str]:
 class DefaultSearchGroup(TyperGroup):
     """Treat unknown subcommands as search queries."""
 
-    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+    def parse_args(self, ctx: Context, args: list[str]) -> list[str]:
         return super().parse_args(ctx, _normalize_flashrank_model_args(args))
 
     def resolve_command(
         self,
-        ctx: click.Context,
+        ctx: Context,
         args: list[str],
-    ) -> tuple[str | None, click.Command | None, list[str]]:
+    ) -> tuple[str | None, Command | None, list[str]]:
         original_args = list(args)
         try:
             return super().resolve_command(ctx, args)
-        except click.UsageError:
+        except UsageError:
             if not original_args:
                 raise
             token = original_args[0]
@@ -151,6 +156,7 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
     cls=DefaultSearchGroup,
+    suggest_commands=False,
 )
 
 
