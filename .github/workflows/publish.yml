@@ -369,13 +369,13 @@ jobs:
 
       - name: Generate release notes
         shell: bash
+        env:
+          VERSION: ${{ needs.prepare_release.outputs.version }}
+          PREV_TAG: ${{ needs.prepare_release.outputs.prev_tag }}
         run: |
           set -euo pipefail
 
-          VERSION="${{ needs.prepare_release.outputs.version }}"
           CURRENT_TAG="v${VERSION}"
-
-          PREV_TAG="$(git tag --list 'v*' --sort=-version:refname | grep -Fvx "${CURRENT_TAG}" | head -n1 || true)"
 
           {
             echo "Automated release for Vexor ${CURRENT_TAG}."
