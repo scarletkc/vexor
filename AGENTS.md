@@ -13,7 +13,7 @@
 - `tests/unit/` and `tests/integration/` — mirror the product surface.
 
 ## Build, Test, and Development Commands
-Create and activate a project virtualenv (e.g. `python -m venv .venv`) before running any commands; never install into the system interpreter. Substitute `python3` where your platform needs it.
+Run every command inside the project virtualenv: activate the existing one if the repo already has one, and only create it when missing (e.g. `python -m venv .venv`); never install into the system interpreter. Substitute `python3` where your platform needs it.
 - `python -m pip install -e .[dev]` — install Vexor plus pytest, coverage, build, twine, and PyInstaller helpers.
 - `python -m vexor --help` — basic CLI smoke test; realistic checks: `python -m vexor search "api client config" --path . --mode auto --no-cache` and `python -m vexor index --path . --mode code`.
 - `python -m pytest` — main offline test command; narrow scope with `python -m pytest tests/unit -k cache` or `python -m pytest tests/integration/test_cli.py -k doctor`.
