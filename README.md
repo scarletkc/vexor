@@ -147,7 +147,7 @@ and any config overrides via `env` (no `vexor init` needed):
 }
 ```
 
-The server exposes two tools: `vexor_search` (semantic file search) and `vexor_index` (explicit index warm-up). No extra dependencies are required. See [`docs/mcp.md`](https://github.com/scarletkc/vexor/tree/main/docs/mcp.md) for tool schemas, environment variables, and client setup details.
+The server exposes two tools: `vexor_search` (semantic file search) and `vexor_index` (explicit index warm-up). No extra dependencies are required. Vexor is listed on the [official MCP registry](https://registry.modelcontextprotocol.io) as `io.github.scarletkc/vexor`. See [`docs/mcp.md`](https://github.com/scarletkc/vexor/tree/main/docs/mcp.md) for tool schemas, environment variables, and client setup details.
 
 ## Configuration
 
