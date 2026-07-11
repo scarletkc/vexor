@@ -1,6 +1,6 @@
 {
   "name": "vexor",
-  "version": "0.24.0",
+  "version": "0.24.1",
   "description": "A semantic search engine for files and code (Vexor skill bundle).",
   "author": {
     "name": "scarletkc"
