@@ -81,7 +81,7 @@ def check_config_exists() -> DoctorCheckResult:
 
 def check_api_key_configured(provider: str, api_key: str | None) -> DoctorCheckResult:
     """Check if API key is configured."""
-    from ..config import resolve_api_key
+    from ..providers.capabilities import resolve_api_key
 
     if (provider or "").lower() == "local":
         return DoctorCheckResult(
@@ -113,7 +113,7 @@ def check_api_connectivity(
     local_cuda: bool = False,
 ) -> DoctorCheckResult:
     """Test API connectivity with a minimal embedding request."""
-    from ..config import resolve_api_key
+    from ..providers.capabilities import resolve_api_key
 
     normalized = (provider or "").lower()
     if normalized == "local":

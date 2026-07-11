@@ -8,8 +8,8 @@ from typing import List, Protocol, Sequence
 
 import numpy as np
 
-from .config import (
-    DEFAULT_EMBED_CONCURRENCY,
+from .config import DEFAULT_EMBED_CONCURRENCY
+from .providers.capabilities import (
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
     SUPPORTED_PROVIDERS,

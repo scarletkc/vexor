@@ -20,14 +20,16 @@ from .. import __version__, config as config_module
 from ..config import (
     DEFAULT_FLASHRANK_MAX_LENGTH,
     DEFAULT_FLASHRANK_MODEL,
-    DEFAULT_LOCAL_MODEL,
-    DEFAULT_PROVIDER,
     flashrank_cache_dir,
     load_config,
     normalize_remote_rerank_url,
+    resolve_remote_rerank_api_key,
+)
+from ..providers.capabilities import (
+    DEFAULT_LOCAL_MODEL,
+    DEFAULT_PROVIDER,
     resolve_api_key,
     resolve_default_model,
-    resolve_remote_rerank_api_key,
 )
 from ..providers.local import LocalEmbeddingBackend
 from ..services.config_service import apply_config_updates

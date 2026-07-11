@@ -32,25 +32,27 @@ from .config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_FLASHRANK_MODEL,
     DEFAULT_FLASHRANK_MAX_LENGTH,
+    DEFAULT_RERANK,
+    SUPPORTED_EXTRACT_BACKENDS,
+    SUPPORTED_RERANKERS,
+    flashrank_cache_dir,
+    load_config,
+    normalize_remote_rerank_url,
+    resolve_remote_rerank_api_key,
+)
+from .modes import available_modes, get_strategy
+from .providers.capabilities import (
     DEFAULT_GEMINI_MODEL,
     DEFAULT_LOCAL_MODEL,
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
-    DEFAULT_RERANK,
     DEFAULT_VOYAGE_MODEL,
     DIMENSION_SUPPORTED_MODELS,
-    SUPPORTED_EXTRACT_BACKENDS,
     SUPPORTED_PROVIDERS,
-    SUPPORTED_RERANKERS,
-    flashrank_cache_dir,
     get_supported_dimensions,
-    load_config,
-    normalize_remote_rerank_url,
-    resolve_remote_rerank_api_key,
     resolve_default_model,
     supports_dimensions,
 )
-from .modes import available_modes, get_strategy
 from .services.cache_service import is_cache_current, load_index_metadata_safe
 from .services.config_service import apply_config_updates, get_config_snapshot
 from .services.init_service import run_init_wizard, should_auto_run_init
