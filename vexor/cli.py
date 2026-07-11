@@ -1635,7 +1635,11 @@ def update(
     console.print(_styled(Messages.INFO_UPDATE_CURRENT.format(current=__version__), Styles.INFO))
     try:
         latest = fetch_latest_pypi_version("vexor", include_prerelease=pre)
-        write_update_cache(latest)
+        if not pre:
+            # Keep the notice cache on stable-release semantics; pre-release
+            # checks are explicit one-offs and must not steer the passive
+            # notice toward release candidates.
+            write_update_cache(latest)
     except RuntimeError as exc:
         console.print(
             _styled(Messages.ERROR_UPDATE_FETCH.format(reason=str(exc)), Styles.ERROR)
