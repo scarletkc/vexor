@@ -95,6 +95,10 @@ never leaving the machine.
 
 ## Engineering TODO
 
+- Add a dev-only consistency test that validates the MCP tool
+  `inputSchema` against the server-side argument validation (feed
+  known-good/bad payloads through both), so the advertised schema and the
+  strict validation cannot drift apart.
 - Align release version semantics across Python, plugin, and GUI packages.
   - Python/package releases can currently move ahead while the desktop GUI
     remains on its own version. This is workable, but release notes and
