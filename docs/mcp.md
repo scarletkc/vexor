@@ -128,6 +128,7 @@ first.
 | `query` | string | required | Natural-language description of the file/code you want |
 | `path` | string | server default path | Directory to search; absolute, or relative to the server's default path |
 | `top` | integer | 5 | Number of results (1–50; out-of-range values are rejected) |
+| `no_cache` | boolean | false | Use a temporary in-memory index and disable disk caches; slower and may regenerate embeddings |
 | `mode` | string | `auto` | Index mode (`auto`/`name`/`head`/`brief`/`full`/`code`/`outline`) |
 | `include_hidden` | boolean | false | Include dot-prefixed files and directories such as `.github` |
 | `respect_gitignore` | boolean | true | Honor `.gitignore` rules; set false to scan ignored files |
@@ -162,8 +163,8 @@ Returns JSON text:
 ### `vexor_index`
 
 Build or refresh the index for a directory. Use it to warm the cache or when
-`auto_index` is disabled. It accepts the same arguments as `vexor_search`
-except `query` and `top`, and returns
+`auto_index` is disabled. It accepts the same scan arguments as
+`vexor_search`, but not `query`, `top`, or `no_cache`, and returns
 `{path, mode, status, files_indexed}` where `status` is `stored`,
 `up_to_date`, or `empty`.
 
@@ -178,17 +179,19 @@ except `query` and `top`, and returns
   (`--path`, or the server's working directory).
 - Index cache keys follow the same rules as the CLI (see
   [Cache Behavior](cli.md#cache-behavior)): tool calls with the same
-  path/mode/filters share indexes with CLI usage.
+  path/mode/filters share indexes with CLI usage. With `no_cache=true`,
+  `vexor_search` instead builds a temporary in-memory index and writes no
+  index, embedding, or query caches.
 - Execution failures (missing directory, provider errors, missing API key)
   are returned as tool results with `isError: true` so the agent can
   self-correct; malformed arguments (wrong types, out-of-range `top`,
   unknown mode) are rejected as JSON-RPC `-32602` errors.
 - The server writes exactly one startup line to stderr and never writes
   non-protocol output to stdout.
-- On startup a background thread checks PyPI for a newer release (cached
-  for 24 hours in `~/.vexor/update_check.json`, 5-second timeout, silent on
-  failure) and prints a one-line notice to stderr when an update exists.
+- On startup a background thread checks PyPI for a newer release. Network
+  checks happen at most once per 24 hours using `~/.vexor/update_check.json`
+  (5-second timeout, silent on failure); while that cache contains a newer
+  version, each MCP start may print a one-line notice to stderr.
   Disable it with `vexor config --set-update-check false`, or set
-  `VEXOR_NO_UPDATE_CHECK=1` as a hard off switch. The same daily notice
-  (and the same 24h cache) also applies to interactive CLI usage, where it
-  only appears when stderr is a terminal.
+  `VEXOR_NO_UPDATE_CHECK=1` as a hard off switch. Interactive CLI usage shares
+  the same cache and only shows the notice when stderr is a terminal.

@@ -91,6 +91,10 @@ class Messages:
         "for, e.g. 'where API retries are configured'."
     )
     MCP_ARG_TOP = "Number of results to return."
+    MCP_ARG_NO_CACHE = (
+        "Build a temporary in-memory index and disable all disk caches for "
+        "this search. Slower and may regenerate embeddings."
+    )
     MCP_ARG_PATH = (
         "Directory to operate on. Absolute, or relative to the server's "
         "default path ({path})."

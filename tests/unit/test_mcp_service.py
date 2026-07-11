@@ -21,6 +21,7 @@ from vexor.services.mcp_service import (
     serve,
 )
 from vexor.services.search_service import SearchResponse
+from vexor.text import Messages
 
 
 class FakeClient:
@@ -180,6 +181,7 @@ def test_search_tool_returns_ranked_results(tmp_path):
     assert hit["path"] == "./src/config.py"
     assert hit["start_line"] == 1
     assert client.search_calls[0]["top"] == 3
+    assert client.search_calls[0]["no_cache"] is False
     assert client.search_calls[0]["path"] == tmp_path.resolve()
 
 
@@ -199,17 +201,24 @@ def test_search_tool_passes_scan_flags(tmp_path):
     server.handle_message(
         tool_call(
             SEARCH_TOOL,
-            {"query": "q", "respect_gitignore": False, "recursive": False},
+            {
+                "query": "q",
+                "respect_gitignore": False,
+                "recursive": False,
+                "no_cache": True,
+            },
         )
     )
     call = client.search_calls[0]
     assert call["respect_gitignore"] is False
     assert call["recursive"] is False
+    assert call["no_cache"] is True
     # Defaults when omitted.
     server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))
     call = client.search_calls[1]
     assert call["respect_gitignore"] is True
     assert call["recursive"] is True
+    assert call["no_cache"] is False
 
 
 def test_relative_path_resolves_against_default_path(tmp_path):
@@ -244,9 +253,24 @@ def test_tools_advertise_output_schemas_and_strict_input(tmp_path):
         assert "outputSchema" in tool
     search_tool, index_tool = definitions
     assert search_tool["inputSchema"]["properties"]["query"]["minLength"] == 1
+    assert search_tool["inputSchema"]["properties"]["no_cache"] == {
+        "type": "boolean",
+        "default": False,
+        "description": Messages.MCP_ARG_NO_CACHE,
+    }
     assert "respect_gitignore" in search_tool["inputSchema"]["properties"]
+    assert "no_cache" not in index_tool["inputSchema"]["properties"]
     assert "recursive" in index_tool["inputSchema"]["properties"]
     assert search_tool["outputSchema"]["properties"]["results"]["type"] == "array"
+    assert set(search_tool["outputSchema"]["required"]) == {
+        "query",
+        "path",
+        "backend",
+        "reranker",
+        "stale",
+        "index_empty",
+        "results",
+    }
     assert index_tool["outputSchema"]["properties"]["status"]["enum"] == [
         "stored",
         "up_to_date",
@@ -292,6 +316,7 @@ def test_search_tool_rejects_bad_argument_types(tmp_path):
         {"query": "q", "top": "five"},
         {"query": "q", "mode": "invalid-mode"},
         {"query": "q", "include_hidden": "yes"},
+        {"query": "q", "no_cache": "yes"},
         {"query": "q", "extensions": [1, 2]},
         {"query": "q", "extensions": ".py"},
         {"query": "q", "exclude_patterns": "build/**"},

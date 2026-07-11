@@ -49,7 +49,7 @@ _COMMON_TOOL_ARGUMENTS = frozenset(
     }
 )
 _TOOL_ARGUMENTS = {
-    SEARCH_TOOL: _COMMON_TOOL_ARGUMENTS | {"query", "top"},
+    SEARCH_TOOL: _COMMON_TOOL_ARGUMENTS | {"query", "top", "no_cache"},
     INDEX_TOOL: _COMMON_TOOL_ARGUMENTS,
 }
 
@@ -189,7 +189,15 @@ SEARCH_OUTPUT_SCHEMA: dict[str, Any] = {
         "index_empty": {"type": "boolean"},
         "results": {"type": "array", "items": _RESULT_ITEM_SCHEMA},
     },
-    "required": ["query", "path", "results"],
+    "required": [
+        "query",
+        "path",
+        "backend",
+        "reranker",
+        "stale",
+        "index_empty",
+        "results",
+    ],
 }
 
 INDEX_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -219,6 +227,11 @@ def build_tool_definitions(default_path: Path) -> list[dict[str, Any]]:
             "maximum": MAX_TOP,
             "default": DEFAULT_TOP,
             "description": Messages.MCP_ARG_TOP,
+        },
+        "no_cache": {
+            "type": "boolean",
+            "default": False,
+            "description": Messages.MCP_ARG_NO_CACHE,
         },
     }
     search_properties.update(scan_properties)
@@ -444,6 +457,7 @@ class VexorMcpServer:
                 )
             )
         top = _top_argument(arguments.get("top"))
+        no_cache = _bool_argument(arguments.get("no_cache"), "no_cache")
         scan = self._resolve_scan_arguments(arguments)
         try:
             directory = resolve_directory(scan["path"])
@@ -457,6 +471,7 @@ class VexorMcpServer:
                 recursive=scan["recursive"],
                 extensions=scan["extensions"],
                 exclude_patterns=scan["exclude_patterns"],
+                no_cache=no_cache,
             )
         except Exception as exc:
             return _tool_error(SEARCH_TOOL, str(exc))
