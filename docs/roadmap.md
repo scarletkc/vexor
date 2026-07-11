@@ -10,12 +10,6 @@ never leaving the machine.
 
 ## P0 — Agent-first distribution
 
-- MCP server (`vexor mcp`): stdio JSON-RPC server exposing `vexor_search`
-  and `vexor_index` tools, dependency-free (the official SDK's transport
-  stack is far heavier than a tools-only stdio server needs). (In
-  progress: PR #15.)
-  - After release: submit to MCP registries and awesome-mcp-servers lists,
-    document setup for Claude Code, Codex, Cursor, and generic clients.
 - Hybrid retrieval as a first-class path: fuse BM25 and dense scores
   (e.g. reciprocal rank fusion) during search instead of offering BM25
   only as an opt-in reranker. Dependencies (`rank-bm25`, `tokenizers`)
@@ -91,8 +85,6 @@ never leaving the machine.
 
 ## Engineering TODO
 
-- Deduplicate `perform_search` / `search_from_vectors` in
-  `search_service.py` — large copy-pasted filter/ranking blocks.
 - Align release version semantics across Python, plugin, and GUI packages.
   - Python/package releases can currently move ahead while the desktop GUI
     remains on its own version. This is workable, but release notes and
