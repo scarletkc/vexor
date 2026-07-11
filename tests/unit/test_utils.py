@@ -227,3 +227,115 @@ def test_collect_files_exclude_patterns(tmp_path):
     assert "keep.py" in names
     assert "skip.js" not in names
     assert "test_keep.py" not in names
+
+
+@pytest.mark.parametrize("respect_gitignore", [True, False])
+def test_collect_files_always_respects_vexorignore(tmp_path, respect_gitignore):
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / ".vexorignore").write_text("ignored.txt\n", encoding="utf-8")
+    (root / "kept.txt").write_text("yes", encoding="utf-8")
+    (root / "ignored.txt").write_text("no", encoding="utf-8")
+
+    files = utils.collect_files(root, respect_gitignore=respect_gitignore)
+
+    assert [path.name for path in files] == ["kept.txt"]
+
+
+def test_collect_files_combines_gitignore_then_vexorignore(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").mkdir()
+    (root / ".gitignore").write_text("git-only.txt\nreincluded.txt\n", encoding="utf-8")
+    (root / ".vexorignore").write_text(
+        "vexor-only.txt\n!reincluded.txt\n",
+        encoding="utf-8",
+    )
+    for filename in ("kept.txt", "git-only.txt", "reincluded.txt", "vexor-only.txt"):
+        (root / filename).write_text(filename, encoding="utf-8")
+
+    files = utils.collect_files(root, respect_gitignore=True)
+
+    assert [path.name for path in files] == ["kept.txt", "reincluded.txt"]
+
+
+def test_collect_files_nested_vexorignore_is_scoped_to_its_directory(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "nested.txt").write_text("kept", encoding="utf-8")
+    sub = root / "sub"
+    sub.mkdir()
+    (sub / ".vexorignore").write_text("nested.txt\n", encoding="utf-8")
+    (sub / "nested.txt").write_text("ignored", encoding="utf-8")
+    (sub / "kept.txt").write_text("kept", encoding="utf-8")
+
+    files = utils.collect_files(root)
+
+    assert [path.relative_to(root).as_posix() for path in files] == [
+        "nested.txt",
+        "sub/kept.txt",
+    ]
+
+
+def test_collect_files_vexorignore_ancestor_can_ignore_scan_root(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").mkdir()
+    (root / ".vexorignore").write_text("ignored/\n", encoding="utf-8")
+    scan_root = root / "ignored" / "inner"
+    scan_root.mkdir(parents=True)
+    (scan_root / "file.txt").write_text("ignored", encoding="utf-8")
+
+    assert utils.collect_files(scan_root) == []
+
+
+def test_collect_files_non_recursive_respects_vexorignore(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / ".vexorignore").write_text("ignored.txt\n", encoding="utf-8")
+    (root / "kept.txt").write_text("yes", encoding="utf-8")
+    (root / "ignored.txt").write_text("no", encoding="utf-8")
+
+    files = utils.collect_files(root, recursive=False, respect_gitignore=False)
+
+    assert [path.name for path in files] == ["kept.txt"]
+
+
+def test_build_ignore_base_spec_uses_filename_order_and_git_exclude_flag(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git" / "info").mkdir(parents=True)
+    (root / ".git" / "info" / "exclude").write_text(
+        "git-excluded.txt\n",
+        encoding="utf-8",
+    )
+    (root / ".gitignore").write_text("shared.txt\n", encoding="utf-8")
+    (root / ".vexorignore").write_text(
+        "!shared.txt\nvexor-excluded.txt\n",
+        encoding="utf-8",
+    )
+    scan_root = root / "sub"
+    scan_root.mkdir()
+
+    combined, ignored = utils._build_ignore_base_spec(
+        root,
+        scan_root,
+        filenames=(utils.GITIGNORE_FILENAME, utils.VEXORIGNORE_FILENAME),
+        include_git_exclude=True,
+    )
+
+    assert ignored is False
+    assert utils._is_ignored(combined, "shared.txt", is_dir=False) is False
+    assert utils._is_ignored(combined, "vexor-excluded.txt", is_dir=False) is True
+    assert utils._is_ignored(combined, "git-excluded.txt", is_dir=False) is True
+
+    vexor_only, ignored = utils._build_ignore_base_spec(
+        root,
+        scan_root,
+        filenames=(utils.VEXORIGNORE_FILENAME,),
+        include_git_exclude=False,
+    )
+
+    assert ignored is False
+    assert utils._is_ignored(vexor_only, "vexor-excluded.txt", is_dir=False) is True
+    assert utils._is_ignored(vexor_only, "git-excluded.txt", is_dir=False) is False

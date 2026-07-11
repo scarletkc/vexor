@@ -33,13 +33,30 @@
 | `--exclude-pattern PATTERN` | Exclude paths by gitignore-style pattern (repeatable; `.js` treated as `**/*.js`) |
 | `--include-hidden` / `-i` | Include hidden files |
 | `--no-recursive` / `-n` | Don't recurse into subdirectories |
-| `--no-respect-gitignore` | Include gitignored files |
+| `--no-respect-gitignore` | Include files ignored by Git (does not disable `.vexorignore`) |
 | `--format porcelain` | Script-friendly TSV output |
 | `--format porcelain-z` | NUL-delimited output |
 | `--no-cache` | In-memory only; do not read/write index cache |
 
 Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`,
 `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
+
+## Ignore Files
+
+Use `.vexorignore` for project-specific indexing exclusions. It supports full
+gitignore syntax, including negation (`!pattern`), directory-only patterns, and
+anchored patterns. Files can appear in any directory; rules apply to that
+directory and its descendants, and Vexor follows the ancestor chain from the
+repository root when scanning a subdirectory. Outside a Git repository, rules
+are anchored at the scanned directory.
+
+`.vexorignore` is always honored, including with `--no-respect-gitignore`. When
+both ignore files exist in a directory, `.gitignore` is read first and
+`.vexorignore` second, so `.vexorignore` can add exclusions or re-include a path
+with a negated pattern. Explicit `--exclude-pattern` rules still apply
+separately. Changes to `.vexorignore` are detected automatically by the index
+staleness check, so the next search or index refresh updates the indexed file
+set.
 
 ## Index Modes
 

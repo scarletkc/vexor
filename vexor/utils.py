@@ -7,6 +7,10 @@ from typing import Iterable, List, Sequence, Tuple
 import os
 
 
+GITIGNORE_FILENAME = ".gitignore"
+VEXORIGNORE_FILENAME = ".vexorignore"
+
+
 def resolve_directory(path: Path | str) -> Path:
     """Resolve and validate a user supplied directory path."""
     dir_path = Path(path).expanduser().resolve()
@@ -185,16 +189,23 @@ def _is_ignored(spec, rel_path: str, *, is_dir: bool) -> bool:
     return spec.check_file(candidate).include is True
 
 
-def _build_gitignore_base_spec(ignore_root: Path, scan_root: Path):
+def _build_ignore_base_spec(
+    ignore_root: Path,
+    scan_root: Path,
+    *,
+    filenames: tuple[str, ...],
+    include_git_exclude: bool,
+) -> tuple[object, bool]:
     from pathspec.gitignore import GitIgnoreSpec
 
     spec = GitIgnoreSpec.from_lines([])
 
-    git_dir = _resolve_git_dir(ignore_root)
-    if git_dir is not None:
-        exclude_file = git_dir / "info" / "exclude"
-        if exclude_file.is_file():
-            spec += _gitignore_spec_from_lines(_read_gitignore_lines(exclude_file), "")
+    if include_git_exclude:
+        git_dir = _resolve_git_dir(ignore_root)
+        if git_dir is not None:
+            exclude_file = git_dir / "info" / "exclude"
+            if exclude_file.is_file():
+                spec += _gitignore_spec_from_lines(_read_gitignore_lines(exclude_file), "")
 
     try:
         parts = scan_root.relative_to(ignore_root).parts
@@ -209,14 +220,29 @@ def _build_gitignore_base_spec(ignore_root: Path, scan_root: Path):
         rel_ancestor = _relative_posix(ancestor, ignore_root)
         if depth and _is_ignored(spec, rel_ancestor, is_dir=True):
             return spec, True
-        gitignore_file = ancestor / ".gitignore"
-        if gitignore_file.is_file():
-            spec += _gitignore_spec_from_lines(_read_gitignore_lines(gitignore_file), rel_ancestor)
+        for filename in filenames:
+            ignore_file = ancestor / filename
+            if ignore_file.is_file():
+                spec += _gitignore_spec_from_lines(
+                    _read_gitignore_lines(ignore_file),
+                    rel_ancestor,
+                )
 
     rel_scan = _relative_posix(scan_root, ignore_root)
     if _is_ignored(spec, rel_scan, is_dir=True):
         return spec, True
     return spec, False
+
+
+def _build_gitignore_base_spec(ignore_root: Path, scan_root: Path) -> tuple[object, bool]:
+    """Build the legacy git-only base spec."""
+
+    return _build_ignore_base_spec(
+        ignore_root,
+        scan_root,
+        filenames=(GITIGNORE_FILENAME,),
+        include_git_exclude=True,
+    )
 
 
 def collect_files(
@@ -238,18 +264,23 @@ def collect_files(
     if normalized_excludes:
         exclude_spec = _gitignore_spec_from_lines(normalized_excludes, "")
 
-    ignore_root: Path | None = None
-    ignore_spec = None
+    ignore_root = _find_git_root(directory) or directory
     if respect_gitignore:
-        ignore_root = _find_git_root(directory) or directory
-        ignore_spec, ignored = _build_gitignore_base_spec(ignore_root, directory)
-        if ignored:
-            return []
+        ignore_filenames = (GITIGNORE_FILENAME, VEXORIGNORE_FILENAME)
+    else:
+        ignore_filenames = (VEXORIGNORE_FILENAME,)
+    ignore_spec, ignored = _build_ignore_base_spec(
+        ignore_root,
+        directory,
+        filenames=ignore_filenames,
+        include_git_exclude=respect_gitignore,
+    )
+    if ignored:
+        return []
 
     if recursive:
         spec_by_dir: dict[Path, object] = {}
-        if respect_gitignore and ignore_root is not None and ignore_spec is not None:
-            spec_by_dir[directory] = ignore_spec
+        spec_by_dir[directory] = ignore_spec
 
         for dirpath, dirnames, filenames in os.walk(directory, topdown=True):
             if not include_hidden:
@@ -264,27 +295,26 @@ def collect_files(
                 if _is_ignored(exclude_spec, rel_dir, is_dir=True):
                     dirnames[:] = []
                     continue
-            spec = ignore_spec
-            if respect_gitignore and ignore_root is not None and ignore_spec is not None:
-                spec = spec_by_dir.get(current_dir, ignore_spec)
-                gitignore_file = current_dir / ".gitignore"
-                if gitignore_file.is_file():
+            spec = spec_by_dir.get(current_dir, ignore_spec)
+            for ignore_filename in ignore_filenames:
+                ignore_file = current_dir / ignore_filename
+                if ignore_file.is_file():
                     rel_dir = _relative_posix(current_dir, ignore_root)
                     spec = spec + _gitignore_spec_from_lines(
-                        _read_gitignore_lines(gitignore_file),
+                        _read_gitignore_lines(ignore_file),
                         rel_dir,
                     )
-                    spec_by_dir[current_dir] = spec
+            spec_by_dir[current_dir] = spec
 
-                kept: list[str] = []
-                for dirname in dirnames:
-                    child = current_dir / dirname
-                    rel_child = _relative_posix(child, ignore_root)
-                    if _is_ignored(spec, rel_child, is_dir=True):
-                        continue
-                    kept.append(dirname)
-                    spec_by_dir[child] = spec
-                dirnames[:] = kept
+            kept: list[str] = []
+            for dirname in dirnames:
+                child = current_dir / dirname
+                rel_child = _relative_posix(child, ignore_root)
+                if _is_ignored(spec, rel_child, is_dir=True):
+                    continue
+                kept.append(dirname)
+                spec_by_dir[child] = spec
+            dirnames[:] = kept
 
             for filename in filenames:
                 candidate = current_dir / filename
@@ -294,19 +324,18 @@ def collect_files(
                         continue
                 if normalized_exts and not _matches_extension(candidate, normalized_exts):
                     continue
-                if respect_gitignore and ignore_root is not None and spec is not None:
-                    rel_file = _relative_posix(candidate, ignore_root)
-                    if _is_ignored(spec, rel_file, is_dir=False):
-                        continue
+                rel_file = _relative_posix(candidate, ignore_root)
+                if _is_ignored(spec, rel_file, is_dir=False):
+                    continue
                 files.append(candidate)
     else:
         spec = ignore_spec
-        if respect_gitignore and ignore_root is not None and ignore_spec is not None:
-            gitignore_file = directory / ".gitignore"
-            if gitignore_file.is_file():
+        for ignore_filename in ignore_filenames:
+            ignore_file = directory / ignore_filename
+            if ignore_file.is_file():
                 rel_dir = _relative_posix(directory, ignore_root)
-                spec = ignore_spec + _gitignore_spec_from_lines(
-                    _read_gitignore_lines(gitignore_file),
+                spec = spec + _gitignore_spec_from_lines(
+                    _read_gitignore_lines(ignore_file),
                     rel_dir,
                 )
         for entry in directory.iterdir():
@@ -322,10 +351,9 @@ def collect_files(
                     continue
             if normalized_exts and not _matches_extension(entry, normalized_exts):
                 continue
-            if respect_gitignore and ignore_root is not None and spec is not None:
-                rel_file = _relative_posix(entry, ignore_root)
-                if _is_ignored(spec, rel_file, is_dir=False):
-                    continue
+            rel_file = _relative_posix(entry, ignore_root)
+            if _is_ignored(spec, rel_file, is_dir=False):
+                continue
             files.append(entry)
 
     files.sort()
