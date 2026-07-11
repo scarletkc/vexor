@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 from difflib import get_close_matches
 from enum import Enum
 from pathlib import Path
@@ -60,6 +61,7 @@ from .services.system_service import (
     build_standalone_download_url,
     build_upgrade_commands,
     detect_install_method,
+    check_for_update,
     fetch_latest_pypi_version,
     find_command_on_path,
     git_worktree_is_dirty,
@@ -68,6 +70,8 @@ from .services.system_service import (
     resolve_editor_command,
     run_upgrade_commands,
     run_all_doctor_checks,
+    update_check_enabled,
+    write_update_cache,
 )
 from .services.skill_service import (
     DEFAULT_SKILL_NAME,
@@ -794,6 +798,11 @@ def config(
         "--set-auto-index",
         help=Messages.HELP_SET_AUTO_INDEX,
     ),
+    set_update_check_option: str | None = typer.Option(
+        None,
+        "--set-update-check",
+        help=Messages.HELP_SET_UPDATE_CHECK,
+    ),
     clear_flashrank: bool = typer.Option(
         False,
         "--clear-flashrank",
@@ -908,6 +917,7 @@ def config(
             set_base_url_option is not None,
             clear_base_url,
             set_auto_index_option is not None,
+            set_update_check_option is not None,
             set_rerank_option is not None,
             set_flashrank_model_option is not None,
             set_remote_rerank_url_option is not None,
@@ -1010,6 +1020,13 @@ def config(
         except ValueError as exc:
             raise typer.BadParameter(str(exc)) from exc
 
+    update_check: bool | None = None
+    if set_update_check_option is not None:
+        try:
+            update_check = _parse_boolean(set_update_check_option)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
     effective_embedding_dimensions = set_embedding_dimensions_option
     effective_clear_embedding_dimensions = clear_embedding_dimensions
     if effective_embedding_dimensions == 0:
@@ -1049,6 +1066,7 @@ def config(
         base_url=set_base_url_option,
         clear_base_url=clear_base_url,
         auto_index=auto_index,
+        update_check=update_check,
         rerank=set_rerank_option,
         flashrank_model=set_flashrank_model_option,
         remote_rerank_url=set_remote_rerank_url_option,
@@ -1170,6 +1188,11 @@ def config(
         )
     if updates.embedding_dimensions_cleared:
         console.print(_styled(Messages.INFO_EMBEDDING_DIMENSIONS_CLEARED, Styles.SUCCESS))
+    if updates.update_check_set and update_check is not None:
+        state = "enabled" if update_check else "disabled"
+        console.print(
+            _styled(Messages.INFO_UPDATE_CHECK_SET.format(value=state), Styles.SUCCESS)
+        )
 
     if clear_flashrank:
         cache_dir = flashrank_cache_dir(create=False)
@@ -1255,6 +1278,7 @@ def config(
                     extract_concurrency=cfg.extract_concurrency,
                     extract_backend=cfg.extract_backend,
                     auto_index="yes" if cfg.auto_index else "no",
+                    update_check="yes" if cfg.update_check else "no",
                     rerank=rerank,
                     flashrank_line=flashrank_line,
                     remote_rerank_line=remote_rerank_line,
@@ -1611,6 +1635,7 @@ def update(
     console.print(_styled(Messages.INFO_UPDATE_CURRENT.format(current=__version__), Styles.INFO))
     try:
         latest = fetch_latest_pypi_version("vexor", include_prerelease=pre)
+        write_update_cache(latest)
     except RuntimeError as exc:
         console.print(
             _styled(Messages.ERROR_UPDATE_FETCH.format(reason=str(exc)), Styles.ERROR)
@@ -1950,6 +1975,46 @@ def _resolve_alias_command(shell_name: str | None) -> str:
     return Messages.INFO_ALIAS_VX
 
 
+_UPDATE_NOTICE_SKIP_COMMANDS = {"mcp", "update", "init"}
+_UPDATE_NOTICE_SKIP_FLAGS = {"-h", "--help", "-v", "--version"}
+
+
+def should_offer_update_notice(args: Sequence[str]) -> bool:
+    """Return True when this invocation should surface the update notice."""
+    if not args or args[0] in _UPDATE_NOTICE_SKIP_COMMANDS:
+        return False
+    if any(token in _UPDATE_NOTICE_SKIP_FLAGS for token in args):
+        return False
+    if not sys.stderr.isatty():
+        return False
+    try:
+        return update_check_enabled()
+    except Exception:
+        return False
+
+
+def print_update_notice_if_cached(stderr_console: Console | None = None) -> None:
+    """Print the cached update notice; never touches the network."""
+    latest = check_for_update(__version__, allow_network=False)
+    if not latest:
+        return
+    target = stderr_console if stderr_console is not None else Console(stderr=True)
+    target.print(
+        _styled(
+            Messages.CLI_UPDATE_NOTICE.format(latest=latest, current=__version__),
+            Styles.INFO,
+        )
+    )
+
+
+def _refresh_update_cache_async() -> None:
+    threading.Thread(
+        target=lambda: check_for_update(__version__),
+        name="vexor-update-refresh",
+        daemon=True,
+    ).start()
+
+
 def run(argv: list[str] | None = None) -> None:
     """Entry point wrapper allowing optional argument override."""
     args = list(argv) if argv is not None else sys.argv[1:]
@@ -1961,10 +2026,19 @@ def run(argv: list[str] | None = None) -> None:
         console.print(_styled(Messages.INIT_RESUME_TITLE, Styles.INFO))
         console.print(resume_cmd)
         return
-    if argv is None:
-        app()
-    else:
-        app(args=args)
+    offer_notice = should_offer_update_notice(args)
+    if offer_notice:
+        # Warm the TTL cache while the command runs; the notice itself only
+        # ever reads the cache, so it costs nothing on the critical path.
+        _refresh_update_cache_async()
+    try:
+        if argv is None:
+            app()
+        else:
+            app(args=args)
+    finally:
+        if offer_notice:
+            print_update_notice_if_cached()
 
 
 def _format_command(parts: Sequence[str]) -> str:

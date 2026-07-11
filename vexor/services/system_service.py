@@ -19,8 +19,10 @@ from urllib.parse import urlparse
 from urllib import error, request
 
 from ..config import (
+    Config,
     DEFAULT_FLASHRANK_MODEL,
     DEFAULT_RERANK,
+    ENV_NO_UPDATE_CHECK,
     SUPPORTED_RERANKERS,
     RemoteRerankConfig,
     normalize_remote_rerank_url,
@@ -543,6 +545,24 @@ def fetch_latest_pypi_version(
 UPDATE_CHECK_TTL_SECONDS = 24 * 60 * 60
 
 
+def update_check_enabled(config: Config | None = None) -> bool:
+    """Return True when automatic update checks are allowed.
+
+    The VEXOR_NO_UPDATE_CHECK environment variable is a hard off switch;
+    otherwise the persisted ``update_check`` config field decides.
+    """
+    if os.getenv(ENV_NO_UPDATE_CHECK):
+        return False
+    if config is not None:
+        return bool(getattr(config, "update_check", True))
+    try:
+        from ..config import load_config
+
+        return bool(load_config().update_check)
+    except Exception:
+        return True
+
+
 def is_version_newer(candidate: str, current: str) -> bool:
     """Return True when *candidate* is a newer release than *current*."""
     candidate_parsed = parse_version(candidate)
@@ -552,6 +572,22 @@ def is_version_newer(candidate: str, current: str) -> bool:
     return version_tuple(candidate) > version_tuple(current)
 
 
+def write_update_cache(latest: str, *, state_file: Path | None = None) -> None:
+    """Persist the latest known version for later cache-only reads."""
+    import time
+
+    try:
+        if state_file is None:
+            state_file = update_check_file()
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(
+            json.dumps({"checked_at": time.time(), "latest": latest}),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
 def check_for_update(
     current_version: str,
     *,
@@ -559,12 +595,15 @@ def check_for_update(
     ttl_seconds: int = UPDATE_CHECK_TTL_SECONDS,
     state_file: Path | None = None,
     timeout: float = 5.0,
+    allow_network: bool = True,
 ) -> str | None:
     """Return the newer available version, or None. Never raises.
 
     The PyPI result is cached in *state_file* for *ttl_seconds* so
     frequently spawned processes (such as the MCP server) do not hit the
-    network on every start.
+    network on every start. With ``allow_network=False`` only the cache is
+    consulted, which makes the call instant (used by the CLI notice; a
+    background refresh keeps the cache warm for the next invocation).
     """
     import time
 
@@ -580,12 +619,10 @@ def check_for_update(
         except (OSError, ValueError):
             latest = ""
         if not latest:
+            if not allow_network:
+                return None
             latest = fetch_latest_pypi_version(package, timeout=timeout)
-            state_file.parent.mkdir(parents=True, exist_ok=True)
-            state_file.write_text(
-                json.dumps({"checked_at": now, "latest": latest}),
-                encoding="utf-8",
-            )
+            write_update_cache(latest, state_file=state_file)
         return latest if is_version_newer(latest, current_version) else None
     except Exception:
         return None

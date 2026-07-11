@@ -184,3 +184,61 @@ def test_cli_alias_profile_helpers(monkeypatch, tmp_path):
     assert "vexor" in cli._resolve_alias_command("fish")
     assert "Set-Alias" in cli._resolve_alias_command("powershell")
     assert cli._resolve_alias_command("bash").startswith("alias vx=")
+
+
+def test_should_offer_update_notice_gating(monkeypatch):
+    from vexor import cli as cli_module
+
+    monkeypatch.setattr(cli_module.sys.stderr, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(cli_module, "update_check_enabled", lambda: True)
+
+    assert cli_module.should_offer_update_notice(["search", "q"]) is True
+    assert cli_module.should_offer_update_notice([]) is False
+    assert cli_module.should_offer_update_notice(["mcp"]) is False
+    assert cli_module.should_offer_update_notice(["update"]) is False
+    assert cli_module.should_offer_update_notice(["init"]) is False
+    assert cli_module.should_offer_update_notice(["search", "--help"]) is False
+
+    monkeypatch.setattr(cli_module, "update_check_enabled", lambda: False)
+    assert cli_module.should_offer_update_notice(["search", "q"]) is False
+
+    monkeypatch.setattr(cli_module, "update_check_enabled", lambda: True)
+    monkeypatch.setattr(cli_module.sys.stderr, "isatty", lambda: False, raising=False)
+    assert cli_module.should_offer_update_notice(["search", "q"]) is False
+
+
+def test_print_update_notice_reads_cache_only(monkeypatch):
+    from rich.console import Console
+
+    from vexor import cli as cli_module
+
+    captured = {}
+
+    def fake_check(current, *, allow_network=True, **kw):
+        captured["allow_network"] = allow_network
+        return "9.9.9"
+
+    monkeypatch.setattr(cli_module, "check_for_update", fake_check)
+    import io as io_module
+
+    buffer = io_module.StringIO()
+    cli_module.print_update_notice_if_cached(Console(file=buffer, width=200))
+
+    assert captured["allow_network"] is False
+    assert "9.9.9" in buffer.getvalue()
+    assert "vexor update --upgrade" in buffer.getvalue()
+
+
+def test_print_update_notice_silent_without_cache(monkeypatch):
+    from rich.console import Console
+
+    from vexor import cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module, "check_for_update", lambda current, **kw: None
+    )
+    import io as io_module
+
+    buffer = io_module.StringIO()
+    cli_module.print_update_notice_if_cached(Console(file=buffer, width=200))
+    assert buffer.getvalue() == ""

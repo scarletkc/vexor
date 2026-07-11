@@ -141,6 +141,9 @@ class Messages:
     HELP_SET_BASE_URL = "Override the provider's base URL (leave unset for official endpoints)."
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
     HELP_SET_AUTO_INDEX = "Enable/disable automatic indexing before search (default: enabled)."
+    HELP_SET_UPDATE_CHECK = (
+        "Enable/disable the daily background update check (default: enabled)."
+    )
     HELP_SET_RERANK = "Set the rerank strategy (off, bm25, flashrank, remote)."
     HELP_SET_FLASHRANK_MODEL = (
         "Set the FlashRank model name (omit or empty resets to default)."
@@ -367,6 +370,11 @@ class Messages:
     INFO_BASE_URL_SET = "Base URL override set to {value}."
     INFO_BASE_URL_CLEARED = "Base URL override cleared."
     INFO_AUTO_INDEX_SET = "Auto index {value}."
+    INFO_UPDATE_CHECK_SET = "Update check {value}."
+    CLI_UPDATE_NOTICE = (
+        "Vexor {latest} is available (current: {current}). "
+        "Run `vexor update --upgrade` to upgrade."
+    )
     INFO_RERANK_SET = "Rerank strategy set to {value}."
     INFO_FLASHRANK_MODEL_SET = "FlashRank model set to {value}."
     INFO_FLASHRANK_MODEL_RESET = "FlashRank model reset to default ({value})."
@@ -416,6 +424,7 @@ class Messages:
         "Extract concurrency: {extract_concurrency}\n"
         "Extract backend: {extract_backend}\n"
         "Auto index: {auto_index}\n"
+        "Update check: {update_check}\n"
         "Rerank: {rerank}\n"
         "{flashrank_line}"
         "{remote_rerank_line}"

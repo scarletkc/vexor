@@ -638,3 +638,41 @@ def test_check_for_update_never_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(system_service, "fetch_latest_pypi_version", _boom)
     state_file = tmp_path / "update_check.json"
     assert system_service.check_for_update("0.1.0", state_file=state_file) is None
+
+
+def test_check_for_update_cache_only_mode(tmp_path, monkeypatch):
+    from vexor.services import system_service
+
+    def _no_network(*a, **kw):
+        raise AssertionError("cache-only mode must not touch the network")
+
+    monkeypatch.setattr(system_service, "fetch_latest_pypi_version", _no_network)
+    state_file = tmp_path / "update_check.json"
+
+    # Empty cache: returns None without fetching.
+    assert (
+        system_service.check_for_update(
+            "0.1.0", state_file=state_file, allow_network=False
+        )
+        is None
+    )
+
+    system_service.write_update_cache("9.9.9", state_file=state_file)
+    assert (
+        system_service.check_for_update(
+            "0.1.0", state_file=state_file, allow_network=False
+        )
+        == "9.9.9"
+    )
+
+
+def test_update_check_enabled_env_and_config(monkeypatch):
+    from vexor.config import Config, ENV_NO_UPDATE_CHECK
+    from vexor.services import system_service
+
+    monkeypatch.delenv(ENV_NO_UPDATE_CHECK, raising=False)
+    assert system_service.update_check_enabled(Config()) is True
+    assert system_service.update_check_enabled(Config(update_check=False)) is False
+
+    monkeypatch.setenv(ENV_NO_UPDATE_CHECK, "1")
+    assert system_service.update_check_enabled(Config()) is False

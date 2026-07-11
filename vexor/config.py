@@ -46,6 +46,7 @@ DIMENSION_SUPPORTED_MODELS: dict[str, tuple[int, ...]] = {
 }
 ENV_API_KEY = "VEXOR_API_KEY"
 ENV_CONFIG_JSON = "VEXOR_CONFIG_JSON"
+ENV_NO_UPDATE_CHECK = "VEXOR_NO_UPDATE_CHECK"
 REMOTE_RERANK_ENV = "VEXOR_REMOTE_RERANK_API_KEY"
 LEGACY_GEMINI_ENV = "GOOGLE_GENAI_API_KEY"
 OPENAI_ENV = "OPENAI_API_KEY"
@@ -71,6 +72,7 @@ class Config:
     base_url: str | None = None
     auto_index: bool = True
     local_cuda: bool = False
+    update_check: bool = True
     rerank: str = DEFAULT_RERANK
     flashrank_model: str | None = None
     remote_rerank: RemoteRerankConfig | None = None
@@ -187,6 +189,7 @@ def _load_stored_config() -> Config:
         base_url=raw.get("base_url") or None,
         auto_index=bool(raw.get("auto_index", True)),
         local_cuda=bool(raw.get("local_cuda", False)),
+        update_check=bool(raw.get("update_check", True)),
         rerank=rerank,
         flashrank_model=raw.get("flashrank_model") or None,
         remote_rerank=_parse_remote_rerank(raw.get("remote_rerank")),
@@ -217,6 +220,7 @@ def save_config(config: Config) -> None:
         data["base_url"] = config.base_url
     data["auto_index"] = bool(config.auto_index)
     data["local_cuda"] = bool(config.local_cuda)
+    data["update_check"] = bool(config.update_check)
     data["rerank"] = config.rerank
     if config.flashrank_model:
         data["flashrank_model"] = config.flashrank_model
@@ -342,6 +346,12 @@ def set_base_url(value: str | None) -> None:
 def set_auto_index(value: bool) -> None:
     config = _load_stored_config()
     config.auto_index = bool(value)
+    save_config(config)
+
+
+def set_update_check(value: bool) -> None:
+    config = _load_stored_config()
+    config.update_check = bool(value)
     save_config(config)
 
 
@@ -587,6 +597,7 @@ def _clone_config(config: Config) -> Config:
         base_url=config.base_url,
         auto_index=config.auto_index,
         local_cuda=config.local_cuda,
+        update_check=config.update_check,
         rerank=config.rerank,
         flashrank_model=config.flashrank_model,
         remote_rerank=(
@@ -633,6 +644,8 @@ def _apply_config_payload(config: Config, payload: Mapping[str, object]) -> None
         config.base_url = _coerce_optional_str(payload["base_url"], "base_url")
     if "auto_index" in payload:
         config.auto_index = _coerce_bool(payload["auto_index"], "auto_index")
+    if "update_check" in payload:
+        config.update_check = _coerce_bool(payload["update_check"], "update_check")
     if "local_cuda" in payload:
         config.local_cuda = _coerce_bool(payload["local_cuda"], "local_cuda")
     if "rerank" in payload:

@@ -185,4 +185,7 @@ auto-indexes when `auto_index` is enabled). Accepts the same arguments as
 - On startup a background thread checks PyPI for a newer release (cached
   for 24 hours in `~/.vexor/update_check.json`, 5-second timeout, silent on
   failure) and prints a one-line notice to stderr when an update exists.
-  Set `VEXOR_NO_UPDATE_CHECK=1` to disable the check entirely.
+  Disable it with `vexor config --set-update-check false`, or set
+  `VEXOR_NO_UPDATE_CHECK=1` as a hard off switch. The same daily notice
+  (and the same 24h cache) also applies to interactive CLI usage, where it
+  only appears when stderr is a terminal.

@@ -721,3 +721,25 @@ def test_config_mutation_does_not_persist_env_overrides(tmp_path, monkeypatch):
     assert effective.provider == "gemini"
     assert effective.model == "gemini-embedding-001"
     assert effective.api_key == "env-key"
+
+
+def test_set_update_check_persists_and_loads(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+
+    config_module.set_update_check(False)
+
+    stored = json.loads(config_module.CONFIG_FILE.read_text(encoding="utf-8"))
+    assert stored["update_check"] is False
+    assert config_module.load_config().update_check is False
+
+    config_module.set_update_check(True)
+    assert config_module.load_config().update_check is True
+
+
+def test_update_check_configurable_via_env_json(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+    monkeypatch.setenv(
+        config_module.ENV_CONFIG_JSON, json.dumps({"update_check": False})
+    )
+
+    assert config_module.load_config().update_check is False

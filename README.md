@@ -162,6 +162,7 @@ vexor config --set-extract-backend auto      # auto|thread|process (default: aut
 vexor config --set-embedding-dimensions 1024 # optional, model/provider dependent
 vexor config --clear-embedding-dimensions    # reset to model default dimension
 vexor config --set-auto-index true          # auto-index before search (default)
+vexor config --set-update-check false       # disable the daily update notice (default: on)
 vexor config --rerank bm25                  # optional BM25 rerank for top-k results
 vexor config --rerank flashrank             # FlashRank rerank (requires optional extra)
 vexor config --rerank remote                # remote rerank via HTTP endpoint

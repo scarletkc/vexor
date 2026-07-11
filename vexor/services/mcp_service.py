@@ -10,18 +10,17 @@ that a tools-only stdio server does not need.
 from __future__ import annotations
 
 import json
-import os
+
 import sys
 import threading
 from pathlib import Path
 from typing import Any, IO, Iterable, Mapping, Sequence, TextIO
 
 from .. import __version__
+from ..config import ENV_NO_UPDATE_CHECK
 from ..modes import available_modes
 from ..text import Messages
 from ..utils import format_path, resolve_directory
-
-ENV_NO_UPDATE_CHECK = "VEXOR_NO_UPDATE_CHECK"
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 LATEST_PROTOCOL_VERSION = PROTOCOL_VERSIONS[0]
@@ -568,11 +567,11 @@ def emit_update_notice(stream: TextIO) -> None:
     stays silent on any failure. Never writes to stdout, which is reserved
     for the protocol.
     """
-    if os.getenv(ENV_NO_UPDATE_CHECK):
-        return
     try:
-        from .system_service import check_for_update
+        from .system_service import check_for_update, update_check_enabled
 
+        if not update_check_enabled():
+            return
         latest = check_for_update(__version__)
         if latest:
             print(
