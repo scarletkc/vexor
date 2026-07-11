@@ -355,217 +355,20 @@ def _apply_remote_rerank(
     return ordered
 
 
-def perform_search(request: SearchRequest) -> SearchResponse:
-    """Execute the semantic search flow and return ranked results."""
-
-    if request.temporary_index or request.no_cache:
-        return _perform_search_with_temporary_index(request)
-
-    from ..cache import (  # local import
-        embedding_cache_key,
-        list_cache_entries,
-        load_chunk_metadata,
-        load_embedding_cache,
-        load_index_vectors,
-        load_query_vector,
-        query_cache_key,
-        store_embedding_cache,
-        store_query_vector,
-    )
-    from .index_service import IndexStatus, build_index  # local import
-
-    try:
-        (
-            paths,
-            file_vectors,
-            metadata,
-            ext_filter,
-            index_extensions,
-            index_root,
-            index_recursive,
-            index_excludes,
-        ) = _load_index_vectors_for_request(
-            request,
-            load_index_vectors=load_index_vectors,
-            list_cache_entries=list_cache_entries,
-        )
-    except FileNotFoundError:
-        if not request.auto_index:
-            raise
-        result = build_index(
-            request.directory,
-            include_hidden=request.include_hidden,
-            respect_gitignore=request.respect_gitignore,
-            mode=request.mode,
-            recursive=request.recursive,
-            model_name=request.model_name,
-            batch_size=request.batch_size,
-            embed_concurrency=request.embed_concurrency,
-            extract_concurrency=request.extract_concurrency,
-            extract_backend=request.extract_backend,
-            provider=request.provider,
-            base_url=request.base_url,
-            api_key=request.api_key,
-            local_cuda=request.local_cuda,
-            exclude_patterns=request.exclude_patterns,
-            extensions=request.extensions,
-            no_cache=request.no_cache,
-            embedding_dimensions=request.embedding_dimensions,
-        )
-        if result.status == IndexStatus.EMPTY:
-            return SearchResponse(
-                base_path=request.directory,
-                backend=None,
-                results=[],
-                is_stale=False,
-                index_empty=True,
-            )
-        (
-            paths,
-            file_vectors,
-            metadata,
-            ext_filter,
-            index_extensions,
-            index_root,
-            index_recursive,
-            index_excludes,
-        ) = _load_index_vectors_for_request(
-            request,
-            load_index_vectors=load_index_vectors,
-            list_cache_entries=list_cache_entries,
-        )
-
-    exclude_spec = build_exclude_spec(request.exclude_patterns)
-
-    if index_root != request.directory:
-        paths, file_vectors, metadata = _filter_index_by_directory(
-            paths,
-            file_vectors,
-            metadata,
-            request.directory,
-            index_root,
-            recursive=request.recursive,
-        )
-
-    if ext_filter:
-        paths, file_vectors, metadata = _filter_index_by_extensions(
-            paths,
-            file_vectors,
-            metadata,
-            ext_filter,
-        )
-    if exclude_spec is not None:
-        paths, file_vectors, metadata = _filter_index_by_exclude_patterns(
-            paths,
-            file_vectors,
-            metadata,
-            request.directory,
-            exclude_spec,
-        )
-
-    file_snapshot = metadata.get("files", [])
-    chunk_entries = metadata.get("chunks", [])
-    chunk_ids = metadata.get("chunk_ids", [])
-    stale = bool(file_snapshot) and not is_cache_current(
-        request.directory,
-        request.include_hidden,
-        request.respect_gitignore,
-        file_snapshot,
-        recursive=request.recursive,
-        exclude_patterns=request.exclude_patterns,
-        extensions=request.extensions,
+def _empty_response(directory: Path, *, is_stale: bool) -> SearchResponse:
+    return SearchResponse(
+        base_path=directory,
+        backend=None,
+        results=[],
+        is_stale=is_stale,
+        index_empty=True,
     )
 
-    if stale and request.auto_index:
-        result = build_index(
-            index_root,
-            include_hidden=request.include_hidden,
-            respect_gitignore=request.respect_gitignore,
-            mode=request.mode,
-            recursive=index_recursive,
-            model_name=request.model_name,
-            batch_size=request.batch_size,
-            embed_concurrency=request.embed_concurrency,
-            extract_concurrency=request.extract_concurrency,
-            extract_backend=request.extract_backend,
-            provider=request.provider,
-            base_url=request.base_url,
-            api_key=request.api_key,
-            local_cuda=request.local_cuda,
-            exclude_patterns=index_excludes,
-            extensions=index_extensions,
-            no_cache=request.no_cache,
-            embedding_dimensions=request.embedding_dimensions,
-        )
-        if result.status == IndexStatus.EMPTY:
-            return SearchResponse(
-                base_path=request.directory,
-                backend=None,
-                results=[],
-                is_stale=False,
-                index_empty=True,
-            )
-        (
-            paths,
-            file_vectors,
-            metadata,
-            ext_filter,
-            index_extensions,
-            index_root,
-            index_recursive,
-            index_excludes,
-        ) = _load_index_vectors_for_request(
-            request,
-            load_index_vectors=load_index_vectors,
-            list_cache_entries=list_cache_entries,
-        )
-        if index_root != request.directory:
-            paths, file_vectors, metadata = _filter_index_by_directory(
-                paths,
-                file_vectors,
-                metadata,
-                request.directory,
-                index_root,
-                recursive=request.recursive,
-            )
-        if ext_filter:
-            paths, file_vectors, metadata = _filter_index_by_extensions(
-                paths,
-                file_vectors,
-                metadata,
-                ext_filter,
-            )
-        if exclude_spec is not None:
-            paths, file_vectors, metadata = _filter_index_by_exclude_patterns(
-                paths,
-                file_vectors,
-                metadata,
-                request.directory,
-                exclude_spec,
-            )
-        file_snapshot = metadata.get("files", [])
-        chunk_entries = metadata.get("chunks", [])
-        stale = bool(file_snapshot) and not is_cache_current(
-            request.directory,
-            request.include_hidden,
-            request.respect_gitignore,
-            file_snapshot,
-            recursive=request.recursive,
-            exclude_patterns=request.exclude_patterns,
-            extensions=request.extensions,
-        )
 
-    if not len(paths):
-        return SearchResponse(
-            base_path=request.directory,
-            backend=None,
-            results=[],
-            is_stale=stale,
-            index_empty=True,
-        )
+def _build_searcher(request: SearchRequest):
+    from ..search import VexorSearcher  # local import
 
-    from ..search import SearchResult, VexorSearcher  # local import
-    searcher = VexorSearcher(
+    return VexorSearcher(
         model_name=request.model_name,
         batch_size=request.batch_size,
         embed_concurrency=request.embed_concurrency,
@@ -575,34 +378,61 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         local_cuda=request.local_cuda,
         embedding_dimensions=request.embedding_dimensions,
     )
+
+
+def _resolve_query_vector(
+    request: SearchRequest,
+    searcher,
+    file_vectors: np.ndarray,
+    *,
+    index_id: object = None,
+) -> np.ndarray:
+    """Resolve the query embedding through the cache layers.
+
+    Lookup order: per-index query cache (when *index_id* is known), shared
+    embedding cache, then a live embed call whose result is written back to
+    the caches (best effort).
+    """
+    from ..cache import (  # local import
+        embedding_cache_key,
+        load_embedding_cache,
+        load_query_vector,
+        query_cache_key,
+        store_embedding_cache,
+        store_query_vector,
+    )
+
+    expected_dim = file_vectors.shape[1] if file_vectors.ndim == 2 else 0
     query_vector = None
     query_hash = None
     query_text_hash = None
-    index_id = metadata.get("index_id")
     if index_id is not None and not request.no_cache:
         query_hash = query_cache_key(request.query, request.model_name)
         try:
             query_vector = load_query_vector(int(index_id), query_hash)
         except Exception:  # pragma: no cover - best-effort cache lookup
             query_vector = None
-
-        if query_vector is not None and query_vector.size != file_vectors.shape[1]:
+        if query_vector is not None and query_vector.size != expected_dim:
             query_vector = None
 
     if query_vector is None and not request.no_cache:
-        query_text_hash = embedding_cache_key(request.query, dimension=request.embedding_dimensions)
+        query_text_hash = embedding_cache_key(
+            request.query, dimension=request.embedding_dimensions
+        )
         cached = load_embedding_cache(
             request.model_name, [query_text_hash], dimension=request.embedding_dimensions
         )
         query_vector = cached.get(query_text_hash)
-        if query_vector is not None and query_vector.size != file_vectors.shape[1]:
+        if query_vector is not None and query_vector.size != expected_dim:
             query_vector = None
 
     if query_vector is None:
         query_vector = searcher.embed_texts([request.query])[0]
         if not request.no_cache:
             if query_text_hash is None:
-                query_text_hash = embedding_cache_key(request.query, dimension=request.embedding_dimensions)
+                query_text_hash = embedding_cache_key(
+                    request.query, dimension=request.embedding_dimensions
+                )
             try:
                 store_embedding_cache(
                     model=request.model_name,
@@ -621,13 +451,67 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             store_query_vector(int(index_id), query_hash, request.query, query_vector)
         except Exception:  # pragma: no cover - best-effort cache storage
             pass
+    return query_vector
+
+
+def _chunk_meta_from_entries(chunk_entries: Sequence[dict]):
+    """Chunk metadata getter backed by in-memory chunk entries."""
+
+    def prepare(top_indices: Sequence[int]):
+        def get(idx: int) -> dict:
+            return chunk_entries[idx] if idx < len(chunk_entries) else {}
+
+        return get
+
+    return prepare
+
+
+def _chunk_meta_from_cache(chunk_ids: Sequence[int], chunk_entries: Sequence[dict]):
+    """Chunk metadata getter that batch-loads cached chunk rows by id."""
+
+    def prepare(top_indices: Sequence[int]):
+        from ..cache import load_chunk_metadata  # local import
+
+        chunk_meta_by_id: dict[int, dict] = {}
+        if chunk_ids:
+            candidate_ids = [
+                chunk_ids[idx] for idx in top_indices if idx < len(chunk_ids)
+            ]
+            if candidate_ids:
+                try:
+                    chunk_meta_by_id = load_chunk_metadata(candidate_ids)
+                except Exception:  # pragma: no cover - best-effort metadata lookup
+                    chunk_meta_by_id = {}
+
+        def get(idx: int) -> dict:
+            if chunk_ids and idx < len(chunk_ids):
+                return chunk_meta_by_id.get(chunk_ids[idx], {})
+            if idx < len(chunk_entries):
+                return chunk_entries[idx]
+            return {}
+
+        return get
+
+    return prepare
+
+
+def _rank_results(
+    request: SearchRequest,
+    *,
+    paths: Sequence[Path],
+    file_vectors: np.ndarray,
+    query_vector: np.ndarray,
+    chunk_meta_getter,
+) -> tuple[list, str | None]:
+    """Score the index against the query, then rank and optionally rerank."""
+    from ..search import SearchResult  # local import
+
     reranker = None
     rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
     use_rerank = rerank in {"bm25", "flashrank", "remote"}
-    if use_rerank:
-        candidate_limit = _resolve_rerank_candidates(request.top_k)
-    else:
-        candidate_limit = request.top_k
+    candidate_limit = (
+        _resolve_rerank_candidates(request.top_k) if use_rerank else request.top_k
+    )
     candidate_count = min(len(paths), candidate_limit)
 
     query_vector = np.asarray(query_vector, dtype=np.float32).ravel()
@@ -645,31 +529,16 @@ def perform_search(request: SearchRequest) -> SearchResponse:
 
     similarities = np.asarray(file_vectors @ query_vector, dtype=np.float32)
     top_indices = _top_indices(similarities, candidate_count)
-    chunk_meta_by_id: dict[int, dict] = {}
-    if chunk_ids:
-        candidate_ids = [
-            chunk_ids[idx] for idx in top_indices if idx < len(chunk_ids)
-        ]
-        if candidate_ids:
-            try:
-                chunk_meta_by_id = load_chunk_metadata(candidate_ids)
-            except Exception:  # pragma: no cover - best-effort metadata lookup
-                chunk_meta_by_id = {}
+    chunk_meta_for = chunk_meta_getter(top_indices)
     scored: list[SearchResult] = []
     for idx in top_indices:
-        path = paths[idx]
-        score = similarities[idx]
-        chunk_meta = {}
-        if chunk_ids and idx < len(chunk_ids):
-            chunk_meta = chunk_meta_by_id.get(chunk_ids[idx], {})
-        elif idx < len(chunk_entries):
-            chunk_meta = chunk_entries[idx]
+        chunk_meta = chunk_meta_for(idx) or {}
         start_line = chunk_meta.get("start_line")
         end_line = chunk_meta.get("end_line")
         scored.append(
             SearchResult(
-                path=path,
-                score=float(score),
+                path=paths[idx],
+                score=float(similarities[idx]),
                 preview=chunk_meta.get("preview"),
                 chunk_index=int(chunk_meta.get("chunk_index", 0)),
                 start_line=int(start_line) if start_line is not None else None,
@@ -677,32 +546,206 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             )
         )
     if use_rerank:
-        candidates = scored
         if rerank == "bm25":
-            candidates = _apply_bm25_rerank(request.query, candidates)
+            scored = _apply_bm25_rerank(request.query, scored)
             reranker = "bm25"
         elif rerank == "flashrank":
-            candidates = _apply_flashrank_rerank(
-                request.query,
-                candidates,
-                request.flashrank_model,
+            scored = _apply_flashrank_rerank(
+                request.query, scored, request.flashrank_model
             )
             reranker = "flashrank"
         else:
-            candidates = _apply_remote_rerank(
-                request.query,
-                candidates,
-                request.remote_rerank,
-            )
+            scored = _apply_remote_rerank(request.query, scored, request.remote_rerank)
             reranker = "remote"
-        results = candidates[: request.top_k]
-    else:
-        results = scored[: request.top_k]
+    return scored[: request.top_k], reranker
+
+
+@dataclass(slots=True)
+class _IndexState:
+    paths: Sequence[Path]
+    file_vectors: np.ndarray
+    metadata: dict
+    chunk_entries: Sequence[dict]
+    chunk_ids: Sequence[int]
+    stale: bool
+    index_root: Path
+    index_recursive: bool
+    index_excludes: tuple
+    index_extensions: tuple
+
+
+def _load_filtered_index(
+    request: SearchRequest,
+    exclude_spec,
+    *,
+    load_index_vectors,
+    list_cache_entries,
+) -> _IndexState:
+    """Load the cached index, apply request filters, and compute staleness."""
+    (
+        paths,
+        file_vectors,
+        metadata,
+        ext_filter,
+        index_extensions,
+        index_root,
+        index_recursive,
+        index_excludes,
+    ) = _load_index_vectors_for_request(
+        request,
+        load_index_vectors=load_index_vectors,
+        list_cache_entries=list_cache_entries,
+    )
+    if index_root != request.directory:
+        paths, file_vectors, metadata = _filter_index_by_directory(
+            paths,
+            file_vectors,
+            metadata,
+            request.directory,
+            index_root,
+            recursive=request.recursive,
+        )
+    if ext_filter:
+        paths, file_vectors, metadata = _filter_index_by_extensions(
+            paths,
+            file_vectors,
+            metadata,
+            ext_filter,
+        )
+    if exclude_spec is not None:
+        paths, file_vectors, metadata = _filter_index_by_exclude_patterns(
+            paths,
+            file_vectors,
+            metadata,
+            request.directory,
+            exclude_spec,
+        )
+    file_snapshot = metadata.get("files", [])
+    stale = bool(file_snapshot) and not is_cache_current(
+        request.directory,
+        request.include_hidden,
+        request.respect_gitignore,
+        file_snapshot,
+        recursive=request.recursive,
+        exclude_patterns=request.exclude_patterns,
+        extensions=request.extensions,
+    )
+    return _IndexState(
+        paths=paths,
+        file_vectors=file_vectors,
+        metadata=metadata,
+        chunk_entries=metadata.get("chunks", []),
+        chunk_ids=metadata.get("chunk_ids", []),
+        stale=stale,
+        index_root=index_root,
+        index_recursive=index_recursive,
+        index_excludes=index_excludes,
+        index_extensions=index_extensions,
+    )
+
+
+def _build_index_for_request(
+    request: SearchRequest,
+    build_index,
+    *,
+    root: Path,
+    recursive: bool,
+    exclude_patterns,
+    extensions,
+):
+    return build_index(
+        root,
+        include_hidden=request.include_hidden,
+        respect_gitignore=request.respect_gitignore,
+        mode=request.mode,
+        recursive=recursive,
+        model_name=request.model_name,
+        batch_size=request.batch_size,
+        embed_concurrency=request.embed_concurrency,
+        extract_concurrency=request.extract_concurrency,
+        extract_backend=request.extract_backend,
+        provider=request.provider,
+        base_url=request.base_url,
+        api_key=request.api_key,
+        local_cuda=request.local_cuda,
+        exclude_patterns=exclude_patterns,
+        extensions=extensions,
+        no_cache=request.no_cache,
+        embedding_dimensions=request.embedding_dimensions,
+    )
+
+
+def perform_search(request: SearchRequest) -> SearchResponse:
+    """Execute the semantic search flow and return ranked results."""
+
+    if request.temporary_index or request.no_cache:
+        return _perform_search_with_temporary_index(request)
+
+    from ..cache import list_cache_entries, load_index_vectors  # local import
+    from .index_service import IndexStatus, build_index  # local import
+
+    exclude_spec = build_exclude_spec(request.exclude_patterns)
+
+    def load_state() -> _IndexState:
+        return _load_filtered_index(
+            request,
+            exclude_spec,
+            load_index_vectors=load_index_vectors,
+            list_cache_entries=list_cache_entries,
+        )
+
+    try:
+        state = load_state()
+    except FileNotFoundError:
+        if not request.auto_index:
+            raise
+        result = _build_index_for_request(
+            request,
+            build_index,
+            root=request.directory,
+            recursive=request.recursive,
+            exclude_patterns=request.exclude_patterns,
+            extensions=request.extensions,
+        )
+        if result.status == IndexStatus.EMPTY:
+            return _empty_response(request.directory, is_stale=False)
+        state = load_state()
+
+    if state.stale and request.auto_index:
+        result = _build_index_for_request(
+            request,
+            build_index,
+            root=state.index_root,
+            recursive=state.index_recursive,
+            exclude_patterns=state.index_excludes,
+            extensions=state.index_extensions,
+        )
+        if result.status == IndexStatus.EMPTY:
+            return _empty_response(request.directory, is_stale=False)
+        state = load_state()
+
+    if not len(state.paths):
+        return _empty_response(request.directory, is_stale=state.stale)
+
+    searcher = _build_searcher(request)
+    query_vector = _resolve_query_vector(
+        request,
+        searcher,
+        state.file_vectors,
+        index_id=state.metadata.get("index_id"),
+    )
+    results, reranker = _rank_results(
+        request,
+        paths=state.paths,
+        file_vectors=state.file_vectors,
+        query_vector=query_vector,
+        chunk_meta_getter=_chunk_meta_from_cache(state.chunk_ids, state.chunk_entries),
+    )
     return SearchResponse(
         base_path=request.directory,
         backend=searcher.device,
         results=results,
-        is_stale=stale,
+        is_stale=state.stale,
         index_empty=False,
         reranker=reranker,
     )
@@ -719,118 +762,17 @@ def search_from_vectors(
     """Return ranked results from an in-memory index."""
 
     if not len(paths):
-        return SearchResponse(
-            base_path=request.directory,
-            backend=None,
-            results=[],
-            is_stale=is_stale,
-            index_empty=True,
-        )
+        return _empty_response(request.directory, is_stale=is_stale)
 
-    from ..search import SearchResult, VexorSearcher  # local import
-
-    searcher = VexorSearcher(
-        model_name=request.model_name,
-        batch_size=request.batch_size,
-        embed_concurrency=request.embed_concurrency,
-        provider=request.provider,
-        base_url=request.base_url,
-        api_key=request.api_key,
-        local_cuda=request.local_cuda,
-        embedding_dimensions=request.embedding_dimensions,
+    searcher = _build_searcher(request)
+    query_vector = _resolve_query_vector(request, searcher, file_vectors)
+    results, reranker = _rank_results(
+        request,
+        paths=paths,
+        file_vectors=file_vectors,
+        query_vector=query_vector,
+        chunk_meta_getter=_chunk_meta_from_entries(metadata.get("chunks", [])),
     )
-    query_vector = None
-    query_text_hash = None
-    if not request.no_cache:
-        from ..cache import embedding_cache_key, load_embedding_cache, store_embedding_cache
-
-        query_text_hash = embedding_cache_key(request.query, dimension=request.embedding_dimensions)
-        cached = load_embedding_cache(
-            request.model_name, [query_text_hash], dimension=request.embedding_dimensions
-        )
-        query_vector = cached.get(query_text_hash)
-        if query_vector is not None and query_vector.size != file_vectors.shape[1]:
-            query_vector = None
-
-    if query_vector is None:
-        query_vector = searcher.embed_texts([request.query])[0]
-        if not request.no_cache:
-            if query_text_hash is None:
-                from ..cache import embedding_cache_key, store_embedding_cache
-
-                query_text_hash = embedding_cache_key(request.query, dimension=request.embedding_dimensions)
-            try:
-                store_embedding_cache(
-                    model=request.model_name,
-                    embeddings={query_text_hash: query_vector},
-                    dimension=request.embedding_dimensions,
-                )
-            except Exception:  # pragma: no cover - best-effort cache storage
-                pass
-    reranker = None
-    rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
-    use_rerank = rerank in {"bm25", "flashrank", "remote"}
-    if use_rerank:
-        candidate_limit = _resolve_rerank_candidates(request.top_k)
-    else:
-        candidate_limit = request.top_k
-    candidate_count = min(len(paths), candidate_limit)
-
-    query_vector = np.asarray(query_vector, dtype=np.float32).ravel()
-
-    # Validate dimension compatibility between query and index
-    index_dimension = file_vectors.shape[1] if file_vectors.ndim == 2 else 0
-    query_dimension = query_vector.shape[0]
-    if index_dimension != query_dimension:
-        raise ValueError(
-            f"Embedding dimension mismatch: index has {index_dimension}-dim vectors, "
-            f"but query embedding is {query_dimension}-dim. "
-            f"This typically happens when embedding_dimensions was changed after building the index. "
-            f"Rebuild the index with: vexor index {request.directory}"
-        )
-
-    similarities = np.asarray(file_vectors @ query_vector, dtype=np.float32)
-    top_indices = _top_indices(similarities, candidate_count)
-    chunk_entries = metadata.get("chunks", [])
-    scored: list[SearchResult] = []
-    for idx in top_indices:
-        path = paths[idx]
-        score = similarities[idx]
-        chunk_meta = chunk_entries[idx] if idx < len(chunk_entries) else {}
-        start_line = chunk_meta.get("start_line")
-        end_line = chunk_meta.get("end_line")
-        scored.append(
-            SearchResult(
-                path=path,
-                score=float(score),
-                preview=chunk_meta.get("preview"),
-                chunk_index=int(chunk_meta.get("chunk_index", 0)),
-                start_line=int(start_line) if start_line is not None else None,
-                end_line=int(end_line) if end_line is not None else None,
-            )
-        )
-    if use_rerank:
-        candidates = scored
-        if rerank == "bm25":
-            candidates = _apply_bm25_rerank(request.query, candidates)
-            reranker = "bm25"
-        elif rerank == "flashrank":
-            candidates = _apply_flashrank_rerank(
-                request.query,
-                candidates,
-                request.flashrank_model,
-            )
-            reranker = "flashrank"
-        else:
-            candidates = _apply_remote_rerank(
-                request.query,
-                candidates,
-                request.remote_rerank,
-            )
-            reranker = "remote"
-        results = candidates[: request.top_k]
-    else:
-        results = scored[: request.top_k]
     return SearchResponse(
         base_path=request.directory,
         backend=searcher.device,
