@@ -158,6 +158,7 @@ def test_normalize_remote_rerank_url_keeps_rerank():
 
 
 def test_resolve_api_key_prefers_config(monkeypatch):
+    monkeypatch.delenv(config_module.ENV_API_KEY, raising=False)
     assert config_module.resolve_api_key("cfg-key", "gemini") == "cfg-key"
 
 
@@ -176,6 +177,44 @@ def test_resolve_api_key_custom_uses_openai_env(monkeypatch):
 def test_resolve_api_key_general_env(monkeypatch):
     monkeypatch.setenv(config_module.ENV_API_KEY, "shared-key")
     assert config_module.resolve_api_key(None, "gemini") == "shared-key"
+
+
+def test_load_config_general_env_overrides_stored_key(tmp_path, monkeypatch):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(json.dumps({"api_key": "stored-key"}), encoding="utf-8")
+    monkeypatch.setenv(config_module.ENV_API_KEY, "env-key")
+
+    config = config_module.load_config()
+
+    assert config.api_key == "env-key"
+    assert config_module.resolve_api_key(config.api_key, "gemini") == "env-key"
+
+
+def test_load_config_remote_rerank_env_overrides_stored_key(tmp_path, monkeypatch):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(
+        json.dumps(
+            {
+                "remote_rerank": {
+                    "base_url": "https://rerank.example.com",
+                    "api_key": "stored-rerank-key",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(config_module.REMOTE_RERANK_ENV, "env-rerank-key")
+
+    config = config_module.load_config()
+
+    assert config.remote_rerank is not None
+    assert config.remote_rerank.api_key == "env-rerank-key"
+    assert (
+        config_module.resolve_remote_rerank_api_key(config.remote_rerank.api_key)
+        == "env-rerank-key"
+    )
 
 
 def test_resolve_api_key_legacy_gemini_env(monkeypatch):
@@ -649,3 +688,36 @@ def test_load_config_env_json_allows_non_secret_remote_rerank(tmp_path, monkeypa
     assert cfg.remote_rerank is not None
     assert cfg.remote_rerank.model == "bge-reranker-v2-m3"
     assert cfg.remote_rerank.api_key is None
+
+
+def test_config_mutation_does_not_persist_env_overrides(tmp_path, monkeypatch):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(
+        json.dumps(
+            {
+                "provider": "openai",
+                "model": "text-embedding-3-small",
+                "batch_size": 32,
+                "api_key": "stored-key",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        config_module.ENV_CONFIG_JSON,
+        json.dumps({"provider": "gemini", "model": "gemini-embedding-001"}),
+    )
+    monkeypatch.setenv(config_module.ENV_API_KEY, "env-key")
+
+    config_module.set_batch_size(7)
+
+    stored = json.loads(config_file.read_text(encoding="utf-8"))
+    assert stored["provider"] == "openai"
+    assert stored["model"] == "text-embedding-3-small"
+    assert stored["batch_size"] == 7
+    assert stored["api_key"] == "stored-key"
+    effective = config_module.load_config()
+    assert effective.provider == "gemini"
+    assert effective.model == "gemini-embedding-001"
+    assert effective.api_key == "env-key"

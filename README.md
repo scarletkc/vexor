@@ -186,7 +186,7 @@ Config stored in `~/.vexor/config.json`.
 ```bash
 vexor config --set-api-key "YOUR_KEY"
 ```
-Or via environment: `VEXOR_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENAI_API_KEY`, or `VOYAGE_API_KEY`.
+Or via environment: `VEXOR_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENAI_API_KEY`, or `VOYAGE_API_KEY`; `VEXOR_API_KEY` takes precedence over a stored key.
 Any config field can also be injected as a JSON object via `VEXOR_CONFIG_JSON` (useful for MCP client configs and CI), merged over `~/.vexor/config.json`.
 
 ### Rerank

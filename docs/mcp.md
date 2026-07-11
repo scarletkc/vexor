@@ -54,10 +54,12 @@ Instead of running `vexor init`, Vexor can be configured entirely from the
 MCP client config through environment variables, with credentials and
 configuration kept on separate channels:
 
-- `VEXOR_API_KEY` (secret) — the embedding provider API key (the default
-  provider is `openai`, so the key alone is enough for the common case).
+- `VEXOR_API_KEY` (secret) — the embedding provider API key; takes precedence
+  over a key stored in `~/.vexor/config.json` (the default provider is
+  `openai`, so the key alone is enough for the common case).
 - `VEXOR_REMOTE_RERANK_API_KEY` (secret) — the remote reranker API key;
-  only needed when `rerank` is set to `remote`.
+  takes precedence over a stored reranker key and is only needed when
+  `rerank` is set to `remote`.
 - `VEXOR_CONFIG_JSON` (non-secret) — any other Vexor config as a JSON
   object, merged over `~/.vexor/config.json`. Accepts the same fields as
   the config file: `provider`, `model`, `base_url`, `rerank`,

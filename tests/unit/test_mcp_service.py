@@ -244,6 +244,32 @@ def test_tools_advertise_output_schemas_and_strict_input(tmp_path):
     ]
 
 
+@pytest.mark.parametrize("tool_name", [SEARCH_TOOL, INDEX_TOOL])
+def test_tools_reject_unknown_arguments(tmp_path, tool_name):
+    server, client = make_server(tmp_path)
+    arguments = {"recusive": False}
+    if tool_name == SEARCH_TOOL:
+        arguments["query"] = "q"
+
+    response = server.handle_message(tool_call(tool_name, arguments))
+
+    assert response["error"]["code"] == JSONRPC_INVALID_PARAMS
+    assert "recusive" in response["error"]["message"]
+    assert client.search_calls == []
+    assert client.index_calls == []
+
+
+def test_tool_call_rejects_non_object_arguments_and_name(tmp_path):
+    server, _ = make_server(tmp_path)
+    for params in (
+        {"name": INDEX_TOOL, "arguments": []},
+        {"name": INDEX_TOOL, "arguments": None},
+        {"name": 123, "arguments": {}},
+    ):
+        response = server.handle_message(request("tools/call", params))
+        assert response["error"]["code"] == JSONRPC_INVALID_PARAMS, params
+
+
 def test_search_tool_missing_query_is_invalid_params(tmp_path):
     server, _ = make_server(tmp_path)
     response = server.handle_message(tool_call(SEARCH_TOOL, {}))
@@ -257,6 +283,8 @@ def test_search_tool_rejects_bad_argument_types(tmp_path):
         {"query": "q", "mode": "invalid-mode"},
         {"query": "q", "include_hidden": "yes"},
         {"query": "q", "extensions": [1, 2]},
+        {"query": "q", "extensions": ".py"},
+        {"query": "q", "exclude_patterns": "build/**"},
         {"query": "q", "path": 42},
     ]
     for arguments in cases:

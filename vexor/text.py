@@ -73,6 +73,8 @@ class Messages:
     MCP_METHOD_NOT_FOUND = "Method not found: {method}"
     MCP_UNKNOWN_TOOL = "Unknown tool: {name}"
     MCP_INVALID_ARGUMENTS = "Invalid tool arguments: {reason}"
+    MCP_ARGUMENTS_UNKNOWN = "unknown argument(s): {names}"
+    MCP_TOOL_NAME_INVALID = "tool name must be a string"
     MCP_TOOL_FAILED = "{tool} failed: {reason}"
     MCP_TOOL_SEARCH_DESCRIPTION = (
         "Semantic file search: find files by describing what they do or "

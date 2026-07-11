@@ -28,13 +28,13 @@
       "environmentVariables": [
         {
           "name": "VEXOR_API_KEY",
-          "description": "Embedding provider API key (optional; providers can also be configured via `vexor init`)",
+          "description": "Embedding provider API key (optional; overrides a stored key; providers can also be configured via `vexor init`)",
           "isRequired": false,
           "isSecret": true
         },
         {
           "name": "VEXOR_REMOTE_RERANK_API_KEY",
-          "description": "Remote reranker API key (optional; only needed when rerank is set to remote)",
+          "description": "Remote reranker API key (optional; overrides a stored key; only needed when rerank is set to remote)",
           "isRequired": false,
           "isSecret": true
         },

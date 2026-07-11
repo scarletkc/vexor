@@ -34,6 +34,22 @@ DEFAULT_TOP = 5
 SEARCH_TOOL = "vexor_search"
 INDEX_TOOL = "vexor_index"
 
+_COMMON_TOOL_ARGUMENTS = frozenset(
+    {
+        "path",
+        "mode",
+        "include_hidden",
+        "respect_gitignore",
+        "recursive",
+        "extensions",
+        "exclude_patterns",
+    }
+)
+_TOOL_ARGUMENTS = {
+    SEARCH_TOOL: _COMMON_TOOL_ARGUMENTS | {"query", "top"},
+    INDEX_TOOL: _COMMON_TOOL_ARGUMENTS,
+}
+
 
 class InvalidToolArguments(ValueError):
     """Raised when tool arguments fail structural validation."""
@@ -42,9 +58,11 @@ class InvalidToolArguments(ValueError):
 def _string_list(value: Any, field: str) -> tuple[str, ...]:
     if value is None:
         return ()
-    if isinstance(value, str):
-        return (value,)
-    if isinstance(value, Sequence) and all(isinstance(item, str) for item in value):
+    if (
+        not isinstance(value, str)
+        and isinstance(value, Sequence)
+        and all(isinstance(item, str) for item in value)
+    ):
         return tuple(value)
     raise InvalidToolArguments(
         Messages.MCP_INVALID_ARGUMENTS.format(
@@ -88,6 +106,19 @@ def _top_argument(value: Any) -> int:
             )
         )
     return value
+
+
+def _validate_tool_arguments(name: str, arguments: Mapping[str, Any]) -> None:
+    unknown = [field for field in arguments if field not in _TOOL_ARGUMENTS[name]]
+    unknown.sort(key=repr)
+    if unknown:
+        raise InvalidToolArguments(
+            Messages.MCP_INVALID_ARGUMENTS.format(
+                reason=Messages.MCP_ARGUMENTS_UNKNOWN.format(
+                    names=", ".join(repr(field) for field in unknown)
+                )
+            )
+        )
 
 
 def _common_scan_properties(default_path: Path) -> dict[str, Any]:
@@ -334,7 +365,15 @@ class VexorMcpServer:
                 Messages.MCP_INVALID_ARGUMENTS.format(reason="params must be an object"),
             )
         name = params.get("name")
-        arguments = params.get("arguments") or {}
+        if not isinstance(name, str):
+            return _error_response(
+                request_id,
+                JSONRPC_INVALID_PARAMS,
+                Messages.MCP_INVALID_ARGUMENTS.format(
+                    reason=Messages.MCP_TOOL_NAME_INVALID
+                ),
+            )
+        arguments = params.get("arguments", {})
         if not isinstance(arguments, dict):
             return _error_response(
                 request_id,
@@ -352,6 +391,7 @@ class VexorMcpServer:
                 Messages.MCP_UNKNOWN_TOOL.format(name=name),
             )
         try:
+            _validate_tool_arguments(name, arguments)
             return _result_response(request_id, handler(arguments))
         except InvalidToolArguments as exc:
             return _error_response(request_id, JSONRPC_INVALID_PARAMS, str(exc))
