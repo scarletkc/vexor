@@ -10,11 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Protocol
 
-from charset_normalizer import from_path
-from docx import Document
-from pptx import Presentation
-from pypdf import PdfReader
-
 HEAD_CHAR_LIMIT = 1000
 FULL_CHAR_LIMIT = 200_000
 DEFAULT_CHUNK_SIZE = 1000
@@ -711,6 +706,8 @@ def _read_text_head(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None
         return _cleanup_snippet(text)
 
     try:
+        from charset_normalizer import from_path
+
         result = from_path(path)
     except Exception:
         return None
@@ -734,6 +731,8 @@ def _read_text_full(path: Path, char_limit: int = FULL_CHAR_LIMIT) -> str | None
         return text
 
     try:
+        from charset_normalizer import from_path
+
         result = from_path(path)
     except Exception:
         return None
@@ -771,6 +770,8 @@ def _read_text_utf8(path: Path, *, char_limit: int) -> str | None:
 
 def _pdf_extractor(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None:
     try:
+        from pypdf import PdfReader
+
         reader = PdfReader(str(path))
     except Exception:
         return None
@@ -799,6 +800,8 @@ def _pdf_extractor(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None:
 
 def _docx_extractor(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None:
     try:
+        from docx import Document
+
         document = Document(str(path))
     except Exception:
         return None
@@ -823,6 +826,8 @@ def _docx_extractor(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None
 
 def _pptx_extractor(path: Path, char_limit: int = HEAD_CHAR_LIMIT) -> str | None:
     try:
+        from pptx import Presentation
+
         presentation = Presentation(str(path))
     except Exception:
         return None

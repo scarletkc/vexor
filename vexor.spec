@@ -112,7 +112,6 @@ else:
 
 hiddenimports = []
 hiddenimports += collect_submodules("google.genai")
-hiddenimports += collect_submodules("sklearn")
 hiddenimports += collect_submodules("tokenizers")
 hiddenimports += collect_submodules("tree_sitter")
 hiddenimports += ["tree_sitter_javascript", "tree_sitter_typescript"]

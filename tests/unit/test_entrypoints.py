@@ -28,3 +28,7 @@ def test_cli_version_flag_prints_version():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
     assert "Vexor v" in result.stdout
+
+
+def test_public_api_is_loaded_lazily():
+    assert vexor.VexorClient.__module__ == "vexor.api"

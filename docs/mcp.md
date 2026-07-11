@@ -84,6 +84,9 @@ configuration kept on separate channels:
   `embedding_dimensions`, `auto_index`, and so on. Credential fields
   (`api_key`, `remote_rerank.api_key`) are rejected with a clear error so
   secrets stay on the dedicated variables above.
+- `VEXOR_MCP_NUM_THREADS` — numeric-library worker limit for the MCP process;
+  defaults to `2` to avoid large per-process thread-stack reservations. A
+  backend-specific setting such as `OPENBLAS_NUM_THREADS` takes precedence.
 
 ```json
 {
