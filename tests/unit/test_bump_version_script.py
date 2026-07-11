@@ -81,3 +81,49 @@ def test_bump_version_updates_gui_with_normalized_semver(tmp_path: Path):
     lock = json.loads((tmp_path / "gui" / "package-lock.json").read_text(encoding="utf-8"))
     assert lock["version"] == "1.2.3-rc1"
     assert lock["packages"][""]["version"] == "1.2.3-rc1"
+
+
+def test_bump_version_syncs_mcp_server_manifest(tmp_path: Path):
+    bump = _load_bump_version_module()
+
+    (tmp_path / "vexor").mkdir(parents=True)
+    (tmp_path / "plugins" / "vexor" / ".claude-plugin").mkdir(parents=True)
+
+    package_init = tmp_path / "vexor" / "__init__.py"
+    package_init.write_text('__version__ = "0.1.0"\n', encoding="utf-8")
+
+    plugin_manifest = tmp_path / "plugins" / "vexor" / ".claude-plugin" / "plugin.json"
+    plugin_manifest.write_text(json.dumps({"version": "0.1.0"}, indent=2) + "\n", encoding="utf-8")
+
+    server_manifest = tmp_path / "server.json"
+    server_manifest.write_text(
+        json.dumps(
+            {"version": "0.1.0", "packages": [{"identifier": "vexor", "version": "0.1.0"}]},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    bump._run(version="1.2.3", update_gui=False, repo_root=tmp_path)
+
+    synced = json.loads(server_manifest.read_text(encoding="utf-8"))
+    assert synced["version"] == "1.2.3"
+    assert synced["packages"][0]["version"] == "1.2.3"
+
+
+def test_bump_version_tolerates_missing_mcp_server_manifest(tmp_path: Path):
+    bump = _load_bump_version_module()
+
+    (tmp_path / "vexor").mkdir(parents=True)
+    (tmp_path / "plugins" / "vexor" / ".claude-plugin").mkdir(parents=True)
+
+    package_init = tmp_path / "vexor" / "__init__.py"
+    package_init.write_text('__version__ = "0.1.0"\n', encoding="utf-8")
+
+    plugin_manifest = tmp_path / "plugins" / "vexor" / ".claude-plugin" / "plugin.json"
+    plugin_manifest.write_text(json.dumps({"version": "0.1.0"}, indent=2) + "\n", encoding="utf-8")
+
+    bump._run(version="1.2.3", update_gui=False, repo_root=tmp_path)
+
+    assert '__version__ = "1.2.3"' in package_init.read_text(encoding="utf-8")

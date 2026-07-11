@@ -31,6 +31,17 @@
           "description": "Embedding provider API key (optional; providers can also be configured via `vexor init`)",
           "isRequired": false,
           "isSecret": true
+        },
+        {
+          "name": "VEXOR_REMOTE_RERANK_API_KEY",
+          "description": "Remote reranker API key (optional; only needed when rerank is set to remote)",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "VEXOR_CONFIG_JSON",
+          "description": "Non-secret Vexor config as a JSON object, e.g. {\"provider\": \"gemini\", \"rerank\": \"bm25\"} (optional; merged over ~/.vexor/config.json; credential fields are rejected, use the dedicated variables)",
+          "isRequired": false
         }
       ]
     }

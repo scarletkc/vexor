@@ -125,20 +125,25 @@ claude mcp add vexor -- vexor mcp   # Claude Code
 codex mcp add vexor -- vexor mcp    # Codex
 ```
 
-Or configure manually in any MCP client:
+Or configure manually in any MCP client, optionally supplying the API key
+and any config overrides via `env` (no `vexor init` needed):
 
 ```json
 {
   "mcpServers": {
     "vexor": {
       "command": "vexor",
-      "args": ["mcp"]
+      "args": ["mcp"],
+      "env": {
+        "VEXOR_API_KEY": "sk-...",
+        "VEXOR_CONFIG_JSON": "{\"provider\": \"gemini\", \"rerank\": \"bm25\"}"
+      }
     }
   }
 }
 ```
 
-The server exposes two tools: `vexor_search` (semantic file search; auto-indexes on first use) and `vexor_index` (explicit index warm-up). No extra dependencies are required. See [`docs/mcp.md`](https://github.com/scarletkc/vexor/tree/main/docs/mcp.md) for tool schemas and client setup details.
+The server exposes two tools: `vexor_search` (semantic file search) and `vexor_index` (explicit index warm-up). No extra dependencies are required. See [`docs/mcp.md`](https://github.com/scarletkc/vexor/tree/main/docs/mcp.md) for tool schemas, environment variables, and client setup details.
 
 ## Configuration
 
@@ -178,6 +183,7 @@ Config stored in `~/.vexor/config.json`.
 vexor config --set-api-key "YOUR_KEY"
 ```
 Or via environment: `VEXOR_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENAI_API_KEY`, or `VOYAGE_API_KEY`.
+Any config field can also be injected as a JSON object via `VEXOR_CONFIG_JSON` (useful for MCP client configs and CI), merged over `~/.vexor/config.json`.
 
 ### Rerank
 

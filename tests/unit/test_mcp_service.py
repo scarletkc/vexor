@@ -173,12 +173,75 @@ def test_search_tool_returns_ranked_results(tmp_path):
     assert client.search_calls[0]["path"] == tmp_path.resolve()
 
 
-def test_search_tool_defaults_and_clamps_top(tmp_path):
+def test_search_tool_top_defaults_and_rejects_out_of_range(tmp_path):
     server, client = make_server(tmp_path)
     server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))
-    server.handle_message(tool_call(SEARCH_TOOL, {"query": "q", "top": 999}))
     assert client.search_calls[0]["top"] == 5
-    assert client.search_calls[1]["top"] == 50
+    for bad_top in (0, 999):
+        response = server.handle_message(
+            tool_call(SEARCH_TOOL, {"query": "q", "top": bad_top})
+        )
+        assert response["error"]["code"] == JSONRPC_INVALID_PARAMS, bad_top
+
+
+def test_search_tool_passes_scan_flags(tmp_path):
+    server, client = make_server(tmp_path)
+    server.handle_message(
+        tool_call(
+            SEARCH_TOOL,
+            {"query": "q", "respect_gitignore": False, "recursive": False},
+        )
+    )
+    call = client.search_calls[0]
+    assert call["respect_gitignore"] is False
+    assert call["recursive"] is False
+    # Defaults when omitted.
+    server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))
+    call = client.search_calls[1]
+    assert call["respect_gitignore"] is True
+    assert call["recursive"] is True
+
+
+def test_relative_path_resolves_against_default_path(tmp_path):
+    (tmp_path / "src").mkdir()
+    server, client = make_server(tmp_path)
+    response = server.handle_message(
+        tool_call(SEARCH_TOOL, {"query": "q", "path": "src"})
+    )
+    assert response["result"]["isError"] is False
+    assert client.search_calls[0]["path"] == (tmp_path / "src").resolve()
+
+
+def test_success_results_include_structured_content(tmp_path):
+    server, _ = make_server(tmp_path)
+    response = server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))
+    result = response["result"]
+    assert result["structuredContent"] == decode_tool_payload(response)
+    assert result["structuredContent"]["results"][0]["rank"] == 1
+
+
+def test_error_results_omit_structured_content(tmp_path):
+    server, _ = make_server(tmp_path, search_error=RuntimeError("boom"))
+    response = server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))
+    assert response["result"]["isError"] is True
+    assert "structuredContent" not in response["result"]
+
+
+def test_tools_advertise_output_schemas_and_strict_input(tmp_path):
+    definitions = build_tool_definitions(tmp_path)
+    for tool in definitions:
+        assert tool["inputSchema"]["additionalProperties"] is False
+        assert "outputSchema" in tool
+    search_tool, index_tool = definitions
+    assert search_tool["inputSchema"]["properties"]["query"]["minLength"] == 1
+    assert "respect_gitignore" in search_tool["inputSchema"]["properties"]
+    assert "recursive" in index_tool["inputSchema"]["properties"]
+    assert search_tool["outputSchema"]["properties"]["results"]["type"] == "array"
+    assert index_tool["outputSchema"]["properties"]["status"]["enum"] == [
+        "stored",
+        "up_to_date",
+        "empty",
+    ]
 
 
 def test_search_tool_missing_query_is_invalid_params(tmp_path):
