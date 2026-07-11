@@ -173,9 +173,9 @@ except `query` and `top`, and returns
   extra fields).
 - Relative `path` arguments resolve against the server's default path
   (`--path`, or the server's working directory).
-- Index cache keys follow the same rules as the CLI (see "Cache Behavior" in
-  the README): tool calls with the same path/mode/filters share indexes with
-  CLI usage.
+- Index cache keys follow the same rules as the CLI (see
+  [Cache Behavior](cli.md#cache-behavior)): tool calls with the same
+  path/mode/filters share indexes with CLI usage.
 - Execution failures (missing directory, provider errors, missing API key)
   are returned as tool results with `isError: true` so the agent can
   self-correct; malformed arguments (wrong types, out-of-range `top`,
