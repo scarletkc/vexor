@@ -339,3 +339,17 @@ def test_build_ignore_base_spec_uses_filename_order_and_git_exclude_flag(tmp_pat
     assert ignored is False
     assert utils._is_ignored(vexor_only, "vexor-excluded.txt", is_dir=False) is True
     assert utils._is_ignored(vexor_only, "git-excluded.txt", is_dir=False) is False
+
+
+def test_collect_files_always_prunes_vexor_cache(tmp_path):
+    source = tmp_path / "source.py"
+    source.write_text("print('ok')", encoding="utf-8")
+    cache_dir = tmp_path / ".vexor"
+    cache_dir.mkdir()
+    cached_file = cache_dir / "cached.py"
+    cached_file.write_text("private", encoding="utf-8")
+
+    files = utils.collect_files(tmp_path, include_hidden=True)
+
+    assert source in files
+    assert cached_file not in files

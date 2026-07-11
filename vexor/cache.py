@@ -12,7 +12,7 @@ from contextvars import ContextVar
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Lock
-from typing import Iterable, Mapping, Sequence
+from typing import Iterable, Iterator, Mapping, Sequence
 
 import numpy as np
 
@@ -20,6 +20,7 @@ from .utils import collect_files
 
 DEFAULT_CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CACHE_DIR = DEFAULT_CACHE_DIR
+PROJECT_CACHE_DIRNAME = ".vexor"
 _CACHE_DIR_OVERRIDE: ContextVar[Path | None] = ContextVar(
     "vexor_cache_dir_override",
     default=None,
@@ -209,6 +210,37 @@ def cache_dir_context(path: Path | str | None):
         yield
     finally:
         _CACHE_DIR_OVERRIDE.reset(token)
+
+
+def find_project_cache_dir(path: Path) -> Path | None:
+    """Return the nearest project cache directory at or above *path*."""
+
+    resolved_path = path.expanduser().resolve()
+    global_cache_dir = (Path.home() / PROJECT_CACHE_DIRNAME).resolve()
+    for candidate in (resolved_path, *resolved_path.parents):
+        project_cache_dir = (candidate / PROJECT_CACHE_DIRNAME).resolve()
+        if project_cache_dir != global_cache_dir and project_cache_dir.is_dir():
+            return project_cache_dir
+    return None
+
+
+@contextmanager
+def project_cache_context(directory: Path | None) -> Iterator[None]:
+    """Use the nearest project cache unless an explicit override is active."""
+
+    if (
+        directory is None
+        or _CACHE_DIR_OVERRIDE.get() is not None
+        or CACHE_DIR != DEFAULT_CACHE_DIR
+    ):
+        yield
+        return
+    project_cache_dir = find_project_cache_dir(directory)
+    if project_cache_dir is None:
+        yield
+        return
+    with cache_dir_context(project_cache_dir):
+        yield
 
 
 def ensure_cache_dir() -> Path:

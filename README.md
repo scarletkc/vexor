@@ -35,7 +35,7 @@ When you remember what a file *does* but forget its name or location, Vexor find
 
 Designed for both humans and AI coding assistants, enabling semantic file discovery in autonomous agent workflows.
 
-Per-project `.vexorignore` files give you full gitignore-style control over what gets indexed.
+Per-project `.vexorignore` files give you full gitignore-style control over what gets indexed, and you can opt in to per-project indexes by creating a `.vexor/` directory or running `vexor index --local`.
 
 ## Install
 

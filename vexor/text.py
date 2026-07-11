@@ -25,6 +25,7 @@ class Messages:
     HELP_INDEX_INCLUDE = "Include hidden files and directories when building the index."
     HELP_INDEX_CLEAR = "Remove the cached index for the specified path (respecting include-hidden, mode and recursion)."
     HELP_INDEX_SHOW = "Display metadata for the cached index matching the provided options."
+    HELP_INDEX_LOCAL = "Store the index in <path>/.vexor/index.db."
     HELP_RECURSIVE = "Recurse into subdirectories (default). Disable to work only on the specified directory."
     HELP_MODE = (
         "Indexing mode (auto=smart default, name=filename, head=head snippet, brief=keyword summary, "
@@ -150,8 +151,8 @@ class Messages:
     )
     HELP_CLEAR_REMOTE_RERANK = "Clear remote rerank configuration."
     HELP_SHOW_CONFIG = "Show current configuration."
-    HELP_SHOW_INDEX_ALL = "Show metadata for every cached index regardless of path."
-    HELP_CLEAR_INDEX_ALL = "Delete all cached indexes stored under ~/.vexor."
+    HELP_SHOW_INDEX_ALL = "Show metadata for every index in the active cache database."
+    HELP_CLEAR_INDEX_ALL = "Delete every index in the active cache database."
     HELP_INSTALL_SKILLS = (
         "Install the bundled `vexor-cli` Agent Skill into an AI assistant skills directory "
         "(targets: claude, codex)."
@@ -326,6 +327,8 @@ class Messages:
         "No cached index found for {path}. Run `vexor index` first."
     )
     INFO_INDEX_SAVED = "Index saved to {path}."
+    INFO_PROJECT_CACHE_CREATED = "Project cache directory created at {path}."
+    INFO_CACHE_DB_PATH = "Cache database: {path}"
     INFO_INDEX_EMPTY = "Index contains no files."
     INFO_INDEX_UP_TO_DATE = "Index already matches the current directory; nothing to do."
     WARNING_INDEX_STALE = "Cached index for {path} appears outdated; run `vexor index` to refresh."
@@ -348,7 +351,7 @@ class Messages:
         "Generated at: {generated}"
     )
     INFO_INDEX_ALL_HEADER = "Cached index overview"
-    INFO_INDEX_ALL_EMPTY = "No cached indexes found under ~/.vexor."
+    INFO_INDEX_ALL_EMPTY = "No cached indexes found in the active cache database."
     INFO_INDEX_ALL_CLEARED = "Removed {count} cached index entr{plural} in total."
     INFO_INDEX_ALL_CLEAR_NONE = "Cache already empty; nothing to remove."
     INFO_FLASHRANK_CACHE_EMPTY = "FlashRank cache already empty at {path}"

@@ -687,3 +687,96 @@ def test_cache_key_serialization_context_and_memory_cache(tmp_path, monkeypatch)
         embeddings={"x": np.array([1.0], dtype=np.float32)},
     )
     assert cache._load_embedding_memory_cache("model", ["x"]) == {}
+
+
+def test_find_project_cache_dir_at_path(tmp_path):
+    marker = tmp_path / ".vexor"
+    marker.mkdir()
+
+    assert cache.find_project_cache_dir(tmp_path) == marker.resolve()
+
+
+def test_find_project_cache_dir_at_ancestor(tmp_path):
+    marker = tmp_path / ".vexor"
+    marker.mkdir()
+    child = tmp_path / "src" / "package"
+    child.mkdir(parents=True)
+
+    assert cache.find_project_cache_dir(child) == marker.resolve()
+
+
+def test_find_project_cache_dir_nearest_marker_wins(tmp_path):
+    (tmp_path / ".vexor").mkdir()
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    marker = nested / ".vexor"
+    marker.mkdir()
+    child = nested / "src"
+    child.mkdir()
+
+    assert cache.find_project_cache_dir(child) == marker.resolve()
+
+
+def test_find_project_cache_dir_returns_none_without_marker(tmp_path):
+    assert cache.find_project_cache_dir(tmp_path) is None
+
+
+def test_find_project_cache_dir_ignores_plain_file(tmp_path):
+    (tmp_path / ".vexor").write_text("not a directory", encoding="utf-8")
+
+    assert cache.find_project_cache_dir(tmp_path) is None
+
+
+def test_find_project_cache_dir_skips_global_data_dir(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    project = fake_home / "projects" / "demo"
+    project.mkdir(parents=True)
+    (fake_home / ".vexor").mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+    # The walk-up may continue past the (fake) home into the host filesystem,
+    # so only assert that the home-level marker itself is never adopted.
+    result = cache.find_project_cache_dir(project)
+
+    assert result != (fake_home / ".vexor").resolve()
+
+
+def test_project_cache_context_uses_detected_marker(tmp_path, monkeypatch):
+    global_cache = tmp_path / "global" / ".vexor"
+    monkeypatch.setattr(cache, "DEFAULT_CACHE_DIR", global_cache)
+    monkeypatch.setattr(cache, "CACHE_DIR", global_cache)
+    project = tmp_path / "project"
+    marker = project / ".vexor"
+    marker.mkdir(parents=True)
+
+    with cache.project_cache_context(project):
+        assert cache.cache_db_path() == marker.resolve() / cache.DB_FILENAME
+
+
+def test_project_cache_context_respects_active_override(tmp_path, monkeypatch):
+    global_cache = tmp_path / "global" / ".vexor"
+    monkeypatch.setattr(cache, "DEFAULT_CACHE_DIR", global_cache)
+    monkeypatch.setattr(cache, "CACHE_DIR", global_cache)
+    project = tmp_path / "project"
+    (project / ".vexor").mkdir(parents=True)
+    explicit = tmp_path / "explicit"
+
+    with cache.cache_dir_context(explicit):
+        with cache.project_cache_context(project):
+            assert cache.cache_db_path() == explicit.resolve() / cache.DB_FILENAME
+
+
+def test_project_cache_context_respects_relocated_global_cache(tmp_path, monkeypatch):
+    default_cache = tmp_path / "default"
+    monkeypatch.setattr(cache, "DEFAULT_CACHE_DIR", default_cache)
+    monkeypatch.setattr(cache, "CACHE_DIR", default_cache)
+    project = tmp_path / "project"
+    (project / ".vexor").mkdir(parents=True)
+    explicit = tmp_path / "explicit"
+
+    cache.set_cache_dir(explicit)
+    try:
+        with cache.project_cache_context(project):
+            assert cache.cache_db_path() == explicit.resolve() / cache.DB_FILENAME
+    finally:
+        cache.set_cache_dir(None)

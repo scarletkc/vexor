@@ -3,6 +3,16 @@
 Vexor is configured through `vexor config` commands (or the interactive
 `vexor init` wizard). Settings persist in `~/.vexor/config.json`.
 
+## Where data lives
+
+Configuration, update-check data, FlashRank assets, and local embedding models
+stay in the global `~/.vexor/` directory. Indexes normally use
+`~/.vexor/index.db`, but a project containing a `.vexor/` directory uses
+`<project>/.vexor/index.db` for searches and indexing within that project.
+Run `vexor index --local` to create the project directory and its ignore file.
+Only the index database, including embedding and query cache tables, is
+project-local.
+
 ## Commands
 
 ```bash
