@@ -30,7 +30,7 @@ __all__ = [
     "set_data_dir",
 ]
 
-__version__ = "0.24.1"
+__version__ = "0.24.2"
 
 
 def get_version() -> str:
