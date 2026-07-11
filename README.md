@@ -4,7 +4,7 @@
 
 # Vexor
 
-[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![PyPI](https://img.shields.io/pypi/v/vexor.svg)](https://pypi.org/project/vexor/)
 [![CI](https://img.shields.io/github/actions/workflow/status/scarletkc/vexor/publish.yml?branch=main)](https://github.com/scarletkc/vexor/actions/workflows/publish.yml)
 [![Codecov](https://img.shields.io/codecov/c/github/scarletkc/vexor/main)](https://codecov.io/github/scarletkc/vexor)
@@ -113,6 +113,30 @@ vexor install --skills codex   # Codex
 ```
 
 Skill source: [`plugins/vexor/skills/vexor-cli`](https://github.com/scarletkc/vexor/raw/refs/heads/main/plugins/vexor/skills/vexor-cli/SKILL.md)
+
+## MCP Server
+
+Vexor ships a built-in [MCP](https://modelcontextprotocol.io) stdio server, so any MCP-capable agent (Claude Code, Codex, Cursor, Windsurf, Zed, ...) can use semantic file search as a native tool:
+
+```bash
+claude mcp add vexor -- vexor mcp   # Claude Code
+codex mcp add vexor -- vexor mcp    # Codex
+```
+
+Or configure manually in any MCP client:
+
+```json
+{
+  "mcpServers": {
+    "vexor": {
+      "command": "vexor",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+The server exposes two tools: `vexor_search` (semantic file search; auto-indexes on first use) and `vexor_index` (explicit index warm-up). No extra dependencies are required. See [`docs/mcp.md`](https://github.com/scarletkc/vexor/tree/main/docs/mcp.md) for tool schemas and client setup details.
 
 ## Configuration
 
@@ -263,6 +287,7 @@ Re-running `vexor index` only re-embeds changed files; >50% changes trigger full
 | `vexor local --cpu` | Disable CUDA and use CPU for local embeddings |
 | `vexor install --skills claude` | Install Agent Skill for Claude Code |
 | `vexor install --skills codex` | Install Agent Skill for Codex |
+| `vexor mcp [--path PATH]` | Run the MCP stdio server for AI agents |
 | `vexor doctor` | Run diagnostic checks (command, config, cache, API key, API connectivity) |
 | `vexor update [--upgrade] [--pre]` | Check for new version (optionally upgrade; `--pre` includes pre-releases) |
 | `vexor feedback` | Open GitHub issue form (or use `gh`) |
@@ -292,7 +317,7 @@ See [docs](https://github.com/scarletkc/vexor/tree/main/docs) for more details.
 
 ## Contributing
 
-Contributions, issues, and PRs welcome! Star if you find it helpful.
+Contributions, issues, and PRs welcome! Commit messages and PR titles follow [Conventional Commits](https://www.conventionalcommits.org) (e.g. `feat(mcp): add stdio server`). Star if you find it helpful.
 
 ## Star History
 

@@ -1515,6 +1515,21 @@ def install(
         raise typer.Exit(code=1)
 
 
+@app.command(help=Messages.HELP_MCP)
+def mcp(
+    path: Path = typer.Option(
+        Path.cwd(),
+        "--path",
+        "-p",
+        help=Messages.HELP_MCP_PATH,
+    ),
+) -> None:
+    """Run the MCP stdio server exposing Vexor tools to AI agents."""
+    from .services.mcp_service import serve_stdio
+
+    serve_stdio(default_path=path)
+
+
 @app.command()
 def doctor(
     skip_api_test: bool = typer.Option(
