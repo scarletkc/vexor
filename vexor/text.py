@@ -62,17 +62,14 @@ class Messages:
         "if you run Vexor via uvx."
     )
     MCP_SERVER_INSTRUCTIONS = (
-        "Vexor provides semantic (natural-language) search over files. "
-        "Use vexor_search when you know what a file or piece of code does "
-        "but not where it lives; describe the content in plain words instead "
-        "of guessing keywords. When auto_index is enabled in the Vexor "
-        "config (the default), the first search in a directory builds the "
-        "index automatically and later searches reuse it; otherwise call "
-        "vexor_index first. Requires a configured "
-        "embedding provider: if tool calls report a missing API key, ask the "
-        "user to run `vexor init` (guided setup), set an API key environment "
-        "variable such as VEXOR_API_KEY, or install an offline local model "
-        "with `vexor local --setup`."
+        "Vexor searches files and code by meaning. Use vexor_search when you "
+        "know the desired behavior or content but not its name or location; "
+        "describe it in natural language. Use vexor_index to build or refresh "
+        "an index explicitly. Searches recurse and respect .gitignore by "
+        "default; with auto_index enabled (the default), missing or stale "
+        "indexes are built automatically. A configured embedding provider is "
+        "required. If setup is missing, ask the user to run `vexor init`, set "
+        "VEXOR_API_KEY, or run `vexor local --setup` for offline use."
     )
     MCP_PARSE_ERROR = "Invalid JSON was received."
     MCP_METHOD_NOT_FOUND = "Method not found: {method}"
@@ -82,19 +79,12 @@ class Messages:
     MCP_TOOL_NAME_INVALID = "tool name must be a string"
     MCP_TOOL_FAILED = "{tool} failed: {reason}"
     MCP_TOOL_SEARCH_DESCRIPTION = (
-        "Semantic file search: find files by describing what they do or "
-        "contain, without knowing names or paths. Scans recursively and "
-        "respects .gitignore by default. When auto_index is enabled in the "
-        "Vexor config (the default), a missing or stale index is built "
-        "automatically; otherwise call vexor_index first. Returns ranked "
-        "matches with relative and absolute paths, relevance scores, line "
-        "ranges, and text previews."
+        "Find files or code from a natural-language description. Returns "
+        "ranked matches with paths, relevance scores, line ranges, and previews."
     )
     MCP_TOOL_INDEX_DESCRIPTION = (
-        "Build or refresh the Vexor semantic index for a directory. Scans "
-        "recursively and respects .gitignore by default. Optional warm-up: "
-        "vexor_search indexes automatically when auto_index is enabled in "
-        "the Vexor config."
+        "Build or refresh the semantic index for a directory. Use it to warm "
+        "the cache or when auto_index is disabled."
     )
     MCP_ARG_QUERY = (
         "Natural-language description of the file or code you are looking "

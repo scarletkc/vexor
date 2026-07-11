@@ -115,9 +115,9 @@ being silently ignored.
 
 ### `vexor_search`
 
-Semantic file search. Scans recursively and respects `.gitignore` by
-default. When `auto_index` is enabled in the Vexor config (the default), a
-missing or stale index is built automatically; otherwise call `vexor_index`
+Find files or code from a natural-language description and return ranked
+paths, scores, line ranges, and previews. Missing or stale indexes are built
+automatically when `auto_index` is enabled; otherwise call `vexor_index`
 first.
 
 | Argument | Type | Default | Description |
@@ -158,9 +158,9 @@ Returns JSON text:
 
 ### `vexor_index`
 
-Build or refresh the index for a directory (optional warm-up; searching
-auto-indexes when `auto_index` is enabled). Accepts the same arguments as
-`vexor_search` except `query` and `top`. Returns
+Build or refresh the index for a directory. Use it to warm the cache or when
+`auto_index` is disabled. It accepts the same arguments as `vexor_search`
+except `query` and `top`, and returns
 `{path, mode, status, files_indexed}` where `status` is `stored`,
 `up_to_date`, or `empty`.
 
