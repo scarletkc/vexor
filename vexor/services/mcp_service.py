@@ -2,8 +2,9 @@
 
 Implements the tools-only subset of MCP (initialize, ping, tools/list,
 tools/call) as newline-delimited JSON-RPC 2.0 over stdio. Hand-rolled on
-purpose: the official ``mcp`` SDK requires Python 3.10+ and a heavy
-dependency tree, while Vexor supports Python 3.9.
+purpose: the official ``mcp`` SDK pulls in a large dependency tree
+(httpx, anyio, pydantic, starlette, ...) for transports and features
+that a tools-only stdio server does not need.
 """
 
 from __future__ import annotations

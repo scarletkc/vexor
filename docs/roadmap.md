@@ -11,8 +11,9 @@ never leaving the machine.
 ## P0 — Agent-first distribution
 
 - MCP server (`vexor mcp`): stdio JSON-RPC server exposing `vexor_search`
-  and `vexor_index` tools, dependency-free to keep Python 3.9 support.
-  (In progress.)
+  and `vexor_index` tools, dependency-free (the official SDK's transport
+  stack is far heavier than a tools-only stdio server needs). (In
+  progress: PR #15.)
   - After release: submit to MCP registries and awesome-mcp-servers lists,
     document setup for Claude Code, Codex, Cursor, and generic clients.
 - Hybrid retrieval as a first-class path: fuse BM25 and dense scores
