@@ -50,6 +50,25 @@ class Messages:
     HELP_UPDATE_UPGRADE = "Upgrade Vexor automatically when a newer version is available."
     HELP_UPDATE_PRE = "Include pre-release versions when checking/upgrading."
     HELP_FEEDBACK = "Open the GitHub issue form (or use `gh` if available) to send feedback."
+    HELP_MCP = (
+        "Run the MCP (Model Context Protocol) stdio server exposing Vexor "
+        "search/index tools to AI agents."
+    )
+    HELP_MCP_PATH = "Default directory used when MCP tool calls omit a path."
+    MCP_SERVER_READY = "Vexor MCP server ready (stdio). Default path: {path}"
+    MCP_SERVER_INSTRUCTIONS = (
+        "Vexor provides semantic (natural-language) search over files. "
+        "Use vexor_search when you know what a file or piece of code does "
+        "but not where it lives; describe the content in plain words instead "
+        "of guessing keywords. The first search in a directory builds an "
+        "index automatically; later searches reuse it. Use vexor_index to "
+        "warm or refresh the index explicitly."
+    )
+    MCP_PARSE_ERROR = "Invalid JSON was received."
+    MCP_METHOD_NOT_FOUND = "Method not found: {method}"
+    MCP_UNKNOWN_TOOL = "Unknown tool: {name}"
+    MCP_INVALID_ARGUMENTS = "Invalid tool arguments: {reason}"
+    MCP_TOOL_FAILED = "{tool} failed: {reason}"
     HELP_STAR = "Star the Vexor repository on GitHub (or use `gh` if available)."
     HELP_ALIAS = "Print a shell alias that maps `vx` to `vexor` and optionally apply it."
     HELP_INIT = "Run the interactive first-run setup wizard."

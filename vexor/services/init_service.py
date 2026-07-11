@@ -63,7 +63,7 @@ def should_auto_run_init(
     if not is_tty:
         return False
     tokens = list(args or [])
-    if tokens and tokens[0] == "init":
+    if tokens and tokens[0] in {"init", "mcp"}:
         return False
     skip_flags = {
         "-h",

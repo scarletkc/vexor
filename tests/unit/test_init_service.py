@@ -26,6 +26,11 @@ def test_should_auto_run_init_runs_when_missing_config(tmp_path):
     assert should_auto_run_init(["search"], config_path=config_path, is_tty=True) is True
 
 
+def test_should_auto_run_init_skips_mcp_command(tmp_path):
+    config_path = tmp_path / "config.json"
+    assert should_auto_run_init(["mcp"], config_path=config_path, is_tty=True) is False
+
+
 def test_collect_remote_settings_voyageai_prompts_voyage_api_key(monkeypatch):
     monkeypatch.setattr(init_service, "_print_step_header", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(init_service, "_print_option", lambda *_args, **_kwargs: None)

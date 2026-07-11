@@ -245,3 +245,55 @@ def test_feedback_falls_back_to_browser_when_gh_fails(monkeypatch):
 
     assert result.exit_code == 0
     assert captured["url"].endswith("/issues/new")
+
+
+def test_mcp_command_starts_stdio_server(monkeypatch, tmp_path):
+    runner = CliRunner()
+    captured = {}
+
+    import vexor.services.mcp_service as mcp_service
+
+    monkeypatch.setattr(
+        mcp_service,
+        "serve_stdio",
+        lambda default_path=None: captured.setdefault("default_path", default_path),
+    )
+
+    result = runner.invoke(app, ["mcp", "--path", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert captured["default_path"] == tmp_path
+
+
+def test_mcp_command_round_trip_over_stdio(monkeypatch, tmp_path):
+    runner = CliRunner()
+
+    import vexor.services.mcp_service as mcp_service
+
+    lines = [
+        '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}\n',
+        '{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}\n',
+    ]
+    outputs: list[str] = []
+
+    def fake_serve_stdio(default_path=None):
+        import io
+
+        server = mcp_service.VexorMcpServer(default_path=default_path)
+        stdout = io.StringIO()
+        mcp_service.serve(server, iter(lines), stdout)
+        outputs.extend(stdout.getvalue().strip().splitlines())
+
+    monkeypatch.setattr(mcp_service, "serve_stdio", fake_serve_stdio)
+
+    result = runner.invoke(app, ["mcp", "--path", str(tmp_path)])
+
+    assert result.exit_code == 0
+    import json
+
+    initialize, tools = (json.loads(line) for line in outputs)
+    assert initialize["result"]["serverInfo"]["name"] == "vexor"
+    assert [tool["name"] for tool in tools["result"]["tools"]] == [
+        "vexor_search",
+        "vexor_index",
+    ]
