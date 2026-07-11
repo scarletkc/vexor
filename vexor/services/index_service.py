@@ -146,7 +146,6 @@ def build_index(
 ) -> IndexResult:
     """Create or refresh the cached index for *directory*."""
 
-    from ..search import VexorSearcher  # local import
     from ..utils import collect_files  # local import
     from ..cache import apply_index_updates, store_index  # local import
 
@@ -160,6 +159,8 @@ def build_index(
     )
     if not files:
         return IndexResult(status=IndexStatus.EMPTY)
+    from ..search import VexorSearcher  # local import
+
     stat_cache: dict[Path, os.stat_result] = {}
     extract_concurrency = _resolve_extract_concurrency(extract_concurrency)
 

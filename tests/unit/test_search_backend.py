@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from vexor import search
+from vexor.search import VexorSearcher
 from vexor.providers import gemini as gemini_backend
 from vexor.providers import local as local_backend
 from vexor.providers import openai as openai_backend
@@ -442,7 +442,7 @@ def test_vexor_searcher_embed_texts(monkeypatch):
             self.calls.append(list(texts))
             return np.asarray([[3.0, 4.0]], dtype=np.float32)
 
-    searcher = search.VexorSearcher(backend=DummyBackend())
+    searcher = VexorSearcher(backend=DummyBackend())
     vector = searcher.embed_texts(["name"])
 
     assert np.allclose(vector[0], [0.6, 0.8])  # normalized

@@ -74,7 +74,9 @@ def test_vexor_searcher_creates_gemini_backend(monkeypatch):
         def embed(self, texts):
             return np.zeros((len(texts), 2), dtype=np.float32)
 
-    monkeypatch.setattr("vexor.search.GeminiEmbeddingBackend", DummyGeminiBackend)
+    monkeypatch.setattr(
+        "vexor.providers.gemini.GeminiEmbeddingBackend", DummyGeminiBackend
+    )
     searcher = VexorSearcher(model_name="m", provider="gemini", api_key="k", batch_size=2)
     assert "Gemini" in searcher.device
     assert created["model_name"] == "m"
@@ -92,7 +94,9 @@ def test_vexor_searcher_creates_openai_backend(monkeypatch):
         def embed(self, texts):
             return np.zeros((len(texts), 2), dtype=np.float32)
 
-    monkeypatch.setattr("vexor.search.OpenAIEmbeddingBackend", DummyOpenAIBackend)
+    monkeypatch.setattr(
+        "vexor.providers.openai.OpenAIEmbeddingBackend", DummyOpenAIBackend
+    )
     searcher = VexorSearcher(model_name="m", provider="openai", api_key="k")
     assert "OpenAI" in searcher.device
     assert created["model_name"] == "m"
@@ -109,7 +113,9 @@ def test_vexor_searcher_creates_custom_backend(monkeypatch):
         def embed(self, texts):
             return np.zeros((len(texts), 2), dtype=np.float32)
 
-    monkeypatch.setattr("vexor.search.OpenAIEmbeddingBackend", DummyOpenAIBackend)
+    monkeypatch.setattr(
+        "vexor.providers.openai.OpenAIEmbeddingBackend", DummyOpenAIBackend
+    )
     searcher = VexorSearcher(
         model_name="m",
         provider="custom",
@@ -131,7 +137,9 @@ def test_vexor_searcher_creates_local_backend(monkeypatch):
         def embed(self, texts):
             return np.zeros((len(texts), 2), dtype=np.float32)
 
-    monkeypatch.setattr("vexor.search.LocalEmbeddingBackend", DummyLocalBackend)
+    monkeypatch.setattr(
+        "vexor.providers.local.LocalEmbeddingBackend", DummyLocalBackend
+    )
     searcher = VexorSearcher(model_name="m", provider="local")
     assert "local" in searcher.device.lower()
     assert created["model_name"] == "m"

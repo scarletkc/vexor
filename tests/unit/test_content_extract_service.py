@@ -58,7 +58,7 @@ def test_extract_head_from_pdf(monkeypatch, tmp_path):
         def __init__(self, *_):
             self.pages = [DummyPage("PDF snippet one"), DummyPage("Second page text")]
 
-    monkeypatch.setattr(ces, "PdfReader", lambda path: DummyReader(path))
+    monkeypatch.setattr("pypdf.PdfReader", lambda path: DummyReader(path))
 
     snippet = extract_head(pdf_path)
 
@@ -107,7 +107,7 @@ def test_extract_full_chunks_from_pdf(monkeypatch, tmp_path):
         def __init__(self, *_):
             self.pages = [DummyPage("One two three four five six seven eight nine ten" * 5)]
 
-    monkeypatch.setattr(ces, "PdfReader", lambda path: DummyReader(path))
+    monkeypatch.setattr("pypdf.PdfReader", lambda path: DummyReader(path))
 
     chunks = extract_full_chunks(pdf_path, chunk_size=40, overlap=0)
 
@@ -139,7 +139,10 @@ def test_extract_full_chunks_returns_empty_for_unknown_or_empty(tmp_path, monkey
     assert extract_full_chunks(empty) == []
 
     # from_path failure should return no chunks for non-UTF8 payloads
-    monkeypatch.setattr(ces, "from_path", lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("boom")))
+    monkeypatch.setattr(
+        "charset_normalizer.from_path",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("boom")),
+    )
     text_path = tmp_path / "boom.txt"
     text_path.write_bytes(b"\xff\xfe\xfd")
     assert extract_full_chunks(text_path) == []
@@ -411,7 +414,7 @@ def test_text_readers_fallback_to_charset_detection(monkeypatch, tmp_path):
         def __len__(self):
             return 0
 
-    monkeypatch.setattr(ces, "from_path", lambda _path: EmptyResult())
+    monkeypatch.setattr("charset_normalizer.from_path", lambda _path: EmptyResult())
     assert ces._read_text_head(data_path) is None
     assert ces._read_text_full(data_path) is None
 
@@ -422,7 +425,7 @@ def test_text_readers_fallback_to_charset_detection(monkeypatch, tmp_path):
         def best(self):
             return None
 
-    monkeypatch.setattr(ces, "from_path", lambda _path: NoBest())
+    monkeypatch.setattr("charset_normalizer.from_path", lambda _path: NoBest())
     assert ces._read_text_head(data_path) is None
     assert ces._read_text_full(data_path) is None
 
@@ -433,7 +436,7 @@ def test_text_readers_fallback_to_charset_detection(monkeypatch, tmp_path):
         def best(self):
             return ""
 
-    monkeypatch.setattr(ces, "from_path", lambda _path: EmptyBest())
+    monkeypatch.setattr("charset_normalizer.from_path", lambda _path: EmptyBest())
     assert ces._read_text_head(data_path) is None
     assert ces._read_text_full(data_path) is None
 
@@ -444,7 +447,7 @@ def test_text_readers_fallback_to_charset_detection(monkeypatch, tmp_path):
         def best(self):
             return " Alpha \n Beta "
 
-    monkeypatch.setattr(ces, "from_path", lambda _path: GoodBest())
+    monkeypatch.setattr("charset_normalizer.from_path", lambda _path: GoodBest())
     assert ces._read_text_head(data_path, char_limit=20) == "Alpha Beta"
     assert ces._read_text_full(data_path, char_limit=6) == " Alpha"
     assert ces._read_text_full(data_path, char_limit=0) == " Alpha \n Beta "
@@ -464,7 +467,10 @@ def test_pdf_extractor_error_and_empty_paths(monkeypatch, tmp_path):
     pdf_path = tmp_path / "sample.pdf"
     pdf_path.write_bytes(b"%PDF")
 
-    monkeypatch.setattr(ces, "PdfReader", lambda _path: (_ for _ in ()).throw(RuntimeError("bad pdf")))
+    monkeypatch.setattr(
+        "pypdf.PdfReader",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("bad pdf")),
+    )
     assert ces._pdf_extractor(pdf_path) is None
 
     class ErrorPage:
@@ -478,7 +484,7 @@ def test_pdf_extractor_error_and_empty_paths(monkeypatch, tmp_path):
     class Reader:
         pages = [ErrorPage(), BlankPage()]
 
-    monkeypatch.setattr(ces, "PdfReader", lambda _path: Reader())
+    monkeypatch.setattr("pypdf.PdfReader", lambda _path: Reader())
     assert ces._pdf_extractor(pdf_path) is None
 
 
@@ -486,15 +492,17 @@ def test_docx_extractor_error_and_empty(monkeypatch, tmp_path):
     doc_path = tmp_path / "sample.docx"
     doc_path.write_bytes(b"bad")
 
-    monkeypatch.setattr(ces, "Document", lambda _path: (_ for _ in ()).throw(RuntimeError("bad docx")))
+    monkeypatch.setattr(
+        "docx.Document",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("bad docx")),
+    )
     assert ces._docx_extractor(doc_path) is None
 
-    monkeypatch.setattr(ces, "Document", lambda _path: SimpleNamespace(paragraphs=[]))
+    monkeypatch.setattr("docx.Document", lambda _path: SimpleNamespace(paragraphs=[]))
     assert ces._docx_extractor(doc_path) is None
 
     monkeypatch.setattr(
-        ces,
-        "Document",
+        "docx.Document",
         lambda _path: SimpleNamespace(
             paragraphs=[
                 SimpleNamespace(text="  "),
@@ -510,10 +518,13 @@ def test_pptx_extractor_error_empty_and_shape_text(monkeypatch, tmp_path):
     ppt_path = tmp_path / "sample.pptx"
     ppt_path.write_bytes(b"bad")
 
-    monkeypatch.setattr(ces, "Presentation", lambda _path: (_ for _ in ()).throw(RuntimeError("bad pptx")))
+    monkeypatch.setattr(
+        "pptx.Presentation",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("bad pptx")),
+    )
     assert ces._pptx_extractor(ppt_path) is None
 
-    monkeypatch.setattr(ces, "Presentation", lambda _path: SimpleNamespace(slides=[]))
+    monkeypatch.setattr("pptx.Presentation", lambda _path: SimpleNamespace(slides=[]))
     assert ces._pptx_extractor(ppt_path) is None
 
     shape_with_text = SimpleNamespace(text_frame=None, text=" Fallback text ")
@@ -536,8 +547,7 @@ def test_pptx_extractor_error_empty_and_shape_text(monkeypatch, tmp_path):
     )
     slide = SimpleNamespace(shapes=[empty_shape, shape_with_text, shape_with_frame])
     monkeypatch.setattr(
-        ces,
-        "Presentation",
+        "pptx.Presentation",
         lambda _path: SimpleNamespace(slides=[slide]),
     )
 

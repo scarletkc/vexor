@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import List, Protocol, Sequence
 
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 
 from .config import (
     DEFAULT_EMBED_CONCURRENCY,
@@ -17,9 +16,6 @@ from .config import (
     resolve_api_key,
     resolve_base_url,
 )
-from .providers.gemini import GeminiEmbeddingBackend
-from .providers.local import LocalEmbeddingBackend
-from .providers.openai import OpenAIEmbeddingBackend
 from .text import Messages
 
 
@@ -112,9 +108,9 @@ class VexorSearcher:
         file_labels = [self._prepare_text(path) for path in files]
         file_vectors = self._encode(file_labels)
         query_vector = self._encode([clean_query])[0]
-        similarities = cosine_similarity(
-            query_vector.reshape(1, -1), file_vectors
-        )[0]
+        # ``_encode`` L2-normalizes both sides, so the dot product is cosine
+        # similarity without importing the much larger scikit-learn runtime.
+        similarities = file_vectors @ query_vector
         scored = [
             SearchResult(path=path, score=float(score))
             for path, score in zip(files, similarities)
@@ -129,6 +125,8 @@ class VexorSearcher:
 
     def _create_backend(self) -> EmbeddingBackend:
         if self.provider == "gemini":
+            from .providers.gemini import GeminiEmbeddingBackend
+
             self._device = f"{self.model_name} via Gemini API"
             return GeminiEmbeddingBackend(
                 model_name=self.model_name,
@@ -138,6 +136,8 @@ class VexorSearcher:
                 api_key=self.api_key,
             )
         if self.provider == "local":
+            from .providers.local import LocalEmbeddingBackend
+
             self._device = f"{self.model_name} via local model"
             return LocalEmbeddingBackend(
                 model_name=self.model_name,
@@ -146,6 +146,8 @@ class VexorSearcher:
                 cuda=self.local_cuda,
             )
         if self.provider == "voyageai":
+            from .providers.openai import OpenAIEmbeddingBackend
+
             self._device = f"{self.model_name} via Voyage AI API"
             return OpenAIEmbeddingBackend(
                 model_name=self.model_name,
@@ -156,6 +158,8 @@ class VexorSearcher:
                 dimensions=self.embedding_dimensions,
             )
         if self.provider == "custom":
+            from .providers.openai import OpenAIEmbeddingBackend
+
             base_url = (self.base_url or "").strip()
             if not base_url:
                 raise RuntimeError(Messages.ERROR_CUSTOM_BASE_URL_REQUIRED)
@@ -171,6 +175,8 @@ class VexorSearcher:
                 dimensions=self.embedding_dimensions,
             )
         if self.provider == "openai":
+            from .providers.openai import OpenAIEmbeddingBackend
+
             self._device = f"{self.model_name} via OpenAI API"
             return OpenAIEmbeddingBackend(
                 model_name=self.model_name,

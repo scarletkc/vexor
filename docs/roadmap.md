@@ -36,12 +36,11 @@ never leaving the machine.
   which is O(N) filesystem work on every query today.
 - Replace SQLite vector blobs with `vectors.npy` + `metadata.json`
   (memmap) to reuse across searches.
-- Lazy imports to cut CLI cold start (~0.7s measured) toward ~0.3s;
-  agents may invoke the CLI dozens of times per session so startup
-  latency multiplies.
+- Extend the MCP lazy-start path to other CLI commands; agents may invoke
+  the CLI dozens of times per session so startup latency multiplies.
 - Dependency slimming: move document extractors (`pypdf`, `python-docx`,
-  `python-pptx`) behind a `vexor[docs]` extra; replace the `scikit-learn`
-  dependency with direct NumPy ops if cosine similarity is the only use.
+  `python-pptx`) behind a `vexor[docs]` extra. They are already imported
+  lazily, and cosine similarity now uses direct NumPy operations.
 - Apple Silicon support for local embeddings (issue #7): CoreML/MPS
   execution provider for onnxruntime, or documented guidance.
 - API performance improvements.

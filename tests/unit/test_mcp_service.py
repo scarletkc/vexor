@@ -112,6 +112,16 @@ def test_ping_returns_empty_result(tmp_path):
     assert response == {"jsonrpc": "2.0", "id": 7, "result": {}}
 
 
+def test_protocol_requests_do_not_construct_default_client(tmp_path):
+    server = VexorMcpServer(default_path=tmp_path)
+
+    server.handle_message(request("initialize"))
+    server.handle_message(request("ping"))
+    server.handle_message(request("tools/list"))
+
+    assert server._client is None
+
+
 def test_notifications_produce_no_response(tmp_path):
     server, _ = make_server(tmp_path)
     message = {"jsonrpc": "2.0", "method": "notifications/initialized"}

@@ -278,14 +278,19 @@ class VexorMcpServer:
         default_path: Path | str | None = None,
         client: Any | None = None,
     ) -> None:
-        if client is None:
-            from ..api import VexorClient
-
-            client = VexorClient()
         self._client = client
         self.default_path = Path(default_path or Path.cwd()).resolve()
         self.protocol_version = LATEST_PROTOCOL_VERSION
         self.initialized = False
+
+    def _get_client(self) -> Any:
+        """Create the API client only when a tool is first invoked."""
+
+        if self._client is None:
+            from ..api import VexorClient
+
+            self._client = VexorClient()
+        return self._client
 
     # -- JSON-RPC plumbing -------------------------------------------------
 
@@ -442,7 +447,7 @@ class VexorMcpServer:
         scan = self._resolve_scan_arguments(arguments)
         try:
             directory = resolve_directory(scan["path"])
-            response = self._client.search(
+            response = self._get_client().search(
                 query.strip(),
                 path=directory,
                 top=top,
@@ -482,7 +487,7 @@ class VexorMcpServer:
         scan = self._resolve_scan_arguments(arguments)
         try:
             directory = resolve_directory(scan["path"])
-            result = self._client.index(
+            result = self._get_client().index(
                 directory,
                 mode=scan["mode"],
                 include_hidden=scan["include_hidden"],
