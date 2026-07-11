@@ -116,6 +116,8 @@ Skill source: [`plugins/vexor/skills/vexor-cli`](https://github.com/scarletkc/ve
 
 ## MCP Server
 
+<!-- mcp-name: io.github.scarletkc/vexor -->
+
 Vexor ships a built-in [MCP](https://modelcontextprotocol.io) stdio server, so any MCP-capable agent (Claude Code, Codex, Cursor, Windsurf, Zed, ...) can use semantic file search as a native tool:
 
 ```bash
