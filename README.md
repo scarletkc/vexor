@@ -317,7 +317,7 @@ See [docs](https://github.com/scarletkc/vexor/tree/main/docs) for more details.
 
 ## Contributing
 
-Contributions, issues, and PRs welcome! Star if you find it helpful.
+Contributions, issues, and PRs welcome! Commit messages and PR titles follow [Conventional Commits](https://www.conventionalcommits.org) (e.g. `feat(mcp): add stdio server`). Star if you find it helpful.
 
 ## Star History
 
