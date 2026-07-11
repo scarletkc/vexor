@@ -553,3 +553,99 @@ def test_api_key_resolution_voyage_and_empty_remote_key(monkeypatch):
 
     monkeypatch.delenv(config_module.REMOTE_RERANK_ENV, raising=False)
     assert config_module.resolve_remote_rerank_api_key(None) is None
+
+
+def test_load_config_env_json_without_file(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+    monkeypatch.setenv(
+        config_module.ENV_CONFIG_JSON,
+        json.dumps(
+            {
+                "provider": "gemini",
+                "model": "gemini-embedding-001",
+                "rerank": "bm25",
+                "embedding_dimensions": 1024,
+            }
+        ),
+    )
+
+    cfg = config_module.load_config()
+
+    assert cfg.provider == "gemini"
+    assert cfg.model == "gemini-embedding-001"
+    assert cfg.rerank == "bm25"
+    assert cfg.embedding_dimensions == 1024
+
+
+def test_load_config_env_json_merges_over_file(tmp_path, monkeypatch):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(
+        json.dumps({"provider": "openai", "batch_size": 32}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        config_module.ENV_CONFIG_JSON,
+        json.dumps({"provider": "voyageai", "model": "voyage-3"}),
+    )
+
+    cfg = config_module.load_config()
+
+    assert cfg.provider == "voyageai"
+    assert cfg.model == "voyage-3"
+    # Fields absent from the env payload keep their file values.
+    assert cfg.batch_size == 32
+
+
+def test_load_config_env_json_invalid_raises(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+    monkeypatch.setenv(config_module.ENV_CONFIG_JSON, "not json")
+
+    with pytest.raises(ValueError, match="VEXOR_CONFIG_JSON"):
+        config_module.load_config()
+
+
+def test_load_config_env_json_rejects_api_key(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+    monkeypatch.setenv(
+        config_module.ENV_CONFIG_JSON, json.dumps({"api_key": "sk-leak"})
+    )
+
+    with pytest.raises(ValueError, match="VEXOR_API_KEY"):
+        config_module.load_config()
+
+
+def test_load_config_env_json_rejects_remote_rerank_api_key(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+    monkeypatch.setenv(
+        config_module.ENV_CONFIG_JSON,
+        json.dumps(
+            {"remote_rerank": {"base_url": "https://r.example.com", "api_key": "sk-leak"}}
+        ),
+    )
+
+    with pytest.raises(ValueError, match="VEXOR_REMOTE_RERANK_API_KEY"):
+        config_module.load_config()
+
+
+def test_load_config_env_json_allows_non_secret_remote_rerank(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+    monkeypatch.setenv(
+        config_module.ENV_CONFIG_JSON,
+        json.dumps(
+            {
+                "rerank": "remote",
+                "remote_rerank": {
+                    "base_url": "https://r.example.com/v1/rerank",
+                    "model": "bge-reranker-v2-m3",
+                },
+            }
+        ),
+    )
+
+    cfg = config_module.load_config()
+
+    assert cfg.rerank == "remote"
+    assert cfg.remote_rerank is not None
+    assert cfg.remote_rerank.model == "bge-reranker-v2-m3"
+    assert cfg.remote_rerank.api_key is None

@@ -45,6 +45,7 @@ DIMENSION_SUPPORTED_MODELS: dict[str, tuple[int, ...]] = {
     "voyage-code-3": (256, 512, 1024, 2048),
 }
 ENV_API_KEY = "VEXOR_API_KEY"
+ENV_CONFIG_JSON = "VEXOR_CONFIG_JSON"
 REMOTE_RERANK_ENV = "VEXOR_REMOTE_RERANK_API_KEY"
 LEGACY_GEMINI_ENV = "GOOGLE_GENAI_API_KEY"
 OPENAI_ENV = "OPENAI_API_KEY"
@@ -120,15 +121,49 @@ def config_dir_context(path: Path | str | None):
         _CONFIG_DIR_OVERRIDE.reset(token)
 
 
+def _apply_env_overrides(config: Config) -> Config:
+    """Merge the VEXOR_CONFIG_JSON environment override over *config*.
+
+    Lets MCP client configs (and CI) inject any non-secret config field via
+    a single environment variable without touching ~/.vexor/config.json.
+    Credentials are rejected so they stay on their dedicated variables
+    (VEXOR_API_KEY, VEXOR_REMOTE_RERANK_API_KEY), which clients treat as
+    secrets.
+    """
+    payload = (os.getenv(ENV_CONFIG_JSON) or "").strip()
+    if not payload:
+        return config
+    try:
+        data = _coerce_config_payload(payload)
+        if "api_key" in data:
+            raise ValueError(
+                Messages.ERROR_ENV_CONFIG_JSON_SECRET.format(
+                    field="api_key", env=ENV_API_KEY
+                )
+            )
+        remote_rerank = data.get("remote_rerank")
+        if isinstance(remote_rerank, Mapping) and "api_key" in remote_rerank:
+            raise ValueError(
+                Messages.ERROR_ENV_CONFIG_JSON_SECRET.format(
+                    field="remote_rerank.api_key", env=REMOTE_RERANK_ENV
+                )
+            )
+        return config_from_json(data, base=config)
+    except ValueError as exc:
+        raise ValueError(
+            Messages.ERROR_ENV_CONFIG_JSON_INVALID.format(reason=exc)
+        ) from exc
+
+
 def load_config() -> Config:
     config_file = _resolve_config_file()
     if not config_file.exists():
-        return Config()
+        return _apply_env_overrides(Config())
     raw = json.loads(config_file.read_text(encoding="utf-8"))
     rerank = (raw.get("rerank") or DEFAULT_RERANK).strip().lower()
     if rerank not in SUPPORTED_RERANKERS:
         rerank = DEFAULT_RERANK
-    return Config(
+    return _apply_env_overrides(Config(
         api_key=raw.get("api_key") or None,
         model=raw.get("model") or DEFAULT_MODEL,
         batch_size=int(raw.get("batch_size", DEFAULT_BATCH_SIZE)),
@@ -145,7 +180,7 @@ def load_config() -> Config:
         flashrank_model=raw.get("flashrank_model") or None,
         remote_rerank=_parse_remote_rerank(raw.get("remote_rerank")),
         embedding_dimensions=_coerce_optional_int(raw.get("embedding_dimensions")),
-    )
+    ))
 
 
 def save_config(config: Config) -> None:

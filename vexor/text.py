@@ -60,9 +60,10 @@ class Messages:
         "Vexor provides semantic (natural-language) search over files. "
         "Use vexor_search when you know what a file or piece of code does "
         "but not where it lives; describe the content in plain words instead "
-        "of guessing keywords. The first search in a directory builds an "
-        "index automatically; later searches reuse it. Use vexor_index to "
-        "warm or refresh the index explicitly. Requires a configured "
+        "of guessing keywords. When auto_index is enabled in the Vexor "
+        "config (the default), the first search in a directory builds the "
+        "index automatically and later searches reuse it; otherwise call "
+        "vexor_index first. Requires a configured "
         "embedding provider: if tool calls report a missing API key, ask the "
         "user to run `vexor init` (guided setup), set an API key environment "
         "variable such as VEXOR_API_KEY, or install an offline local model "
@@ -73,6 +74,49 @@ class Messages:
     MCP_UNKNOWN_TOOL = "Unknown tool: {name}"
     MCP_INVALID_ARGUMENTS = "Invalid tool arguments: {reason}"
     MCP_TOOL_FAILED = "{tool} failed: {reason}"
+    MCP_TOOL_SEARCH_DESCRIPTION = (
+        "Semantic file search: find files by describing what they do or "
+        "contain, without knowing names or paths. Scans recursively and "
+        "respects .gitignore by default. When auto_index is enabled in the "
+        "Vexor config (the default), a missing or stale index is built "
+        "automatically; otherwise call vexor_index first. Returns ranked "
+        "matches with relative and absolute paths, relevance scores, line "
+        "ranges, and text previews."
+    )
+    MCP_TOOL_INDEX_DESCRIPTION = (
+        "Build or refresh the Vexor semantic index for a directory. Scans "
+        "recursively and respects .gitignore by default. Optional warm-up: "
+        "vexor_search indexes automatically when auto_index is enabled in "
+        "the Vexor config."
+    )
+    MCP_ARG_QUERY = (
+        "Natural-language description of the file or code you are looking "
+        "for, e.g. 'where API retries are configured'."
+    )
+    MCP_ARG_TOP = "Number of results to return."
+    MCP_ARG_PATH = (
+        "Directory to operate on. Absolute, or relative to the server's "
+        "default path ({path})."
+    )
+    MCP_ARG_MODE = (
+        "Index granularity: auto routes per file type; name embeds "
+        "filenames only; head/full/brief cover content depth; code chunks "
+        "by AST; outline chunks Markdown by headings."
+    )
+    MCP_ARG_INCLUDE_HIDDEN = (
+        "Include dot-prefixed files and directories such as .github or "
+        ".env (excluded by default)."
+    )
+    MCP_ARG_RESPECT_GITIGNORE = (
+        "Honor .gitignore rules (default). Set false to also scan ignored "
+        "files such as build output."
+    )
+    MCP_ARG_RECURSIVE = (
+        "Recurse into subdirectories (default). Set false to scan only the "
+        "top level of the directory."
+    )
+    MCP_ARG_EXTENSIONS = "Only include these file extensions, e.g. ['.py', '.md']."
+    MCP_ARG_EXCLUDE_PATTERNS = "Gitignore-style patterns to exclude."
     HELP_STAR = "Star the Vexor repository on GitHub (or use `gh` if available)."
     HELP_ALIAS = "Print a shell alias that maps `vx` to `vexor` and optionally apply it."
     HELP_INIT = "Run the interactive first-run setup wizard."
@@ -350,6 +394,10 @@ class Messages:
     ERROR_CONFIG_EDITOR_FAILED = "Editor exited with status {code}."
     ERROR_CONFIG_EDITOR_LAUNCH = "Failed to launch editor: {reason}."
     ERROR_CONFIG_JSON_INVALID = "Config JSON must be an object."
+    ERROR_ENV_CONFIG_JSON_INVALID = "Invalid VEXOR_CONFIG_JSON: {reason}"
+    ERROR_ENV_CONFIG_JSON_SECRET = (
+        "must not contain '{field}'; use the {env} environment variable instead"
+    )
     ERROR_CONFIG_VALUE_INVALID = "Config JSON has invalid value for {field}."
     INFO_CONFIG_SUMMARY = (
         "API key set: {api}\n"
