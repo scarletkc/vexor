@@ -10,7 +10,7 @@
     {
       "name": "vexor",
       "source": "./plugins/vexor",
-      "description": "A vector-powered CLI for semantic search over files (Vexor skill bundle).",
+      "description": "A semantic search engine for files and code (Vexor skill bundle).",
       "category": "developer-tools",
       "tags": ["search", "indexing", "cli"],
       "strict": true

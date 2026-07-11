@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vexor"
-description = "A vector-powered CLI for semantic search over files."
+description = "A semantic search engine for files and code."
 readme = "README.md"
 authors = [{ name = "scarletkc" }]
 license = { text = "MIT" }

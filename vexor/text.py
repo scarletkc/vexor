@@ -12,7 +12,7 @@ class Styles:
 
 
 class Messages:
-    APP_HELP = "Vexor - A vector-powered CLI for semantic search over files."
+    APP_HELP = "Vexor - A semantic search engine for files and code."
     HELP_QUERY = "Text used to semantically match files."
     HELP_SEARCH_PATH = "Root directory whose search will be performed."
     HELP_SEARCH_TOP = "Number of results to display."
@@ -62,7 +62,11 @@ class Messages:
         "but not where it lives; describe the content in plain words instead "
         "of guessing keywords. The first search in a directory builds an "
         "index automatically; later searches reuse it. Use vexor_index to "
-        "warm or refresh the index explicitly."
+        "warm or refresh the index explicitly. Requires a configured "
+        "embedding provider: if tool calls report a missing API key, ask the "
+        "user to run `vexor init` (guided setup), set an API key environment "
+        "variable such as VEXOR_API_KEY, or install an offline local model "
+        "with `vexor local --setup`."
     )
     MCP_PARSE_ERROR = "Invalid JSON was received."
     MCP_METHOD_NOT_FOUND = "Method not found: {method}"
@@ -119,7 +123,12 @@ class Messages:
 
     ERROR_API_KEY_MISSING = (
         "API key is missing or still set to the placeholder. "
-        "Configure it via `vexor config --set-api-key <token>` or an environment variable."
+        "Run `vexor init` for guided setup, use "
+        "`vexor config --set-api-key <token>`, or set VEXOR_API_KEY "
+        "(works for any provider) or the variable matching the configured "
+        "provider (OPENAI_API_KEY for openai, the default; "
+        "GOOGLE_GENAI_API_KEY for gemini; VOYAGE_API_KEY for voyageai). "
+        "For fully offline use, run `vexor local --setup`."
     )
     ERROR_API_KEY_INVALID = "API key appears invalid. Verify the stored token and try again."
     ERROR_GENAI_PREFIX = "Gemini API request failed: "

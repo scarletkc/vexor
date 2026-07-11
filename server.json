@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.scarletkc/vexor",
+  "title": "Vexor",
+  "description": "A semantic search engine for files and code.",
+  "repository": {
+    "url": "https://github.com/scarletkc/vexor",
+    "source": "github"
+  },
+  "version": "0.24.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "vexor",
+      "version": "0.24.1",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "description": "Run the MCP stdio server"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "VEXOR_API_KEY",
+          "description": "Embedding provider API key (optional; providers can also be configured via `vexor init`)",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
