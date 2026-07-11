@@ -59,6 +59,15 @@ never leaving the machine.
 - Support `.vexorignore` for per-project ignore rules.
 - Project-level local cache (per-folder cache root override).
 - Additional embedding providers (Azure).
+- Evaluate an optional LLM reranker that reads a bounded set of retrieved
+  candidates and judges their relevance to the query. Keep dense/BM25
+  retrieval as the recall layer rather than treating a general-purpose LLM
+  as the search engine; define token, latency, privacy, provider, and offline
+  behavior before implementation, and benchmark it against existing BM25,
+  FlashRank, and remote rerank paths.
+  - Separately evaluate LLM-assisted query expansion, HyDE, and multi-step
+    retrieval only if the reranker benchmark shows enough quality gain to
+    justify the additional cost and complexity.
 - OCR-backed head-mode snippets for images.
   - Preferred approach: integrate `rapidocr-onnxruntime` as the local OCR
     backend (pure Python + ONNX Runtime, good privacy story) with lazy
