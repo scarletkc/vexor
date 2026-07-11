@@ -118,6 +118,8 @@ Skill source: [`plugins/vexor/skills/vexor-cli`](https://github.com/scarletkc/ve
 
 <!-- mcp-name: io.github.scarletkc/vexor -->
 
+[![vexor MCP server](https://glama.ai/mcp/servers/scarletkc/vexor/badges/score.svg)](https://glama.ai/mcp/servers/scarletkc/vexor)
+
 > [!NOTE]
 > The Agent Skill and the MCP server provide the same core capability — pick **one** per agent.
 > The skill teaches shell-capable agents (Claude Code, Codex) to drive the full CLI and assumes `vexor` is installed on PATH; the MCP server exposes search as native tools, works in any MCP client (Cursor, Windsurf, Zed, ...), and can bootstrap without prior setup via `uvx` and environment variables.
