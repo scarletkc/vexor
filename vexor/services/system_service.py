@@ -25,6 +25,7 @@ from ..config import (
     RemoteRerankConfig,
     normalize_remote_rerank_url,
     resolve_remote_rerank_api_key,
+    update_check_file,
 )
 from ..text import Messages
 
@@ -537,6 +538,57 @@ def fetch_latest_pypi_version(
 ) -> str:
     versions = fetch_pypi_versions(package, timeout=timeout)
     return select_latest_version(versions, include_prerelease=include_prerelease)
+
+
+UPDATE_CHECK_TTL_SECONDS = 24 * 60 * 60
+
+
+def is_version_newer(candidate: str, current: str) -> bool:
+    """Return True when *candidate* is a newer release than *current*."""
+    candidate_parsed = parse_version(candidate)
+    current_parsed = parse_version(current)
+    if candidate_parsed and current_parsed:
+        return candidate_parsed > current_parsed
+    return version_tuple(candidate) > version_tuple(current)
+
+
+def check_for_update(
+    current_version: str,
+    *,
+    package: str = "vexor",
+    ttl_seconds: int = UPDATE_CHECK_TTL_SECONDS,
+    state_file: Path | None = None,
+    timeout: float = 5.0,
+) -> str | None:
+    """Return the newer available version, or None. Never raises.
+
+    The PyPI result is cached in *state_file* for *ttl_seconds* so
+    frequently spawned processes (such as the MCP server) do not hit the
+    network on every start.
+    """
+    import time
+
+    try:
+        if state_file is None:
+            state_file = update_check_file()
+        now = time.time()
+        latest = ""
+        try:
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            if now - float(state.get("checked_at", 0)) < ttl_seconds:
+                latest = str(state.get("latest") or "")
+        except (OSError, ValueError):
+            latest = ""
+        if not latest:
+            latest = fetch_latest_pypi_version(package, timeout=timeout)
+            state_file.parent.mkdir(parents=True, exist_ok=True)
+            state_file.write_text(
+                json.dumps({"checked_at": now, "latest": latest}),
+                encoding="utf-8",
+            )
+        return latest if is_version_newer(latest, current_version) else None
+    except Exception:
+        return None
 
 
 class InstallMethod(str, Enum):

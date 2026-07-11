@@ -56,6 +56,11 @@ class Messages:
     )
     HELP_MCP_PATH = "Default directory used when MCP tool calls omit a path."
     MCP_SERVER_READY = "Vexor MCP server ready (stdio). Default path: {path}"
+    MCP_UPDATE_AVAILABLE = (
+        "A newer Vexor version is available: {latest} (current: {current}). "
+        "Run `vexor update --upgrade` to upgrade, or use `uvx vexor@latest` "
+        "if you run Vexor via uvx."
+    )
     MCP_SERVER_INSTRUCTIONS = (
         "Vexor provides semantic (natural-language) search over files. "
         "Use vexor_search when you know what a file or piece of code does "

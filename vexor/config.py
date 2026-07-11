@@ -250,6 +250,11 @@ def flashrank_cache_dir(*, create: bool = True) -> Path:
     return cache_dir
 
 
+def update_check_file() -> Path:
+    """Path of the cached update-check state."""
+    return _resolve_config_dir() / "update_check.json"
+
+
 def set_config_dir(path: Path | str | None) -> None:
     global CONFIG_DIR, CONFIG_FILE
     if path is None:

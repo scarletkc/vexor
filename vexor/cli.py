@@ -64,11 +64,10 @@ from .services.system_service import (
     find_command_on_path,
     git_worktree_is_dirty,
     InstallMethod,
-    parse_version,
+    is_version_newer,
     resolve_editor_command,
     run_upgrade_commands,
     run_all_doctor_checks,
-    version_tuple,
 )
 from .services.skill_service import (
     DEFAULT_SKILL_NAME,
@@ -1618,13 +1617,7 @@ def update(
         )
         raise typer.Exit(code=1)
 
-    latest_parsed = parse_version(latest)
-    current_parsed = parse_version(__version__)
-    is_newer = False
-    if latest_parsed and current_parsed:
-        is_newer = latest_parsed > current_parsed
-    elif version_tuple(latest) > version_tuple(__version__):
-        is_newer = True
+    is_newer = is_version_newer(latest, __version__)
 
     if is_newer:
         console.print(

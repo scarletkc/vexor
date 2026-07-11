@@ -382,3 +382,60 @@ def test_search_result_paths_outside_base_stay_absolute(tmp_path):
     assert payload["results"][0]["path"] == str(
         Path(tmp_path.anchor) / "elsewhere" / "file.py"
     )
+
+
+def test_emit_update_notice_writes_when_newer(monkeypatch, tmp_path):
+    import vexor.services.mcp_service as mcp_service
+    import vexor.services.system_service as system_service
+
+    monkeypatch.delenv(mcp_service.ENV_NO_UPDATE_CHECK, raising=False)
+    monkeypatch.setattr(
+        system_service, "check_for_update", lambda current, **kw: "99.0.0"
+    )
+    stream = io.StringIO()
+    mcp_service.emit_update_notice(stream)
+    assert "99.0.0" in stream.getvalue()
+    assert "vexor update --upgrade" in stream.getvalue()
+
+
+def test_emit_update_notice_silent_when_current(monkeypatch):
+    import vexor.services.mcp_service as mcp_service
+    import vexor.services.system_service as system_service
+
+    monkeypatch.delenv(mcp_service.ENV_NO_UPDATE_CHECK, raising=False)
+    monkeypatch.setattr(
+        system_service, "check_for_update", lambda current, **kw: None
+    )
+    stream = io.StringIO()
+    mcp_service.emit_update_notice(stream)
+    assert stream.getvalue() == ""
+
+
+def test_emit_update_notice_disabled_by_env(monkeypatch):
+    import vexor.services.mcp_service as mcp_service
+    import vexor.services.system_service as system_service
+
+    monkeypatch.setenv(mcp_service.ENV_NO_UPDATE_CHECK, "1")
+
+    def _explode(current, **kw):
+        raise AssertionError("update check must not run when disabled")
+
+    monkeypatch.setattr(system_service, "check_for_update", _explode)
+    stream = io.StringIO()
+    mcp_service.emit_update_notice(stream)
+    assert stream.getvalue() == ""
+
+
+def test_emit_update_notice_swallows_errors(monkeypatch):
+    import vexor.services.mcp_service as mcp_service
+    import vexor.services.system_service as system_service
+
+    monkeypatch.delenv(mcp_service.ENV_NO_UPDATE_CHECK, raising=False)
+
+    def _boom(current, **kw):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(system_service, "check_for_update", _boom)
+    stream = io.StringIO()
+    mcp_service.emit_update_notice(stream)
+    assert stream.getvalue() == ""

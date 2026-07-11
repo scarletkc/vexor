@@ -10,14 +10,18 @@ that a tools-only stdio server does not need.
 from __future__ import annotations
 
 import json
+import os
 import sys
+import threading
 from pathlib import Path
-from typing import Any, IO, Iterable, Mapping, Sequence
+from typing import Any, IO, Iterable, Mapping, Sequence, TextIO
 
 from .. import __version__
 from ..modes import available_modes
 from ..text import Messages
 from ..utils import format_path, resolve_directory
+
+ENV_NO_UPDATE_CHECK = "VEXOR_NO_UPDATE_CHECK"
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 LATEST_PROTOCOL_VERSION = PROTOCOL_VERSIONS[0]
@@ -557,6 +561,41 @@ def serve(server: VexorMcpServer, stdin: Iterable[Any], stdout: IO[Any]) -> None
             _write_line(stdout, json.dumps(response, ensure_ascii=False))
 
 
+def emit_update_notice(stream: TextIO) -> None:
+    """Write a one-line stderr notice when a newer release exists.
+
+    Best-effort: the check is TTL-cached, uses a short network timeout, and
+    stays silent on any failure. Never writes to stdout, which is reserved
+    for the protocol.
+    """
+    if os.getenv(ENV_NO_UPDATE_CHECK):
+        return
+    try:
+        from .system_service import check_for_update
+
+        latest = check_for_update(__version__)
+        if latest:
+            print(
+                Messages.MCP_UPDATE_AVAILABLE.format(
+                    latest=latest, current=__version__
+                ),
+                file=stream,
+                flush=True,
+            )
+    except Exception:
+        pass
+
+
+def _start_update_notice_thread() -> None:
+    thread = threading.Thread(
+        target=emit_update_notice,
+        args=(sys.stderr,),
+        name="vexor-mcp-update-check",
+        daemon=True,
+    )
+    thread.start()
+
+
 def serve_stdio(default_path: Path | str | None = None) -> None:
     """Serve MCP over the process's real stdin/stdout."""
     server = VexorMcpServer(default_path=default_path)
@@ -567,4 +606,5 @@ def serve_stdio(default_path: Path | str | None = None) -> None:
         file=sys.stderr,
         flush=True,
     )
+    _start_update_notice_thread()
     serve(server, stdin, stdout)

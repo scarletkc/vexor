@@ -48,6 +48,24 @@ codex mcp add vexor -- vexor mcp
 If `vexor` is not on the client's PATH, use an absolute command path, or
 `python` with `"args": ["-m", "vexor", "mcp"]`.
 
+### Running via uvx (no install)
+
+MCP clients can also launch Vexor without installing it, using
+`"command": "uvx", "args": ["vexor", "mcp"]`. Notes for this mode:
+
+- Configuration, index caches, and downloaded models live under `~/.vexor`,
+  so they persist across uvx's ephemeral environments. CLI commands from
+  error messages work with a prefix: `uvx vexor init`, `uvx vexor config --show`.
+- uvx caches the resolved environment and does **not** auto-upgrade; use
+  `uvx vexor@latest mcp` to always run the newest release, or refresh
+  explicitly with `uvx --refresh vexor`. `vexor update --upgrade` applies
+  to PATH installs, not uvx environments.
+- Local (offline) models need the `local` extra, which the default
+  environment does not include — launch with
+  `"command": "uvx", "args": ["--from", "vexor[local]", "vexor", "mcp"]`
+  and set up the model once via
+  `uvx --from "vexor[local]" vexor local --setup`.
+
 ### Provider and API key via client config
 
 Instead of running `vexor init`, Vexor can be configured entirely from the
@@ -164,3 +182,7 @@ auto-indexes when `auto_index` is enabled). Accepts the same arguments as
   unknown mode) are rejected as JSON-RPC `-32602` errors.
 - The server writes exactly one startup line to stderr and never writes
   non-protocol output to stdout.
+- On startup a background thread checks PyPI for a newer release (cached
+  for 24 hours in `~/.vexor/update_check.json`, 5-second timeout, silent on
+  failure) and prints a one-line notice to stderr when an update exists.
+  Set `VEXOR_NO_UPDATE_CHECK=1` to disable the check entirely.
