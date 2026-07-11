@@ -116,27 +116,38 @@ Skill source: [`plugins/vexor/skills/vexor-cli`](https://github.com/scarletkc/ve
 
 ## MCP Server
 
-Vexor ships a built-in [MCP](https://modelcontextprotocol.io) stdio server, so any MCP-capable agent (Claude Code, Codex, Cursor, Windsurf, Zed, ...) can use semantic file search as a native tool:
+<!-- mcp-name: io.github.scarletkc/vexor -->
+
+> [!NOTE]
+> The Agent Skill and the MCP server provide the same core capability — pick **one** per agent.
+> The skill teaches shell-capable agents (Claude Code, Codex) to drive the full CLI and assumes `vexor` is installed on PATH; the MCP server exposes search as native tools, works in any MCP client (Cursor, Windsurf, Zed, ...), and can bootstrap without prior setup via `uvx` and environment variables.
+
+Vexor ships a built-in [MCP](https://modelcontextprotocol.io) stdio server, so any MCP-capable agent can use semantic file search as a native tool:
 
 ```bash
 claude mcp add vexor -- vexor mcp   # Claude Code
 codex mcp add vexor -- vexor mcp    # Codex
 ```
 
-Or configure manually in any MCP client:
+Or configure manually in any MCP client, optionally supplying the API key
+and any config overrides via `env` (no `vexor init` needed):
 
 ```json
 {
   "mcpServers": {
     "vexor": {
       "command": "vexor",
-      "args": ["mcp"]
+      "args": ["mcp"],
+      "env": {
+        "VEXOR_API_KEY": "sk-...",
+        "VEXOR_CONFIG_JSON": "{\"provider\": \"gemini\", \"rerank\": \"bm25\"}"
+      }
     }
   }
 }
 ```
 
-The server exposes two tools: `vexor_search` (semantic file search; auto-indexes on first use) and `vexor_index` (explicit index warm-up). No extra dependencies are required. See [`docs/mcp.md`](https://github.com/scarletkc/vexor/tree/main/docs/mcp.md) for tool schemas and client setup details.
+The server exposes two tools: `vexor_search` (semantic file search) and `vexor_index` (explicit index warm-up). No extra dependencies are required. See [`docs/mcp.md`](https://github.com/scarletkc/vexor/tree/main/docs/mcp.md) for tool schemas, environment variables, and client setup details.
 
 ## Configuration
 
@@ -151,6 +162,7 @@ vexor config --set-extract-backend auto      # auto|thread|process (default: aut
 vexor config --set-embedding-dimensions 1024 # optional, model/provider dependent
 vexor config --clear-embedding-dimensions    # reset to model default dimension
 vexor config --set-auto-index true          # auto-index before search (default)
+vexor config --set-update-check false       # disable the daily update notice (default: on)
 vexor config --rerank bm25                  # optional BM25 rerank for top-k results
 vexor config --rerank flashrank             # FlashRank rerank (requires optional extra)
 vexor config --rerank remote                # remote rerank via HTTP endpoint
@@ -175,7 +187,8 @@ Config stored in `~/.vexor/config.json`.
 ```bash
 vexor config --set-api-key "YOUR_KEY"
 ```
-Or via environment: `VEXOR_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENAI_API_KEY`, or `VOYAGE_API_KEY`.
+Or via environment: `VEXOR_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENAI_API_KEY`, or `VOYAGE_API_KEY`; `VEXOR_API_KEY` takes precedence over a stored key.
+Any config field can also be injected as a JSON object via `VEXOR_CONFIG_JSON` (useful for MCP client configs and CI), merged over `~/.vexor/config.json`.
 
 ### Rerank
 

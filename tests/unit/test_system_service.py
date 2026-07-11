@@ -576,3 +576,103 @@ def test_git_worktree_dirty_handles_success_clean_and_errors(monkeypatch, tmp_pa
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("git missing")),
     )
     assert system_service.git_worktree_is_dirty(tmp_path) is False
+
+
+def test_check_for_update_returns_newer_and_caches(tmp_path, monkeypatch):
+    from vexor.services import system_service
+
+    calls = []
+
+    def fake_fetch(package, *, timeout=5.0, **kw):
+        calls.append(package)
+        return "9.9.9"
+
+    monkeypatch.setattr(system_service, "fetch_latest_pypi_version", fake_fetch)
+    state_file = tmp_path / "update_check.json"
+
+    latest = system_service.check_for_update("0.1.0", state_file=state_file)
+    assert latest == "9.9.9"
+    assert state_file.exists()
+
+    # Second call within the TTL is served from the cache.
+    latest = system_service.check_for_update("0.1.0", state_file=state_file)
+    assert latest == "9.9.9"
+    assert len(calls) == 1
+
+
+def test_check_for_update_returns_none_when_current(tmp_path, monkeypatch):
+    from vexor.services import system_service
+
+    monkeypatch.setattr(
+        system_service, "fetch_latest_pypi_version", lambda *a, **kw: "0.1.0"
+    )
+    state_file = tmp_path / "update_check.json"
+    assert system_service.check_for_update("0.1.0", state_file=state_file) is None
+    assert system_service.check_for_update("9.9.9", state_file=state_file) is None
+
+
+def test_check_for_update_expired_ttl_refetches(tmp_path, monkeypatch):
+    import json as json_module
+
+    from vexor.services import system_service
+
+    state_file = tmp_path / "update_check.json"
+    state_file.write_text(
+        json_module.dumps({"checked_at": 0, "latest": "0.0.1"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        system_service, "fetch_latest_pypi_version", lambda *a, **kw: "9.9.9"
+    )
+    latest = system_service.check_for_update(
+        "0.1.0", state_file=state_file, ttl_seconds=60
+    )
+    assert latest == "9.9.9"
+
+
+def test_check_for_update_never_raises(tmp_path, monkeypatch):
+    from vexor.services import system_service
+
+    def _boom(*a, **kw):
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr(system_service, "fetch_latest_pypi_version", _boom)
+    state_file = tmp_path / "update_check.json"
+    assert system_service.check_for_update("0.1.0", state_file=state_file) is None
+
+
+def test_check_for_update_cache_only_mode(tmp_path, monkeypatch):
+    from vexor.services import system_service
+
+    def _no_network(*a, **kw):
+        raise AssertionError("cache-only mode must not touch the network")
+
+    monkeypatch.setattr(system_service, "fetch_latest_pypi_version", _no_network)
+    state_file = tmp_path / "update_check.json"
+
+    # Empty cache: returns None without fetching.
+    assert (
+        system_service.check_for_update(
+            "0.1.0", state_file=state_file, allow_network=False
+        )
+        is None
+    )
+
+    system_service.write_update_cache("9.9.9", state_file=state_file)
+    assert (
+        system_service.check_for_update(
+            "0.1.0", state_file=state_file, allow_network=False
+        )
+        == "9.9.9"
+    )
+
+
+def test_update_check_enabled_env_and_config(monkeypatch):
+    from vexor.config import Config, ENV_NO_UPDATE_CHECK
+    from vexor.services import system_service
+
+    monkeypatch.delenv(ENV_NO_UPDATE_CHECK, raising=False)
+    assert system_service.update_check_enabled(Config()) is True
+    assert system_service.update_check_enabled(Config(update_check=False)) is False
+
+    monkeypatch.setenv(ENV_NO_UPDATE_CHECK, "1")
+    assert system_service.update_check_enabled(Config()) is False

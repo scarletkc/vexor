@@ -404,6 +404,83 @@ jobs:
           files: release/*
           body_path: release_notes.md
 
+  publish_mcp_registry:
+    name: Publish to MCP registry
+    needs:
+      - prepare_release
+      - publish_pypi
+    if: >-
+      needs.prepare_release.outputs.release_changed == 'true' &&
+      !contains(needs.prepare_release.outputs.version, 'a') &&
+      !contains(needs.prepare_release.outputs.version, 'b') &&
+      !contains(needs.prepare_release.outputs.version, 'rc')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Sync server.json version
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare_release.outputs.version }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          version = os.environ["VERSION"]
+          path = pathlib.Path("server.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          data["version"] = version
+          for package in data.get("packages", []):
+              package["version"] = version
+          path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+          print(f"server.json synced to {version}")
+          PY
+
+      - name: Wait for PyPI to serve the release
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare_release.outputs.version }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if curl -fsS "https://pypi.org/pypi/vexor/${VERSION}/json" > /dev/null; then
+              echo "PyPI serves vexor ${VERSION}."
+              exit 0
+            fi
+            echo "Waiting for PyPI (${attempt}/30)..."
+            sleep 10
+          done
+          echo "PyPI did not serve vexor ${VERSION} in time." >&2
+          exit 1
+
+      - name: Install mcp-publisher
+        shell: bash
+        env:
+          MCP_PUBLISHER_VERSION: v1.7.9
+          MCP_PUBLISHER_SHA256: ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
+        run: |
+          set -euo pipefail
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSL \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/${archive}" \
+            -o "${archive}"
+          echo "${MCP_PUBLISHER_SHA256}  ${archive}" | sha256sum --check --strict
+          tar xzf "${archive}" mcp-publisher
+
+      - name: Publish to MCP registry
+        shell: bash
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
   publish_pypi:
     name: Publish to PyPI
     needs: prepare_release

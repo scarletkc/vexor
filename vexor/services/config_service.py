@@ -16,6 +16,7 @@ from ..config import (
     set_extract_backend,
     set_auto_index,
     set_flashrank_model,
+    set_update_check,
     set_local_cuda,
     set_model,
     set_provider,
@@ -37,6 +38,7 @@ class ConfigUpdateResult:
     base_url_set: bool = False
     base_url_cleared: bool = False
     auto_index_set: bool = False
+    update_check_set: bool = False
     local_cuda_set: bool = False
     rerank_set: bool = False
     flashrank_model_set: bool = False
@@ -62,6 +64,7 @@ class ConfigUpdateResult:
                 self.base_url_set,
                 self.base_url_cleared,
                 self.auto_index_set,
+                self.update_check_set,
                 self.local_cuda_set,
                 self.rerank_set,
                 self.flashrank_model_set,
@@ -88,6 +91,7 @@ def apply_config_updates(
     base_url: str | None = None,
     clear_base_url: bool = False,
     auto_index: bool | None = None,
+    update_check: bool | None = None,
     local_cuda: bool | None = None,
     rerank: str | None = None,
     flashrank_model: str | None = None,
@@ -144,6 +148,9 @@ def apply_config_updates(
     if auto_index is not None:
         set_auto_index(auto_index)
         result.auto_index_set = True
+    if update_check is not None:
+        set_update_check(update_check)
+        result.update_check_set = True
     if local_cuda is not None:
         set_local_cuda(local_cuda)
         result.local_cuda_set = True

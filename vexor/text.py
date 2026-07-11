@@ -12,7 +12,7 @@ class Styles:
 
 
 class Messages:
-    APP_HELP = "Vexor - A vector-powered CLI for semantic search over files."
+    APP_HELP = "Vexor - A semantic search engine for files and code."
     HELP_QUERY = "Text used to semantically match files."
     HELP_SEARCH_PATH = "Root directory whose search will be performed."
     HELP_SEARCH_TOP = "Number of results to display."
@@ -56,19 +56,74 @@ class Messages:
     )
     HELP_MCP_PATH = "Default directory used when MCP tool calls omit a path."
     MCP_SERVER_READY = "Vexor MCP server ready (stdio). Default path: {path}"
+    MCP_UPDATE_AVAILABLE = (
+        "A newer Vexor version is available: {latest} (current: {current}). "
+        "Run `vexor update --upgrade` to upgrade, or use `uvx vexor@latest` "
+        "if you run Vexor via uvx."
+    )
     MCP_SERVER_INSTRUCTIONS = (
         "Vexor provides semantic (natural-language) search over files. "
         "Use vexor_search when you know what a file or piece of code does "
         "but not where it lives; describe the content in plain words instead "
-        "of guessing keywords. The first search in a directory builds an "
-        "index automatically; later searches reuse it. Use vexor_index to "
-        "warm or refresh the index explicitly."
+        "of guessing keywords. When auto_index is enabled in the Vexor "
+        "config (the default), the first search in a directory builds the "
+        "index automatically and later searches reuse it; otherwise call "
+        "vexor_index first. Requires a configured "
+        "embedding provider: if tool calls report a missing API key, ask the "
+        "user to run `vexor init` (guided setup), set an API key environment "
+        "variable such as VEXOR_API_KEY, or install an offline local model "
+        "with `vexor local --setup`."
     )
     MCP_PARSE_ERROR = "Invalid JSON was received."
     MCP_METHOD_NOT_FOUND = "Method not found: {method}"
     MCP_UNKNOWN_TOOL = "Unknown tool: {name}"
     MCP_INVALID_ARGUMENTS = "Invalid tool arguments: {reason}"
+    MCP_ARGUMENTS_UNKNOWN = "unknown argument(s): {names}"
+    MCP_TOOL_NAME_INVALID = "tool name must be a string"
     MCP_TOOL_FAILED = "{tool} failed: {reason}"
+    MCP_TOOL_SEARCH_DESCRIPTION = (
+        "Semantic file search: find files by describing what they do or "
+        "contain, without knowing names or paths. Scans recursively and "
+        "respects .gitignore by default. When auto_index is enabled in the "
+        "Vexor config (the default), a missing or stale index is built "
+        "automatically; otherwise call vexor_index first. Returns ranked "
+        "matches with relative and absolute paths, relevance scores, line "
+        "ranges, and text previews."
+    )
+    MCP_TOOL_INDEX_DESCRIPTION = (
+        "Build or refresh the Vexor semantic index for a directory. Scans "
+        "recursively and respects .gitignore by default. Optional warm-up: "
+        "vexor_search indexes automatically when auto_index is enabled in "
+        "the Vexor config."
+    )
+    MCP_ARG_QUERY = (
+        "Natural-language description of the file or code you are looking "
+        "for, e.g. 'where API retries are configured'."
+    )
+    MCP_ARG_TOP = "Number of results to return."
+    MCP_ARG_PATH = (
+        "Directory to operate on. Absolute, or relative to the server's "
+        "default path ({path})."
+    )
+    MCP_ARG_MODE = (
+        "Index granularity: auto routes per file type; name embeds "
+        "filenames only; head/full/brief cover content depth; code chunks "
+        "by AST; outline chunks Markdown by headings."
+    )
+    MCP_ARG_INCLUDE_HIDDEN = (
+        "Include dot-prefixed files and directories such as .github or "
+        ".env (excluded by default)."
+    )
+    MCP_ARG_RESPECT_GITIGNORE = (
+        "Honor .gitignore rules (default). Set false to also scan ignored "
+        "files such as build output."
+    )
+    MCP_ARG_RECURSIVE = (
+        "Recurse into subdirectories (default). Set false to scan only the "
+        "top level of the directory."
+    )
+    MCP_ARG_EXTENSIONS = "Only include these file extensions, e.g. ['.py', '.md']."
+    MCP_ARG_EXCLUDE_PATTERNS = "Gitignore-style patterns to exclude."
     HELP_STAR = "Star the Vexor repository on GitHub (or use `gh` if available)."
     HELP_ALIAS = "Print a shell alias that maps `vx` to `vexor` and optionally apply it."
     HELP_INIT = "Run the interactive first-run setup wizard."
@@ -86,6 +141,9 @@ class Messages:
     HELP_SET_BASE_URL = "Override the provider's base URL (leave unset for official endpoints)."
     HELP_CLEAR_BASE_URL = "Remove the custom base URL override."
     HELP_SET_AUTO_INDEX = "Enable/disable automatic indexing before search (default: enabled)."
+    HELP_SET_UPDATE_CHECK = (
+        "Enable/disable the daily background update check (default: enabled)."
+    )
     HELP_SET_RERANK = "Set the rerank strategy (off, bm25, flashrank, remote)."
     HELP_SET_FLASHRANK_MODEL = (
         "Set the FlashRank model name (omit or empty resets to default)."
@@ -119,7 +177,12 @@ class Messages:
 
     ERROR_API_KEY_MISSING = (
         "API key is missing or still set to the placeholder. "
-        "Configure it via `vexor config --set-api-key <token>` or an environment variable."
+        "Run `vexor init` for guided setup, use "
+        "`vexor config --set-api-key <token>`, or set VEXOR_API_KEY "
+        "(works for any provider) or the variable matching the configured "
+        "provider (OPENAI_API_KEY for openai, the default; "
+        "GOOGLE_GENAI_API_KEY for gemini; VOYAGE_API_KEY for voyageai). "
+        "For fully offline use, run `vexor local --setup`."
     )
     ERROR_API_KEY_INVALID = "API key appears invalid. Verify the stored token and try again."
     ERROR_GENAI_PREFIX = "Gemini API request failed: "
@@ -307,6 +370,11 @@ class Messages:
     INFO_BASE_URL_SET = "Base URL override set to {value}."
     INFO_BASE_URL_CLEARED = "Base URL override cleared."
     INFO_AUTO_INDEX_SET = "Auto index {value}."
+    INFO_UPDATE_CHECK_SET = "Update check {value}."
+    CLI_UPDATE_NOTICE = (
+        "Vexor {latest} is available (current: {current}). "
+        "Run `vexor update --upgrade` to upgrade."
+    )
     INFO_RERANK_SET = "Rerank strategy set to {value}."
     INFO_FLASHRANK_MODEL_SET = "FlashRank model set to {value}."
     INFO_FLASHRANK_MODEL_RESET = "FlashRank model reset to default ({value})."
@@ -341,6 +409,10 @@ class Messages:
     ERROR_CONFIG_EDITOR_FAILED = "Editor exited with status {code}."
     ERROR_CONFIG_EDITOR_LAUNCH = "Failed to launch editor: {reason}."
     ERROR_CONFIG_JSON_INVALID = "Config JSON must be an object."
+    ERROR_ENV_CONFIG_JSON_INVALID = "Invalid VEXOR_CONFIG_JSON: {reason}"
+    ERROR_ENV_CONFIG_JSON_SECRET = (
+        "must not contain '{field}'; use the {env} environment variable instead"
+    )
     ERROR_CONFIG_VALUE_INVALID = "Config JSON has invalid value for {field}."
     INFO_CONFIG_SUMMARY = (
         "API key set: {api}\n"
@@ -352,6 +424,7 @@ class Messages:
         "Extract concurrency: {extract_concurrency}\n"
         "Extract backend: {extract_backend}\n"
         "Auto index: {auto_index}\n"
+        "Update check: {update_check}\n"
         "Rerank: {rerank}\n"
         "{flashrank_line}"
         "{remote_rerank_line}"

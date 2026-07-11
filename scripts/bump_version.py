@@ -68,6 +68,7 @@ def _parse_args(argv: list[str]) -> tuple[str, bool]:
 def _run(*, version: str, update_gui: bool, repo_root: Path) -> int:
     package_init = repo_root / "vexor" / "__init__.py"
     plugin_manifest = repo_root / "plugins" / "vexor" / ".claude-plugin" / "plugin.json"
+    mcp_server_manifest = repo_root / "server.json"
 
     _set_python_version(package_init, version)
     _set_plugin_version(plugin_manifest, version)
@@ -75,6 +76,10 @@ def _run(*, version: str, update_gui: bool, repo_root: Path) -> int:
     print(f"Updated version to {version}")
     print(f"- {package_init}")
     print(f"- {plugin_manifest}")
+
+    if mcp_server_manifest.exists():
+        _set_mcp_server_version(mcp_server_manifest, version)
+        print(f"- {mcp_server_manifest}")
 
     if update_gui:
         gui_package_json = repo_root / "gui" / "package.json"
@@ -108,6 +113,14 @@ def _set_python_version(path: Path, version: str) -> None:
 def _set_plugin_version(path: Path, version: str) -> None:
     manifest = json.loads(path.read_text(encoding="utf-8"))
     manifest["version"] = version
+    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _set_mcp_server_version(path: Path, version: str) -> None:
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["version"] = version
+    for package in manifest.get("packages", []):
+        package["version"] = version
     path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 

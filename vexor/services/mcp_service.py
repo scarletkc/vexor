@@ -10,11 +10,14 @@ that a tools-only stdio server does not need.
 from __future__ import annotations
 
 import json
+
 import sys
+import threading
 from pathlib import Path
-from typing import Any, IO, Iterable, Mapping, Sequence
+from typing import Any, IO, Iterable, Mapping, Sequence, TextIO
 
 from .. import __version__
+from ..config import ENV_NO_UPDATE_CHECK
 from ..modes import available_modes
 from ..text import Messages
 from ..utils import format_path, resolve_directory
@@ -34,6 +37,22 @@ DEFAULT_TOP = 5
 SEARCH_TOOL = "vexor_search"
 INDEX_TOOL = "vexor_index"
 
+_COMMON_TOOL_ARGUMENTS = frozenset(
+    {
+        "path",
+        "mode",
+        "include_hidden",
+        "respect_gitignore",
+        "recursive",
+        "extensions",
+        "exclude_patterns",
+    }
+)
+_TOOL_ARGUMENTS = {
+    SEARCH_TOOL: _COMMON_TOOL_ARGUMENTS | {"query", "top"},
+    INDEX_TOOL: _COMMON_TOOL_ARGUMENTS,
+}
+
 
 class InvalidToolArguments(ValueError):
     """Raised when tool arguments fail structural validation."""
@@ -42,9 +61,11 @@ class InvalidToolArguments(ValueError):
 def _string_list(value: Any, field: str) -> tuple[str, ...]:
     if value is None:
         return ()
-    if isinstance(value, str):
-        return (value,)
-    if isinstance(value, Sequence) and all(isinstance(item, str) for item in value):
+    if (
+        not isinstance(value, str)
+        and isinstance(value, Sequence)
+        and all(isinstance(item, str) for item in value)
+    ):
         return tuple(value)
     raise InvalidToolArguments(
         Messages.MCP_INVALID_ARGUMENTS.format(
@@ -77,48 +98,110 @@ def _mode_argument(value: Any) -> str:
 def _top_argument(value: Any) -> int:
     if value is None:
         return DEFAULT_TOP
-    if isinstance(value, bool) or not isinstance(value, int):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 1 <= value <= MAX_TOP
+    ):
         raise InvalidToolArguments(
-            Messages.MCP_INVALID_ARGUMENTS.format(reason="'top' must be an integer")
+            Messages.MCP_INVALID_ARGUMENTS.format(
+                reason=f"'top' must be an integer between 1 and {MAX_TOP}"
+            )
         )
-    return max(1, min(value, MAX_TOP))
+    return value
+
+
+def _validate_tool_arguments(name: str, arguments: Mapping[str, Any]) -> None:
+    unknown = [field for field in arguments if field not in _TOOL_ARGUMENTS[name]]
+    unknown.sort(key=repr)
+    if unknown:
+        raise InvalidToolArguments(
+            Messages.MCP_INVALID_ARGUMENTS.format(
+                reason=Messages.MCP_ARGUMENTS_UNKNOWN.format(
+                    names=", ".join(repr(field) for field in unknown)
+                )
+            )
+        )
 
 
 def _common_scan_properties(default_path: Path) -> dict[str, Any]:
     return {
         "path": {
             "type": "string",
-            "description": (
-                "Directory to operate on (absolute path preferred). "
-                f"Defaults to {default_path}."
-            ),
+            "description": Messages.MCP_ARG_PATH.format(path=default_path),
         },
         "mode": {
             "type": "string",
             "enum": available_modes(),
             "default": "auto",
-            "description": (
-                "Index granularity: auto routes per file type; name embeds "
-                "filenames only; head/full/brief cover content depth; code "
-                "chunks by AST; outline chunks Markdown by headings."
-            ),
+            "description": Messages.MCP_ARG_MODE,
         },
         "include_hidden": {
             "type": "boolean",
             "default": False,
-            "description": "Include hidden files.",
+            "description": Messages.MCP_ARG_INCLUDE_HIDDEN,
+        },
+        "respect_gitignore": {
+            "type": "boolean",
+            "default": True,
+            "description": Messages.MCP_ARG_RESPECT_GITIGNORE,
+        },
+        "recursive": {
+            "type": "boolean",
+            "default": True,
+            "description": Messages.MCP_ARG_RECURSIVE,
         },
         "extensions": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Only include these file extensions, e.g. ['.py', '.md'].",
+            "description": Messages.MCP_ARG_EXTENSIONS,
         },
         "exclude_patterns": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Gitignore-style patterns to exclude.",
+            "description": Messages.MCP_ARG_EXCLUDE_PATTERNS,
         },
     }
+
+
+_RESULT_ITEM_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "rank": {"type": "integer"},
+        "score": {"type": "number"},
+        "path": {"type": "string"},
+        "absolute_path": {"type": "string"},
+        "start_line": {"type": ["integer", "null"]},
+        "end_line": {"type": ["integer", "null"]},
+        "preview": {"type": ["string", "null"]},
+    },
+    "required": ["rank", "score", "path", "absolute_path"],
+}
+
+SEARCH_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string"},
+        "path": {"type": "string"},
+        "backend": {"type": ["string", "null"]},
+        "reranker": {"type": ["string", "null"]},
+        "stale": {"type": "boolean"},
+        "index_empty": {"type": "boolean"},
+        "results": {"type": "array", "items": _RESULT_ITEM_SCHEMA},
+    },
+    "required": ["query", "path", "results"],
+}
+
+INDEX_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string"},
+        "mode": {"type": "string"},
+        "status": {"type": "string", "enum": ["stored", "up_to_date", "empty"]},
+        "files_indexed": {"type": "integer"},
+    },
+    "required": ["path", "mode", "status", "files_indexed"],
+}
 
 
 def build_tool_definitions(default_path: Path) -> list[dict[str, Any]]:
@@ -127,57 +210,56 @@ def build_tool_definitions(default_path: Path) -> list[dict[str, Any]]:
     search_properties: dict[str, Any] = {
         "query": {
             "type": "string",
-            "description": (
-                "Natural-language description of the file or code you are "
-                "looking for, e.g. 'where API retries are configured'."
-            ),
+            "minLength": 1,
+            "description": Messages.MCP_ARG_QUERY,
         },
         "top": {
             "type": "integer",
             "minimum": 1,
             "maximum": MAX_TOP,
             "default": DEFAULT_TOP,
-            "description": "Number of results to return.",
+            "description": Messages.MCP_ARG_TOP,
         },
     }
     search_properties.update(scan_properties)
     return [
         {
             "name": SEARCH_TOOL,
-            "description": (
-                "Semantic file search: find files by describing what they do "
-                "or contain, without knowing names or paths. Auto-indexes the "
-                "directory on first use and reuses the index afterwards."
-            ),
+            "description": Messages.MCP_TOOL_SEARCH_DESCRIPTION,
             "inputSchema": {
                 "type": "object",
                 "properties": search_properties,
                 "required": ["query"],
+                "additionalProperties": False,
             },
+            "outputSchema": SEARCH_OUTPUT_SCHEMA,
         },
         {
             "name": INDEX_TOOL,
-            "description": (
-                "Build or refresh the Vexor semantic index for a directory. "
-                "Optional warm-up: vexor_search indexes automatically when "
-                "needed."
-            ),
+            "description": Messages.MCP_TOOL_INDEX_DESCRIPTION,
             "inputSchema": {
                 "type": "object",
                 "properties": dict(scan_properties),
                 "required": [],
+                "additionalProperties": False,
             },
+            "outputSchema": INDEX_OUTPUT_SCHEMA,
         },
     ]
 
 
 def _text_result(payload: Mapping[str, Any], *, is_error: bool = False) -> dict[str, Any]:
-    return {
+    result: dict[str, Any] = {
         "content": [
             {"type": "text", "text": json.dumps(payload, ensure_ascii=False)}
         ],
         "isError": is_error,
     }
+    if not is_error:
+        # Mirror the text payload as structured content (MCP 2025-06-18);
+        # older clients ignore the extra field.
+        result["structuredContent"] = payload
+    return result
 
 
 def _tool_error(tool: str, reason: str) -> dict[str, Any]:
@@ -286,7 +368,15 @@ class VexorMcpServer:
                 Messages.MCP_INVALID_ARGUMENTS.format(reason="params must be an object"),
             )
         name = params.get("name")
-        arguments = params.get("arguments") or {}
+        if not isinstance(name, str):
+            return _error_response(
+                request_id,
+                JSONRPC_INVALID_PARAMS,
+                Messages.MCP_INVALID_ARGUMENTS.format(
+                    reason=Messages.MCP_TOOL_NAME_INVALID
+                ),
+            )
+        arguments = params.get("arguments", {})
         if not isinstance(arguments, dict):
             return _error_response(
                 request_id,
@@ -304,6 +394,7 @@ class VexorMcpServer:
                 Messages.MCP_UNKNOWN_TOOL.format(name=name),
             )
         try:
+            _validate_tool_arguments(name, arguments)
             return _result_response(request_id, handler(arguments))
         except InvalidToolArguments as exc:
             return _error_response(request_id, JSONRPC_INVALID_PARAMS, str(exc))
@@ -314,11 +405,22 @@ class VexorMcpServer:
             raise InvalidToolArguments(
                 Messages.MCP_INVALID_ARGUMENTS.format(reason="'path' must be a string")
             )
+        if raw_path:
+            candidate = Path(raw_path).expanduser()
+            path = candidate if candidate.is_absolute() else self.default_path / candidate
+        else:
+            path = self.default_path
         return {
-            "path": raw_path or self.default_path,
+            "path": path,
             "mode": _mode_argument(arguments.get("mode")),
             "include_hidden": _bool_argument(
                 arguments.get("include_hidden"), "include_hidden"
+            ),
+            "respect_gitignore": _bool_argument(
+                arguments.get("respect_gitignore"), "respect_gitignore", default=True
+            ),
+            "recursive": _bool_argument(
+                arguments.get("recursive"), "recursive", default=True
             ),
             "extensions": _string_list(arguments.get("extensions"), "extensions")
             or None,
@@ -346,6 +448,8 @@ class VexorMcpServer:
                 top=top,
                 mode=scan["mode"],
                 include_hidden=scan["include_hidden"],
+                respect_gitignore=scan["respect_gitignore"],
+                recursive=scan["recursive"],
                 extensions=scan["extensions"],
                 exclude_patterns=scan["exclude_patterns"],
             )
@@ -382,6 +486,8 @@ class VexorMcpServer:
                 directory,
                 mode=scan["mode"],
                 include_hidden=scan["include_hidden"],
+                respect_gitignore=scan["respect_gitignore"],
+                recursive=scan["recursive"],
                 extensions=scan["extensions"],
                 exclude_patterns=scan["exclude_patterns"],
             )
@@ -454,6 +560,41 @@ def serve(server: VexorMcpServer, stdin: Iterable[Any], stdout: IO[Any]) -> None
             _write_line(stdout, json.dumps(response, ensure_ascii=False))
 
 
+def emit_update_notice(stream: TextIO) -> None:
+    """Write a one-line stderr notice when a newer release exists.
+
+    Best-effort: the check is TTL-cached, uses a short network timeout, and
+    stays silent on any failure. Never writes to stdout, which is reserved
+    for the protocol.
+    """
+    try:
+        from .system_service import check_for_update, update_check_enabled
+
+        if not update_check_enabled():
+            return
+        latest = check_for_update(__version__)
+        if latest:
+            print(
+                Messages.MCP_UPDATE_AVAILABLE.format(
+                    latest=latest, current=__version__
+                ),
+                file=stream,
+                flush=True,
+            )
+    except Exception:
+        pass
+
+
+def _start_update_notice_thread() -> None:
+    thread = threading.Thread(
+        target=emit_update_notice,
+        args=(sys.stderr,),
+        name="vexor-mcp-update-check",
+        daemon=True,
+    )
+    thread.start()
+
+
 def serve_stdio(default_path: Path | str | None = None) -> None:
     """Serve MCP over the process's real stdin/stdout."""
     server = VexorMcpServer(default_path=default_path)
@@ -464,4 +605,5 @@ def serve_stdio(default_path: Path | str | None = None) -> None:
         file=sys.stderr,
         flush=True,
     )
+    _start_update_notice_thread()
     serve(server, stdin, stdout)

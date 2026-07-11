@@ -45,6 +45,8 @@ DIMENSION_SUPPORTED_MODELS: dict[str, tuple[int, ...]] = {
     "voyage-code-3": (256, 512, 1024, 2048),
 }
 ENV_API_KEY = "VEXOR_API_KEY"
+ENV_CONFIG_JSON = "VEXOR_CONFIG_JSON"
+ENV_NO_UPDATE_CHECK = "VEXOR_NO_UPDATE_CHECK"
 REMOTE_RERANK_ENV = "VEXOR_REMOTE_RERANK_API_KEY"
 LEGACY_GEMINI_ENV = "GOOGLE_GENAI_API_KEY"
 OPENAI_ENV = "OPENAI_API_KEY"
@@ -70,6 +72,7 @@ class Config:
     base_url: str | None = None
     auto_index: bool = True
     local_cuda: bool = False
+    update_check: bool = True
     rerank: str = DEFAULT_RERANK
     flashrank_model: str | None = None
     remote_rerank: RemoteRerankConfig | None = None
@@ -120,7 +123,52 @@ def config_dir_context(path: Path | str | None):
         _CONFIG_DIR_OVERRIDE.reset(token)
 
 
-def load_config() -> Config:
+def _apply_env_overrides(config: Config) -> Config:
+    """Merge the VEXOR_CONFIG_JSON environment override over *config*.
+
+    Lets MCP client configs (and CI) inject any non-secret config field via
+    a single environment variable without touching ~/.vexor/config.json.
+    Credentials are rejected so they stay on their dedicated variables
+    (VEXOR_API_KEY, VEXOR_REMOTE_RERANK_API_KEY), which clients treat as
+    secrets.
+    """
+    payload = (os.getenv(ENV_CONFIG_JSON) or "").strip()
+    if payload:
+        try:
+            data = _coerce_config_payload(payload)
+            if "api_key" in data:
+                raise ValueError(
+                    Messages.ERROR_ENV_CONFIG_JSON_SECRET.format(
+                        field="api_key", env=ENV_API_KEY
+                    )
+                )
+            remote_rerank = data.get("remote_rerank")
+            if isinstance(remote_rerank, Mapping) and "api_key" in remote_rerank:
+                raise ValueError(
+                    Messages.ERROR_ENV_CONFIG_JSON_SECRET.format(
+                        field="remote_rerank.api_key", env=REMOTE_RERANK_ENV
+                    )
+                )
+            config = config_from_json(data, base=config)
+        except ValueError as exc:
+            raise ValueError(
+                Messages.ERROR_ENV_CONFIG_JSON_INVALID.format(reason=exc)
+            ) from exc
+
+    # The dedicated secret variables override credentials from the persisted
+    # config. Explicit API arguments are applied after load_config(), so they
+    # can still take precedence over these process-level defaults.
+    api_key = os.getenv(ENV_API_KEY)
+    if api_key:
+        config.api_key = api_key
+    remote_rerank_api_key = os.getenv(REMOTE_RERANK_ENV)
+    if remote_rerank_api_key and config.remote_rerank is not None:
+        config.remote_rerank.api_key = remote_rerank_api_key
+    return config
+
+
+def _load_stored_config() -> Config:
+    """Load the persisted config without applying environment overrides."""
     config_file = _resolve_config_file()
     if not config_file.exists():
         return Config()
@@ -141,11 +189,17 @@ def load_config() -> Config:
         base_url=raw.get("base_url") or None,
         auto_index=bool(raw.get("auto_index", True)),
         local_cuda=bool(raw.get("local_cuda", False)),
+        update_check=bool(raw.get("update_check", True)),
         rerank=rerank,
         flashrank_model=raw.get("flashrank_model") or None,
         remote_rerank=_parse_remote_rerank(raw.get("remote_rerank")),
         embedding_dimensions=_coerce_optional_int(raw.get("embedding_dimensions")),
     )
+
+
+def load_config() -> Config:
+    """Load persisted configuration and apply process-local environment overrides."""
+    return _apply_env_overrides(_load_stored_config())
 
 
 def save_config(config: Config) -> None:
@@ -166,6 +220,7 @@ def save_config(config: Config) -> None:
         data["base_url"] = config.base_url
     data["auto_index"] = bool(config.auto_index)
     data["local_cuda"] = bool(config.local_cuda)
+    data["update_check"] = bool(config.update_check)
     data["rerank"] = config.rerank
     if config.flashrank_model:
         data["flashrank_model"] = config.flashrank_model
@@ -199,6 +254,11 @@ def flashrank_cache_dir(*, create: bool = True) -> Path:
     return cache_dir
 
 
+def update_check_file() -> Path:
+    """Path of the cached update-check state."""
+    return _resolve_config_dir() / "update_check.json"
+
+
 def set_config_dir(path: Path | str | None) -> None:
     global CONFIG_DIR, CONFIG_FILE
     if path is None:
@@ -225,20 +285,20 @@ def update_config_from_json(
     payload: str | Mapping[str, object], *, replace: bool = False
 ) -> Config:
     """Update config from a JSON string or mapping and persist it."""
-    base = None if replace else load_config()
+    base = None if replace else _load_stored_config()
     config = config_from_json(payload, base=base)
     save_config(config)
     return config
 
 
 def set_api_key(value: str | None) -> None:
-    config = load_config()
+    config = _load_stored_config()
     config.api_key = value
     save_config(config)
 
 
 def set_model(value: str, *, validate_embedding_dimensions: bool = True) -> None:
-    config = load_config()
+    config = _load_stored_config()
     config.model = value
     if validate_embedding_dimensions:
         _validate_config_embedding_dimensions(config)
@@ -246,31 +306,31 @@ def set_model(value: str, *, validate_embedding_dimensions: bool = True) -> None
 
 
 def set_batch_size(value: int) -> None:
-    config = load_config()
+    config = _load_stored_config()
     config.batch_size = value
     save_config(config)
 
 
 def set_embed_concurrency(value: int) -> None:
-    config = load_config()
+    config = _load_stored_config()
     config.embed_concurrency = value
     save_config(config)
 
 
 def set_extract_concurrency(value: int) -> None:
-    config = load_config()
+    config = _load_stored_config()
     config.extract_concurrency = value
     save_config(config)
 
 
 def set_extract_backend(value: str) -> None:
-    config = load_config()
+    config = _load_stored_config()
     config.extract_backend = _normalize_extract_backend(value)
     save_config(config)
 
 
 def set_provider(value: str, *, validate_embedding_dimensions: bool = True) -> None:
-    config = load_config()
+    config = _load_stored_config()
     config.provider = value
     if validate_embedding_dimensions:
         _validate_config_embedding_dimensions(config)
@@ -278,25 +338,31 @@ def set_provider(value: str, *, validate_embedding_dimensions: bool = True) -> N
 
 
 def set_base_url(value: str | None) -> None:
-    config = load_config()
+    config = _load_stored_config()
     config.base_url = value
     save_config(config)
 
 
 def set_auto_index(value: bool) -> None:
-    config = load_config()
+    config = _load_stored_config()
     config.auto_index = bool(value)
     save_config(config)
 
 
+def set_update_check(value: bool) -> None:
+    config = _load_stored_config()
+    config.update_check = bool(value)
+    save_config(config)
+
+
 def set_local_cuda(value: bool) -> None:
-    config = load_config()
+    config = _load_stored_config()
     config.local_cuda = bool(value)
     save_config(config)
 
 
 def set_rerank(value: str) -> None:
-    config = load_config()
+    config = _load_stored_config()
     normalized = (value or DEFAULT_RERANK).strip().lower()
     if normalized not in SUPPORTED_RERANKERS:
         normalized = DEFAULT_RERANK
@@ -305,7 +371,7 @@ def set_rerank(value: str) -> None:
 
 
 def set_flashrank_model(value: str | None) -> None:
-    config = load_config()
+    config = _load_stored_config()
     clean_value = (value or "").strip()
     config.flashrank_model = clean_value or None
     save_config(config)
@@ -327,7 +393,7 @@ def set_embedding_dimensions(
         ValueError: If value is negative, model doesn't support dimensions,
                    or dimension is not valid for the model.
     """
-    config = load_config()
+    config = _load_stored_config()
 
     # Reject negative values explicitly
     if value is not None and value < 0:
@@ -355,7 +421,7 @@ def update_remote_rerank(
     model: str | None = None,
     clear: bool = False,
 ) -> None:
-    config = load_config()
+    config = _load_stored_config()
     if clear:
         config.remote_rerank = None
         save_config(config)
@@ -531,6 +597,7 @@ def _clone_config(config: Config) -> Config:
         base_url=config.base_url,
         auto_index=config.auto_index,
         local_cuda=config.local_cuda,
+        update_check=config.update_check,
         rerank=config.rerank,
         flashrank_model=config.flashrank_model,
         remote_rerank=(
@@ -577,6 +644,8 @@ def _apply_config_payload(config: Config, payload: Mapping[str, object]) -> None
         config.base_url = _coerce_optional_str(payload["base_url"], "base_url")
     if "auto_index" in payload:
         config.auto_index = _coerce_bool(payload["auto_index"], "auto_index")
+    if "update_check" in payload:
+        config.update_check = _coerce_bool(payload["update_check"], "update_check")
     if "local_cuda" in payload:
         config.local_cuda = _coerce_bool(payload["local_cuda"], "local_cuda")
     if "rerank" in payload:

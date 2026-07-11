@@ -173,12 +173,101 @@ def test_search_tool_returns_ranked_results(tmp_path):
     assert client.search_calls[0]["path"] == tmp_path.resolve()
 
 
-def test_search_tool_defaults_and_clamps_top(tmp_path):
+def test_search_tool_top_defaults_and_rejects_out_of_range(tmp_path):
     server, client = make_server(tmp_path)
     server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))
-    server.handle_message(tool_call(SEARCH_TOOL, {"query": "q", "top": 999}))
     assert client.search_calls[0]["top"] == 5
-    assert client.search_calls[1]["top"] == 50
+    for bad_top in (0, 999):
+        response = server.handle_message(
+            tool_call(SEARCH_TOOL, {"query": "q", "top": bad_top})
+        )
+        assert response["error"]["code"] == JSONRPC_INVALID_PARAMS, bad_top
+
+
+def test_search_tool_passes_scan_flags(tmp_path):
+    server, client = make_server(tmp_path)
+    server.handle_message(
+        tool_call(
+            SEARCH_TOOL,
+            {"query": "q", "respect_gitignore": False, "recursive": False},
+        )
+    )
+    call = client.search_calls[0]
+    assert call["respect_gitignore"] is False
+    assert call["recursive"] is False
+    # Defaults when omitted.
+    server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))
+    call = client.search_calls[1]
+    assert call["respect_gitignore"] is True
+    assert call["recursive"] is True
+
+
+def test_relative_path_resolves_against_default_path(tmp_path):
+    (tmp_path / "src").mkdir()
+    server, client = make_server(tmp_path)
+    response = server.handle_message(
+        tool_call(SEARCH_TOOL, {"query": "q", "path": "src"})
+    )
+    assert response["result"]["isError"] is False
+    assert client.search_calls[0]["path"] == (tmp_path / "src").resolve()
+
+
+def test_success_results_include_structured_content(tmp_path):
+    server, _ = make_server(tmp_path)
+    response = server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))
+    result = response["result"]
+    assert result["structuredContent"] == decode_tool_payload(response)
+    assert result["structuredContent"]["results"][0]["rank"] == 1
+
+
+def test_error_results_omit_structured_content(tmp_path):
+    server, _ = make_server(tmp_path, search_error=RuntimeError("boom"))
+    response = server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))
+    assert response["result"]["isError"] is True
+    assert "structuredContent" not in response["result"]
+
+
+def test_tools_advertise_output_schemas_and_strict_input(tmp_path):
+    definitions = build_tool_definitions(tmp_path)
+    for tool in definitions:
+        assert tool["inputSchema"]["additionalProperties"] is False
+        assert "outputSchema" in tool
+    search_tool, index_tool = definitions
+    assert search_tool["inputSchema"]["properties"]["query"]["minLength"] == 1
+    assert "respect_gitignore" in search_tool["inputSchema"]["properties"]
+    assert "recursive" in index_tool["inputSchema"]["properties"]
+    assert search_tool["outputSchema"]["properties"]["results"]["type"] == "array"
+    assert index_tool["outputSchema"]["properties"]["status"]["enum"] == [
+        "stored",
+        "up_to_date",
+        "empty",
+    ]
+
+
+@pytest.mark.parametrize("tool_name", [SEARCH_TOOL, INDEX_TOOL])
+def test_tools_reject_unknown_arguments(tmp_path, tool_name):
+    server, client = make_server(tmp_path)
+    arguments = {"recusive": False}
+    if tool_name == SEARCH_TOOL:
+        arguments["query"] = "q"
+
+    response = server.handle_message(tool_call(tool_name, arguments))
+
+    assert response["error"]["code"] == JSONRPC_INVALID_PARAMS
+    assert "recusive" in response["error"]["message"]
+    assert client.search_calls == []
+    assert client.index_calls == []
+
+
+def test_tool_call_rejects_non_object_arguments_and_name(tmp_path):
+    server, _ = make_server(tmp_path)
+    for params in (
+        {"name": INDEX_TOOL, "arguments": []},
+        {"name": INDEX_TOOL, "arguments": None},
+        {"name": 123, "arguments": {}},
+    ):
+        response = server.handle_message(request("tools/call", params))
+        assert response["error"]["code"] == JSONRPC_INVALID_PARAMS, params
 
 
 def test_search_tool_missing_query_is_invalid_params(tmp_path):
@@ -194,6 +283,8 @@ def test_search_tool_rejects_bad_argument_types(tmp_path):
         {"query": "q", "mode": "invalid-mode"},
         {"query": "q", "include_hidden": "yes"},
         {"query": "q", "extensions": [1, 2]},
+        {"query": "q", "extensions": ".py"},
+        {"query": "q", "exclude_patterns": "build/**"},
         {"query": "q", "path": 42},
     ]
     for arguments in cases:
@@ -291,3 +382,60 @@ def test_search_result_paths_outside_base_stay_absolute(tmp_path):
     assert payload["results"][0]["path"] == str(
         Path(tmp_path.anchor) / "elsewhere" / "file.py"
     )
+
+
+def test_emit_update_notice_writes_when_newer(monkeypatch, tmp_path):
+    import vexor.services.mcp_service as mcp_service
+    import vexor.services.system_service as system_service
+
+    monkeypatch.delenv(mcp_service.ENV_NO_UPDATE_CHECK, raising=False)
+    monkeypatch.setattr(
+        system_service, "check_for_update", lambda current, **kw: "99.0.0"
+    )
+    stream = io.StringIO()
+    mcp_service.emit_update_notice(stream)
+    assert "99.0.0" in stream.getvalue()
+    assert "vexor update --upgrade" in stream.getvalue()
+
+
+def test_emit_update_notice_silent_when_current(monkeypatch):
+    import vexor.services.mcp_service as mcp_service
+    import vexor.services.system_service as system_service
+
+    monkeypatch.delenv(mcp_service.ENV_NO_UPDATE_CHECK, raising=False)
+    monkeypatch.setattr(
+        system_service, "check_for_update", lambda current, **kw: None
+    )
+    stream = io.StringIO()
+    mcp_service.emit_update_notice(stream)
+    assert stream.getvalue() == ""
+
+
+def test_emit_update_notice_disabled_by_env(monkeypatch):
+    import vexor.services.mcp_service as mcp_service
+    import vexor.services.system_service as system_service
+
+    monkeypatch.setenv(mcp_service.ENV_NO_UPDATE_CHECK, "1")
+
+    def _explode(current, **kw):
+        raise AssertionError("update check must not run when disabled")
+
+    monkeypatch.setattr(system_service, "check_for_update", _explode)
+    stream = io.StringIO()
+    mcp_service.emit_update_notice(stream)
+    assert stream.getvalue() == ""
+
+
+def test_emit_update_notice_swallows_errors(monkeypatch):
+    import vexor.services.mcp_service as mcp_service
+    import vexor.services.system_service as system_service
+
+    monkeypatch.delenv(mcp_service.ENV_NO_UPDATE_CHECK, raising=False)
+
+    def _boom(current, **kw):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(system_service, "check_for_update", _boom)
+    stream = io.StringIO()
+    mcp_service.emit_update_notice(stream)
+    assert stream.getvalue() == ""

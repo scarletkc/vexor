@@ -297,3 +297,27 @@ def test_mcp_command_round_trip_over_stdio(monkeypatch, tmp_path):
         "vexor_search",
         "vexor_index",
     ]
+
+
+def test_update_refreshes_notice_cache_for_stable_checks(monkeypatch):
+    runner = CliRunner()
+    written = []
+
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_a, **_kw: "99.0.0")
+    monkeypatch.setattr("vexor.cli.write_update_cache", lambda latest, **_kw: written.append(latest))
+
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == 0
+    assert written == ["99.0.0"]
+
+
+def test_update_pre_release_check_does_not_touch_notice_cache(monkeypatch):
+    runner = CliRunner()
+    written = []
+
+    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_a, **_kw: "99.0.0rc1")
+    monkeypatch.setattr("vexor.cli.write_update_cache", lambda latest, **_kw: written.append(latest))
+
+    result = runner.invoke(app, ["update", "--pre"])
+    assert result.exit_code == 0
+    assert written == []
