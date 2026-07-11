@@ -15,6 +15,16 @@ never leaving the machine.
   only as an opt-in reranker. Dependencies (`rank-bm25`, `tokenizers`)
   are already present. Pure semantic search is weak on exact identifiers;
   hybrid is the ecosystem default now.
+  - Why the existing `--rerank bm25` is not hybrid: it only reorders the
+    dense top candidates (`clamp(top*2, 20, 150)`), so lexical-only
+    matches that dense retrieval misses never reach the reranker. True
+    hybrid scores the full chunk set on both paths before fusing.
+  - Full-corpus BM25 needs term statistics persisted alongside the index
+    cache — rebuilding them per query is O(corpus). Design this together
+    with the `vectors.npy`/memmap work in P1.
+  - Flip the ranking default only after the evaluation benchmark (next
+    item) confirms hybrid beats dense-only, and call the change out in
+    release notes since result ordering shifts for existing users.
 - Publish an evaluation: token cost + answer quality of agent+Vexor vs
   grep-only workflows (30–50 QA tasks), feature the chart in the README.
   Benchmarks are what make these tools travel (see mgrep's launch).
@@ -85,6 +95,10 @@ never leaving the machine.
 
 ## Engineering TODO
 
+- Add a dev-only consistency test that validates the MCP tool
+  `inputSchema` against the server-side argument validation (feed
+  known-good/bad payloads through both), so the advertised schema and the
+  strict validation cannot drift apart.
 - Align release version semantics across Python, plugin, and GUI packages.
   - Python/package releases can currently move ahead while the desktop GUI
     remains on its own version. This is workable, but release notes and
