@@ -93,13 +93,11 @@ never leaving the machine.
 
 ## GUI policy
 
-- The desktop app is in maintenance mode: security/dependency bumps only,
-  no new features. Rationale (2026-07 review): the growth channel is
-  agents and terminal users; the GUI has no macOS build, no tests, and a
-  fragile argv/porcelain contract with the CLI.
-- Add a porcelain output contract test to CI so CLI flag or column
-  changes cannot silently break the GUI.
-- A future graphical entry point should be the VS Code extension.
+- The desktop app was retired in 0.26 (release assets had stalled at
+  0.19.0 with effectively zero downloads). The code is preserved on the
+  `archive/gui` branch; the last shipped builds remain downloadable from
+  old releases. A future graphical entry point should be the VS Code
+  extension (see P2).
 
 ## Growth / distribution (non-code)
 
@@ -121,11 +119,9 @@ never leaving the machine.
   `inputSchema` against the server-side argument validation (feed
   known-good/bad payloads through both), so the advertised schema and the
   strict validation cannot drift apart.
-- Align release version semantics across Python, plugin, and GUI packages.
-  - Python/package releases can currently move ahead while the desktop GUI
-    remains on its own version. This is workable, but release notes and
-    asset naming should make the split explicit, or the GUI should get an
-    independent documented release track.
+- Add a porcelain output contract test to CI so CLI flag or column
+  changes cannot silently break scripts and agents that parse
+  `--format porcelain` output.
 - Make user-facing error handling more systematic.
   - Most messages are centralized in `text.py`, but several runtime
     validation paths still build detailed errors inline. Consider adding
