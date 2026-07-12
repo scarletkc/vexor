@@ -18,9 +18,6 @@
 **Vexor** is a semantic search engine that builds reusable indexes over files and code.
 It supports configurable embedding and reranking providers, and exposes the same core through a Python API, a CLI tool, and an optional desktop frontend.
 
-- Hybrid retrieval fuses full-corpus BM25 with dense search, so exact
-  identifiers can surface even when dense retrieval misses them.
-
 <video src="https://github.com/user-attachments/assets/4d53eefd-ab35-4232-98a7-f8dc005983a9" controls="controls" style="max-width: 600px;">
       Vexor Demo Video
     </video>
@@ -37,6 +34,8 @@ Vexor has been recognized and featured by the community:
 When you remember what a file *does* but forget its name or location, Vexor finds it instantly—no grep patterns or directory traversal needed.
 
 Designed for both humans and AI coding assistants, enabling semantic file discovery in autonomous agent workflows.
+
+Optional hybrid retrieval (`vexor config --rerank hybrid`) fuses full-corpus BM25 with dense search, so exact identifiers can surface even when dense retrieval misses them.
 
 Per-project `.vexorignore` files give you full gitignore-style control over what gets indexed, and you can opt in to per-project indexes by creating a `.vexor/` directory or running `vexor index --local`.
 
