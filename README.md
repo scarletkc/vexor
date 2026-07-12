@@ -16,7 +16,7 @@
 ---
 
 **Vexor** is a semantic search engine that builds reusable indexes over files and code.
-It supports configurable embedding and reranking providers, and exposes the same core through a Python API, a CLI tool, and an optional desktop frontend.
+It supports configurable embedding and reranking providers, and exposes the same core through a Python API, a CLI tool, and an MCP server.
 
 <video src="https://github.com/user-attachments/assets/4d53eefd-ab35-4232-98a7-f8dc005983a9" controls="controls" style="max-width: 600px;">
       Vexor Demo Video
@@ -76,15 +76,6 @@ vexor index  # indexes current directory
 vexor index --path ~/projects/demo --mode code
 ```
 Useful for CI warmup or when `auto_index` is disabled.
-
-## Desktop App (Experimental)
-
-> The desktop app is experimental and not actively maintained.
-> It may be unstable. For production use, prefer the CLI.
-
-![GUI](https://raw.githubusercontent.com/scarletkc/vexor/refs/heads/main/assets/gui_demo.png)
-
-Download the desktop app from [releases](https://github.com/scarletkc/vexor/releases).
 
 ## Python API
 

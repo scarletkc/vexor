@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Bump Vexor versions in one command.
 
-By default, this updates the Python package + plugin manifest.
-Use --gui to also update the GUI (gui/package.json and gui/package-lock.json).
+Updates the Python package, plugin manifest, and MCP server manifest.
 
 Usage:
     python scripts/bump_version.py 0.6.4
     python scripts/bump_version.py v0.6.4
-    python scripts/bump_version.py --gui 0.6.4
 """
 
 from __future__ import annotations
@@ -19,9 +17,6 @@ from pathlib import Path
 
 
 _VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[0-9A-Za-z.+-]+)?$")
-_SEMVER_PATTERN = re.compile(
-    r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
-)
 
 
 def main(argv: list[str]) -> int:
@@ -29,25 +24,19 @@ def main(argv: list[str]) -> int:
         print(__doc__.strip())
         return 2
 
-    version, update_gui = _parse_args(argv)
-    return _run(version=version, update_gui=update_gui, repo_root=Path(__file__).resolve().parents[1])
+    version = _parse_args(argv)
+    return _run(version=version, repo_root=Path(__file__).resolve().parents[1])
 
 
-def _parse_args(argv: list[str]) -> tuple[str, bool]:
+def _parse_args(argv: list[str]) -> str:
     """Parse CLI args.
 
     Accepted forms:
       bump_version.py 0.1.2
       bump_version.py v0.1.2
-      bump_version.py --gui 0.1.2
-      bump_version.py 0.1.2 --gui
     """
-    update_gui = False
     positional: list[str] = []
     for arg in argv[1:]:
-        if arg == "--gui":
-            update_gui = True
-            continue
         if arg.startswith("-"):
             raise SystemExit(f"Unknown option '{arg}'. Use --help for usage.")
         positional.append(arg)
@@ -62,10 +51,10 @@ def _parse_args(argv: list[str]) -> tuple[str, bool]:
         raw = raw[1:]
     if not raw or not _VERSION_PATTERN.fullmatch(raw):
         raise SystemExit(f"Invalid version '{raw_input}'. Expected like 0.6.4")
-    return raw, update_gui
+    return raw
 
 
-def _run(*, version: str, update_gui: bool, repo_root: Path) -> int:
+def _run(*, version: str, repo_root: Path) -> int:
     package_init = repo_root / "vexor" / "__init__.py"
     plugin_manifest = repo_root / "plugins" / "vexor" / ".claude-plugin" / "plugin.json"
     mcp_server_manifest = repo_root / "server.json"
@@ -80,19 +69,6 @@ def _run(*, version: str, update_gui: bool, repo_root: Path) -> int:
     if mcp_server_manifest.exists():
         _set_mcp_server_version(mcp_server_manifest, version)
         print(f"- {mcp_server_manifest}")
-
-    if update_gui:
-        gui_package_json = repo_root / "gui" / "package.json"
-        gui_package_lock = repo_root / "gui" / "package-lock.json"
-        gui_version = _to_gui_semver(version)
-        _set_gui_version(gui_package_json, gui_version)
-        _set_gui_lock_version(gui_package_lock, gui_version)
-
-        if gui_version != version:
-            print(f"GUI version normalized to {gui_version}")
-        print(f"- {gui_package_json}")
-        if gui_package_lock.exists():
-            print(f"- {gui_package_lock}")
 
     return 0
 
@@ -124,50 +100,5 @@ def _set_mcp_server_version(path: Path, version: str) -> None:
     path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _set_gui_version(path: Path, version: str) -> None:
-    package_json = json.loads(path.read_text(encoding="utf-8"))
-    package_json["version"] = version
-    path.write_text(json.dumps(package_json, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
-def _set_gui_lock_version(path: Path, version: str) -> None:
-    if not path.exists():
-        return
-
-    lock = json.loads(path.read_text(encoding="utf-8"))
-
-    # npm lockfile typically stores the root package version in two places:
-    # - top-level "version"
-    # - packages[""]{"version"}
-    if isinstance(lock, dict):
-        lock["version"] = version
-        packages = lock.get("packages")
-        if isinstance(packages, dict):
-            root_pkg = packages.get("")
-            if isinstance(root_pkg, dict):
-                root_pkg["version"] = version
-
-    path.write_text(json.dumps(lock, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
-def _to_gui_semver(version: str) -> str:
-    """Normalize PEP 440-like versions into SemVer for the GUI."""
-    if _SEMVER_PATTERN.fullmatch(version):
-        return version
-    match = re.match(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?P<suffix>.*)$", version)
-    if not match:
-        return version
-    base = match.group("base")
-    suffix = match.group("suffix")
-    if not suffix:
-        return base
-    if suffix.startswith(("-", "+")):
-        return f"{base}{suffix}"
-    if suffix.startswith("."):
-        suffix = suffix[1:]
-    return f"{base}-{suffix}"
-
-
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))
-
