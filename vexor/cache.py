@@ -224,14 +224,30 @@ def find_project_cache_dir(path: Path) -> Path | None:
     return None
 
 
+def _ensure_project_cache_self_ignore(project_cache_dir: Path) -> None:
+    """Write the self-ignoring .gitignore into *project_cache_dir* if missing.
+
+    Users can opt in by creating `.vexor/` by hand; without this marker the
+    index database would show up as untracked and could get committed.
+    """
+
+    gitignore_path = project_cache_dir / ".gitignore"
+    if gitignore_path.exists():
+        return
+    try:
+        gitignore_path.write_text("*\n", encoding="utf-8")
+    except OSError:
+        # Hygiene write only: a search against a read-only tree must not
+        # fail because the ignore marker could not be created.
+        pass
+
+
 def create_project_cache_dir(root: Path) -> Path:
     """Create and return the project-local cache directory for *root*."""
 
     project_cache_dir = root / PROJECT_CACHE_DIRNAME
     project_cache_dir.mkdir(parents=True, exist_ok=True)
-    gitignore_path = project_cache_dir / ".gitignore"
-    if not gitignore_path.exists():
-        gitignore_path.write_text("*\n", encoding="utf-8")
+    _ensure_project_cache_self_ignore(project_cache_dir)
     return project_cache_dir
 
 
@@ -250,6 +266,7 @@ def project_cache_context(directory: Path | None) -> Iterator[None]:
     if project_cache_dir is None:
         yield
         return
+    _ensure_project_cache_self_ignore(project_cache_dir)
     with cache_dir_context(project_cache_dir):
         yield
 

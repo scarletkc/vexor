@@ -798,3 +798,34 @@ def test_create_project_cache_dir_preserves_existing_gitignore(tmp_path):
 
     assert cache.create_project_cache_dir(tmp_path) == marker
     assert gitignore.read_text(encoding="utf-8") == "keep-this\n"
+
+
+def test_project_cache_context_writes_self_ignore_for_manual_marker(
+    tmp_path, monkeypatch
+):
+    global_cache = tmp_path / "global" / ".vexor"
+    monkeypatch.setattr(cache, "DEFAULT_CACHE_DIR", global_cache)
+    monkeypatch.setattr(cache, "CACHE_DIR", global_cache)
+    project = tmp_path / "project"
+    marker = project / ".vexor"
+    marker.mkdir(parents=True)
+
+    with cache.project_cache_context(project):
+        pass
+
+    assert (marker / ".gitignore").read_text(encoding="utf-8") == "*\n"
+
+
+def test_project_cache_context_preserves_existing_gitignore(tmp_path, monkeypatch):
+    global_cache = tmp_path / "global" / ".vexor"
+    monkeypatch.setattr(cache, "DEFAULT_CACHE_DIR", global_cache)
+    monkeypatch.setattr(cache, "CACHE_DIR", global_cache)
+    project = tmp_path / "project"
+    marker = project / ".vexor"
+    marker.mkdir(parents=True)
+    (marker / ".gitignore").write_text("custom\n", encoding="utf-8")
+
+    with cache.project_cache_context(project):
+        pass
+
+    assert (marker / ".gitignore").read_text(encoding="utf-8") == "custom\n"
