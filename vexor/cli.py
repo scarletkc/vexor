@@ -26,7 +26,7 @@ try:
 except ImportError:  # pragma: no cover - Typer before the vendored Click runtime
     from click import Command, Context, UsageError
 
-from . import __version__, config as config_module
+from . import __version__, cache, config as config_module
 from .cache import (
     cache_db_path,
     clear_all_cache,
@@ -617,11 +617,7 @@ def index(
 
     directory = resolve_directory(path)
     if local:
-        project_cache_dir = directory / ".vexor"
-        project_cache_dir.mkdir(parents=True, exist_ok=True)
-        gitignore_path = project_cache_dir / ".gitignore"
-        if not gitignore_path.exists():
-            gitignore_path.write_text("*\n", encoding="utf-8")
+        project_cache_dir = cache.create_project_cache_dir(directory)
         console.print(
             _styled(
                 Messages.INFO_PROJECT_CACHE_CREATED.format(path=project_cache_dir),

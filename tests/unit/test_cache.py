@@ -780,3 +780,21 @@ def test_project_cache_context_respects_relocated_global_cache(tmp_path, monkeyp
             assert cache.cache_db_path() == explicit.resolve() / cache.DB_FILENAME
     finally:
         cache.set_cache_dir(None)
+
+
+def test_create_project_cache_dir_creates_marker_and_gitignore(tmp_path):
+    marker = cache.create_project_cache_dir(tmp_path)
+
+    assert marker == tmp_path / ".vexor"
+    assert marker.is_dir()
+    assert (marker / ".gitignore").read_text(encoding="utf-8") == "*\n"
+
+
+def test_create_project_cache_dir_preserves_existing_gitignore(tmp_path):
+    marker = tmp_path / ".vexor"
+    marker.mkdir()
+    gitignore = marker / ".gitignore"
+    gitignore.write_text("keep-this\n", encoding="utf-8")
+
+    assert cache.create_project_cache_dir(tmp_path) == marker
+    assert gitignore.read_text(encoding="utf-8") == "keep-this\n"

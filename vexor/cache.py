@@ -224,6 +224,17 @@ def find_project_cache_dir(path: Path) -> Path | None:
     return None
 
 
+def create_project_cache_dir(root: Path) -> Path:
+    """Create and return the project-local cache directory for *root*."""
+
+    project_cache_dir = root / PROJECT_CACHE_DIRNAME
+    project_cache_dir.mkdir(parents=True, exist_ok=True)
+    gitignore_path = project_cache_dir / ".gitignore"
+    if not gitignore_path.exists():
+        gitignore_path.write_text("*\n", encoding="utf-8")
+    return project_cache_dir
+
+
 @contextmanager
 def project_cache_context(directory: Path | None) -> Iterator[None]:
     """Use the nearest project cache unless an explicit override is active."""

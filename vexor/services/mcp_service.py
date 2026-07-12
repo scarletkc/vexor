@@ -50,7 +50,7 @@ _COMMON_TOOL_ARGUMENTS = frozenset(
 )
 _TOOL_ARGUMENTS = {
     SEARCH_TOOL: _COMMON_TOOL_ARGUMENTS | {"query", "top", "no_cache"},
-    INDEX_TOOL: _COMMON_TOOL_ARGUMENTS,
+    INDEX_TOOL: _COMMON_TOOL_ARGUMENTS | {"local"},
 }
 
 
@@ -235,6 +235,12 @@ def build_tool_definitions(default_path: Path) -> list[dict[str, Any]]:
         },
     }
     search_properties.update(scan_properties)
+    index_properties = dict(scan_properties)
+    index_properties["local"] = {
+        "type": "boolean",
+        "default": False,
+        "description": "Create <path>/.vexor and store this project's index there",
+    }
     return [
         {
             "name": SEARCH_TOOL,
@@ -252,7 +258,7 @@ def build_tool_definitions(default_path: Path) -> list[dict[str, Any]]:
             "description": Messages.MCP_TOOL_INDEX_DESCRIPTION,
             "inputSchema": {
                 "type": "object",
-                "properties": dict(scan_properties),
+                "properties": index_properties,
                 "required": [],
                 "additionalProperties": False,
             },
@@ -500,6 +506,7 @@ class VexorMcpServer:
 
     def _tool_index(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         scan = self._resolve_scan_arguments(arguments)
+        local = _bool_argument(arguments.get("local"), "local")
         try:
             directory = resolve_directory(scan["path"])
             result = self._get_client().index(
@@ -510,6 +517,7 @@ class VexorMcpServer:
                 recursive=scan["recursive"],
                 extensions=scan["extensions"],
                 exclude_patterns=scan["exclude_patterns"],
+                local=local,
             )
         except Exception as exc:
             return _tool_error(INDEX_TOOL, str(exc))

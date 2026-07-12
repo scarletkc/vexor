@@ -33,6 +33,7 @@ vexor "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--exclude-patte
 - `--no-recursive`: only the top directory
 - `--format`: `rich` (default) or `porcelain`/`porcelain-z` for scripts
 - `--no-cache`: in-memory only, do not read/write index cache
+- `vexor index --local`: create and use project-local `.vexor/index.db` storage
 
 ## Modes (pick the cheapest that works)
 

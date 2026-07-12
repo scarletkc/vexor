@@ -92,7 +92,8 @@ Returns a `SearchResponse` with:
 ### index(...)
 
 Build or refresh the index for a directory. Accepts the same indexing and config
-parameters as `search`, plus `config` for per-call override.
+parameters as `search`, plus `config` for per-call override. Pass `local=True`
+to create `<path>/.vexor` and store the project's index there.
 
 Returns `IndexResult` with `status`, `cache_path`, `files_indexed`.
 

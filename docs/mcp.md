@@ -164,8 +164,9 @@ Returns JSON text:
 
 Build or refresh the index for a directory. Use it to warm the cache or when
 `auto_index` is disabled. It accepts the same scan arguments as
-`vexor_search`, but not `query`, `top`, or `no_cache`, and returns
-`{path, mode, status, files_indexed}` where `status` is `stored`,
+`vexor_search`, but not `query`, `top`, or `no_cache`. Its optional `local`
+boolean argument creates `<path>/.vexor` and stores the project's index there.
+The tool returns `{path, mode, status, files_indexed}` where `status` is `stored`,
 `up_to_date`, or `empty`.
 
 ## Behavior notes
@@ -179,7 +180,9 @@ Build or refresh the index for a directory. Use it to warm the cache or when
   (`--path`, or the server's working directory).
 - Index cache keys follow the same rules as the CLI (see
   [Cache Behavior](cli.md#cache-behavior)): tool calls with the same
-  path/mode/filters share indexes with CLI usage. With `no_cache=true`,
+  path/mode/filters share indexes with CLI usage. When a project contains
+  `.vexor/`, MCP searches and indexing automatically use the project-local
+  database. With `no_cache=true`,
   `vexor_search` instead builds a temporary in-memory index and writes no
   index, embedding, or query caches.
 - Execution failures (missing directory, provider errors, missing API key)
