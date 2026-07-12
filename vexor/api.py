@@ -18,6 +18,7 @@ from .config import (
     Config,
     RemoteRerankConfig,
     SUPPORTED_RERANKERS,
+    _coerce_config_payload,
     config_from_json,
     config_dir_context,
     load_config,
@@ -169,7 +170,39 @@ class InMemoryIndex:
         )
 
 
-_RUNTIME_CONFIG: Config | None = None
+@dataclass(frozen=True, slots=True)
+class _RuntimeConfigOverride:
+    payload: Mapping[str, object]
+    replace: bool = False
+
+
+_RUNTIME_CONFIG: _RuntimeConfigOverride | None = None
+
+
+def _update_runtime_config_override(
+    current: _RuntimeConfigOverride | None,
+    payload: Mapping[str, object] | str,
+    *,
+    replace: bool,
+) -> _RuntimeConfigOverride:
+    """Validate and accumulate a deferred in-memory config override."""
+
+    try:
+        data = dict(_coerce_config_payload(payload))
+        if current is None or replace:
+            combined = data
+            effective_replace = replace
+        else:
+            combined = {**current.payload, **data}
+            effective_replace = current.replace
+        base = Config() if effective_replace else load_config()
+        config_from_json(combined, base=base)
+    except (ValueError, OSError, UnicodeDecodeError) as exc:
+        raise VexorError(str(exc)) from exc
+    return _RuntimeConfigOverride(
+        payload=combined,
+        replace=effective_replace,
+    )
 
 
 @contextmanager
@@ -206,11 +239,11 @@ def set_config_json(
     if payload is None:
         _RUNTIME_CONFIG = None
         return
-    base = None if replace else (_RUNTIME_CONFIG or load_config())
-    try:
-        _RUNTIME_CONFIG = config_from_json(payload, base=base)
-    except ValueError as exc:
-        raise VexorError(str(exc)) from exc
+    _RUNTIME_CONFIG = _update_runtime_config_override(
+        _RUNTIME_CONFIG,
+        payload,
+        replace=replace,
+    )
 
 
 class VexorClient:
@@ -228,7 +261,7 @@ class VexorClient:
         self.config_dir = config_dir
         self.cache_dir = cache_dir
         self.use_config = use_config
-        self._runtime_config: Config | None = None
+        self._runtime_config: _RuntimeConfigOverride | None = None
 
     def set_config_json(
         self,
@@ -240,11 +273,11 @@ class VexorClient:
         if payload is None:
             self._runtime_config = None
             return
-        base = None if replace else (self._runtime_config or load_config())
-        try:
-            self._runtime_config = config_from_json(payload, base=base)
-        except ValueError as exc:
-            raise VexorError(str(exc)) from exc
+        self._runtime_config = _update_runtime_config_override(
+            self._runtime_config,
+            payload,
+            replace=replace,
+        )
 
     @contextmanager
     def config_context(
@@ -744,7 +777,7 @@ def _search_with_settings(
     config: Config | Mapping[str, object] | str | None,
     temporary_index: bool,
     no_cache: bool,
-    runtime_config: Config | None,
+    runtime_config: _RuntimeConfigOverride | None,
     data_dir: Path | str | None,
     config_dir: Path | str | None,
     cache_dir: Path | str | None,
@@ -768,6 +801,7 @@ def _search_with_settings(
             raise VexorError(Messages.ERROR_EXTENSIONS_EMPTY)
 
         settings = _resolve_settings(
+            directory=directory,
             provider=provider,
             model=model,
             batch_size=batch_size,
@@ -836,7 +870,7 @@ def _index_with_settings(
     local: bool,
     use_config: bool,
     config: Config | Mapping[str, object] | str | None,
-    runtime_config: Config | None,
+    runtime_config: _RuntimeConfigOverride | None,
     data_dir: Path | str | None,
     config_dir: Path | str | None,
     cache_dir: Path | str | None,
@@ -855,6 +889,7 @@ def _index_with_settings(
             raise VexorError(Messages.ERROR_EXTENSIONS_EMPTY)
 
         settings = _resolve_settings(
+            directory=directory,
             provider=provider,
             model=model,
             batch_size=batch_size,
@@ -914,7 +949,7 @@ def _index_in_memory_with_settings(
     use_config: bool,
     config: Config | Mapping[str, object] | str | None,
     no_cache: bool,
-    runtime_config: Config | None,
+    runtime_config: _RuntimeConfigOverride | None,
     data_dir: Path | str | None,
     config_dir: Path | str | None,
     cache_dir: Path | str | None,
@@ -930,6 +965,7 @@ def _index_in_memory_with_settings(
             raise VexorError(Messages.ERROR_EXTENSIONS_EMPTY)
 
         settings = _resolve_settings(
+            directory=directory,
             provider=provider,
             model=model,
             batch_size=batch_size,
@@ -1051,6 +1087,7 @@ def _coerce_iterable(values: Sequence[str] | str | None) -> tuple[str, ...]:
 
 def _resolve_settings(
     *,
+    directory: Path | str | None,
     provider: str | None,
     model: str | None,
     batch_size: int | None,
@@ -1063,14 +1100,20 @@ def _resolve_settings(
     embedding_dimensions: int | None,
     auto_index: bool | None,
     use_config: bool,
-    runtime_config: Config | None = None,
+    runtime_config: _RuntimeConfigOverride | None = None,
     config_override: Config | Mapping[str, object] | str | None = None,
 ) -> RuntimeSettings:
-    config = (
-        runtime_config if (use_config and runtime_config is not None) else None
-    )
-    if config is None:
-        config = load_config() if use_config else Config()
+    try:
+        if not use_config:
+            config = Config()
+        elif runtime_config is not None and runtime_config.replace:
+            config = config_from_json(runtime_config.payload, base=Config())
+        else:
+            config = load_config(directory)
+            if runtime_config is not None:
+                config = config_from_json(runtime_config.payload, base=config)
+    except (ValueError, OSError, UnicodeDecodeError) as exc:
+        raise VexorError(str(exc)) from exc
     if config_override is not None:
         config = _apply_config_override(config, config_override)
     provider_value = (provider or config.provider or DEFAULT_PROVIDER).lower()

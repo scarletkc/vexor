@@ -29,6 +29,245 @@ def test_load_config_defaults(tmp_path, monkeypatch):
     assert cfg.remote_rerank is None
 
 
+def test_project_config_overlays_allowed_fields_and_tracks_origins(
+    tmp_path, monkeypatch
+):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(
+        json.dumps(
+            {
+                "provider": "gemini",
+                "model": "global-model",
+                "batch_size": 8,
+                "embed_concurrency": 2,
+                "extract_concurrency": 3,
+                "auto_index": True,
+                "rerank": "off",
+                "base_url": "https://global.example.test",
+            }
+        ),
+        encoding="utf-8",
+    )
+    project = tmp_path / "project"
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps(
+            {
+                "model": "project-model",
+                "batch_size": 12,
+                "embed_concurrency": 5,
+                "extract_concurrency": 6,
+                "embedding_dimensions": 512,
+                "auto_index": False,
+                "rerank": "hybrid",
+            }
+        ),
+        encoding="utf-8",
+    )
+    child = project / "src" / "package"
+    child.mkdir(parents=True)
+
+    resolution = config_module.resolve_config(child)
+    cfg = resolution.config
+
+    assert resolution.project_file == project_config.resolve()
+    assert cfg.provider == "gemini"
+    assert cfg.base_url == "https://global.example.test"
+    assert cfg.model == "project-model"
+    assert cfg.batch_size == 12
+    assert cfg.embed_concurrency == 5
+    assert cfg.extract_concurrency == 6
+    assert cfg.embedding_dimensions == 512
+    assert cfg.auto_index is False
+    assert cfg.rerank == "hybrid"
+    assert resolution.origin_for("provider") is config_module.ConfigOrigin.GLOBAL
+    assert resolution.origin_for("base_url") is config_module.ConfigOrigin.GLOBAL
+    for field in config_module.PROJECT_CONFIG_FIELDS:
+        assert resolution.origin_for(field) is config_module.ConfigOrigin.PROJECT
+    assert (
+        resolution.origin_for("flashrank_model")
+        is config_module.ConfigOrigin.DEFAULT
+    )
+
+
+def test_project_config_null_clears_global_embedding_dimensions(
+    tmp_path, monkeypatch
+):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(
+        json.dumps({"embedding_dimensions": 1024}), encoding="utf-8"
+    )
+    project = tmp_path / "project"
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"embedding_dimensions": None}), encoding="utf-8"
+    )
+
+    resolution = config_module.resolve_config(project)
+
+    assert resolution.config.embedding_dimensions is None
+    assert (
+        resolution.origin_for("embedding_dimensions")
+        is config_module.ConfigOrigin.PROJECT
+    )
+
+
+def test_nearest_project_marker_without_config_blocks_outer_config(
+    tmp_path, monkeypatch
+):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(json.dumps({"model": "global-model"}), encoding="utf-8")
+    outer = tmp_path / "outer"
+    outer_config = outer / ".vexor" / "config.json"
+    outer_config.parent.mkdir(parents=True)
+    outer_config.write_text(json.dumps({"model": "outer-model"}), encoding="utf-8")
+    inner = outer / "inner"
+    (inner / ".vexor").mkdir(parents=True)
+    child = inner / "src"
+    child.mkdir()
+
+    resolution = config_module.resolve_config(child)
+
+    assert resolution.config.model == "global-model"
+    assert resolution.project_file == (inner / ".vexor" / "config.json").resolve()
+    assert resolution.origin_for("model") is config_module.ConfigOrigin.GLOBAL
+
+
+def test_load_config_without_directory_keeps_legacy_global_scope(
+    tmp_path, monkeypatch
+):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(json.dumps({"model": "global-model"}), encoding="utf-8")
+    project = tmp_path / "project"
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"model": "project-model"}), encoding="utf-8"
+    )
+    monkeypatch.chdir(project)
+
+    assert config_module.load_config().model == "global-model"
+    assert config_module.load_config(project).model == "project-model"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("api_key", "project-secret"),
+        ("base_url", "https://project.example.test"),
+        ("remote_rerank", {"base_url": "https://rerank.example.test"}),
+    ],
+)
+def test_project_config_rejects_sensitive_fields(
+    tmp_path, monkeypatch, field, value
+):
+    _prepare_config(tmp_path, monkeypatch)
+    project_config = tmp_path / "project" / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(json.dumps({field: value}), encoding="utf-8")
+
+    with pytest.raises(config_module.ProjectConfigError) as exc_info:
+        config_module.load_config(project_config.parent.parent)
+
+    message = str(exc_info.value)
+    assert str(project_config) in message
+    assert field in message
+    assert "project-secret" not in message
+    assert "Credentials and endpoints" in message
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "provider",
+        "extract_backend",
+        "update_check",
+        "local_cuda",
+        "flashrank_model",
+        "unknown_field",
+    ],
+)
+def test_project_config_rejects_non_whitelisted_fields(
+    tmp_path, monkeypatch, field
+):
+    _prepare_config(tmp_path, monkeypatch)
+    project_config = tmp_path / "project" / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(json.dumps({field: "value"}), encoding="utf-8")
+
+    with pytest.raises(config_module.ProjectConfigError) as exc_info:
+        config_module.load_config(project_config.parent.parent)
+
+    message = str(exc_info.value)
+    assert str(project_config) in message
+    assert field in message
+    assert "Allowed fields" in message
+
+
+@pytest.mark.parametrize("payload", ["{", "[]"])
+def test_project_config_rejects_malformed_or_non_object_json(
+    tmp_path, monkeypatch, payload
+):
+    _prepare_config(tmp_path, monkeypatch)
+    project_config = tmp_path / "project" / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(payload, encoding="utf-8")
+
+    with pytest.raises(config_module.ProjectConfigError, match="Invalid project config"):
+        config_module.load_config(project_config.parent.parent)
+
+
+def test_project_config_wraps_invalid_allowed_field_value(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+    project_config = tmp_path / "project" / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"auto_index": "sometimes"}), encoding="utf-8"
+    )
+
+    with pytest.raises(config_module.ProjectConfigError) as exc_info:
+        config_module.load_config(project_config.parent.parent)
+
+    assert str(project_config) in str(exc_info.value)
+    assert "invalid value for auto_index" in str(exc_info.value)
+
+
+def test_project_config_env_precedence_and_origins(tmp_path, monkeypatch):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(
+        json.dumps({"model": "global-model", "batch_size": 8}),
+        encoding="utf-8",
+    )
+    project = tmp_path / "project"
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"model": "project-model", "batch_size": 12}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        config_module.ENV_CONFIG_JSON,
+        json.dumps({"model": "env-model"}),
+    )
+    monkeypatch.setenv(config_module.ENV_API_KEY, "env-secret")
+
+    resolution = config_module.resolve_config(project)
+
+    assert resolution.config.model == "env-model"
+    assert resolution.config.batch_size == 12
+    assert resolution.config.api_key == "env-secret"
+    assert resolution.origin_for("model") is config_module.ConfigOrigin.ENVIRONMENT
+    assert resolution.origin_for("batch_size") is config_module.ConfigOrigin.PROJECT
+    assert resolution.origin_for("api_key") is config_module.ConfigOrigin.ENVIRONMENT
+
+
 def test_config_dir_context_overrides_config_file(tmp_path):
     original_config_dir = config_module.CONFIG_DIR
     with config_module.config_dir_context(tmp_path):
@@ -37,6 +276,24 @@ def test_config_dir_context_overrides_config_file(tmp_path):
         assert loaded.provider == "gemini"
         assert (tmp_path / "config.json").exists()
     assert config_module.CONFIG_DIR == original_config_dir
+
+
+def test_explicit_config_dir_is_not_reloaded_as_untrusted_project_config(tmp_path):
+    project = tmp_path / "project"
+    explicit_config_dir = project / ".vexor"
+
+    with config_module.config_dir_context(explicit_config_dir):
+        config_module.save_config(
+            config_module.Config(
+                api_key="trusted-key",
+                base_url="https://trusted.example.test",
+            )
+        )
+        resolution = config_module.resolve_config(project)
+
+    assert resolution.project_file is None
+    assert resolution.config.api_key == "trusted-key"
+    assert resolution.config.base_url == "https://trusted.example.test"
 
 
 def test_resolve_default_model_gemini_defaults() -> None:

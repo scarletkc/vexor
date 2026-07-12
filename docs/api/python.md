@@ -1,7 +1,8 @@
 # Python API
 
 The Python API mirrors the CLI behavior and exposes the same search/index flow.
-Configuration can come from disk, in-memory overrides, or per-call parameters.
+Configuration can come from global or project files, environment variables,
+in-memory overrides, or per-call parameters.
 
 ## Quick start
 
@@ -44,11 +45,21 @@ Configuration is resolved in this order (highest to lowest priority):
 1. Explicit function arguments (e.g., `provider`, `model`, `api_key`)
 2. Per-call override via `config=...`
 3. In-memory runtime config set by `set_config_json(...)`
-4. `~/.vexor/config.json` (unless `use_config=False`)
-5. Built-in defaults
+4. Environment overrides, including `VEXOR_CONFIG_JSON`
+5. The nearest project `.vexor/config.json`
+6. Global `~/.vexor/config.json`
+7. Built-in defaults
 
 For pure library usage that should ignore on-disk config, pass `use_config=False`
 and set explicit arguments or `config=...`.
+
+Project resolution starts at the call's resolved `path` and uses the nearest
+`.vexor/` marker. The project file accepts exactly `rerank`, `auto_index`,
+`model`, `embedding_dimensions`, `batch_size`, `embed_concurrency`, and
+`extract_concurrency`. It rejects credentials and endpoints (`api_key`,
+`base_url`, `remote_rerank`) and every other field. This restricted schema
+applies only to `.vexor/config.json`; explicit API and runtime payloads retain
+the full schema below.
 
 Index cache location is resolved separately. Vexor walks upward from `path` and
 uses the nearest project `.vexor/index.db` when a `.vexor/` directory exists.
@@ -127,7 +138,7 @@ merging with the current runtime or on-disk config (avoids reading disk).
 
 ## Config payload schema
 
-The `config` payload (dict/JSON) supports:
+The per-call or in-memory `config` payload (dict/JSON) supports:
 
 - `provider`: `openai`, `gemini`, `voyageai`, `custom`, `local`
 - `model`: embedding model name
@@ -144,14 +155,17 @@ The `config` payload (dict/JSON) supports:
 - `flashrank_model`: string or null
 - `remote_rerank`: object with `base_url`, `api_key`, `model`
 
-Unknown keys are ignored. `remote_rerank.base_url` is normalized to end with `/rerank`.
+Unknown keys in these explicit payloads are ignored; project files reject
+them. `remote_rerank.base_url` is normalized to end with `/rerank`.
 
 API keys can also come from environment variables:
 `VEXOR_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENAI_API_KEY`, `VOYAGE_API_KEY`,
 and `VEXOR_REMOTE_RERANK_API_KEY`.
 
-Environment variables only supply API keys; other settings must be passed
-explicitly via function arguments or `config=...`.
+`VEXOR_CONFIG_JSON` supplies non-secret environment overrides; dedicated
+variables supply API keys. Environment values override global and project
+files, while explicit function, per-call, and in-memory values take precedence
+over the environment.
 
 ## Cache behavior
 

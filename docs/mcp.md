@@ -3,8 +3,8 @@
 `vexor mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
 server over stdio, exposing Vexor's semantic search to any MCP-capable agent
 (Claude Code, Codex, Cursor, Windsurf, Zed, and others). It requires no extra
-dependencies and reuses your existing Vexor configuration (`~/.vexor/config.json`)
-and index cache.
+dependencies and reuses your global Vexor configuration, the safe project
+config selected by each tool path, and the corresponding index cache.
 
 ```bash
 vexor mcp [--path PATH]
@@ -53,9 +53,10 @@ If `vexor` is not on the client's PATH, use an absolute command path, or
 MCP clients can also launch Vexor without installing it, using
 `"command": "uvx", "args": ["vexor", "mcp"]`. Notes for this mode:
 
-- Configuration, index caches, and downloaded models live under `~/.vexor`,
-  so they persist across uvx's ephemeral environments. CLI commands from
-  error messages work with a prefix: `uvx vexor init`, `uvx vexor config --show`.
+- Global configuration and downloaded models live under `~/.vexor`, so they
+  persist across uvx's ephemeral environments. Project config and local index
+  caches remain in the project's `.vexor/` directory. CLI commands from error
+  messages work with a prefix: `uvx vexor init`, `uvx vexor config --show`.
 - uvx caches the resolved environment and does **not** auto-upgrade; use
   `uvx vexor@latest mcp` to always run the newest release, or refresh
   explicitly with `uvx --refresh vexor`. `vexor update --upgrade` applies
@@ -79,8 +80,8 @@ configuration kept on separate channels:
   takes precedence over a stored reranker key and is only needed when
   `rerank` is set to `remote`.
 - `VEXOR_CONFIG_JSON` (non-secret) — any other Vexor config as a JSON
-  object, merged over `~/.vexor/config.json`. Accepts the same fields as
-  the config file: `provider`, `model`, `base_url`, `rerank`,
+  object, merged over the effective global and project config. Accepts the
+  full non-secret schema: `provider`, `model`, `base_url`, `rerank`,
   `embedding_dimensions`, `auto_index`, and so on. Credential fields
   (`api_key`, `remote_rerank.api_key`) are rejected with a clear error so
   secrets stay on the dedicated variables above.
@@ -182,6 +183,11 @@ The tool returns `{path, mode, status, files_indexed}` where `status` is `stored
   extra fields).
 - Relative `path` arguments resolve against the server's default path
   (`--path`, or the server's working directory).
+- Each resolved tool path uses `config.json` from its nearest `.vexor/` marker.
+  Project config accepts only `rerank`, `auto_index`, `model`,
+  `embedding_dimensions`, `batch_size`, `embed_concurrency`, and
+  `extract_concurrency`; credentials, endpoints, and all other fields fail
+  explicitly. MCP client environment overrides take precedence over it.
 - Index cache keys follow the same rules as the CLI (see
   [Cache Behavior](cli.md#cache-behavior)): tool calls with the same
   path/mode/filters share indexes with CLI usage. When a project contains

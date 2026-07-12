@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..config import (
+    CONFIG_FIELD_NAMES,
     Config,
+    ConfigResolution,
     load_config,
+    resolve_config,
     set_api_key,
     set_base_url,
     set_batch_size,
@@ -190,7 +194,34 @@ def apply_config_updates(
     return result
 
 
-def get_config_snapshot() -> Config:
+def get_config_snapshot(directory: Path | str | None = None) -> Config:
     """Return the current configuration dataclass."""
 
-    return load_config()
+    return load_config(directory)
+
+
+def get_config_resolution(
+    directory: Path | str | None = None,
+) -> ConfigResolution:
+    """Return effective config and per-field source metadata."""
+
+    return resolve_config(directory)
+
+
+def format_config_origins(resolution: ConfigResolution) -> str:
+    """Format all config field origins in stable schema order."""
+
+    labels = get_config_origin_labels(resolution)
+    return "\n".join(
+        f"{field}: {labels[field]}" for field in CONFIG_FIELD_NAMES
+    )
+
+
+def get_config_origin_labels(
+    resolution: ConfigResolution,
+) -> dict[str, str]:
+    """Return stable user-facing origin labels keyed by config field."""
+
+    return {
+        field: resolution.origin_for(field).value for field in CONFIG_FIELD_NAMES
+    }

@@ -59,7 +59,11 @@ from .providers.capabilities import (
     supports_dimensions,
 )
 from .services.cache_service import is_cache_current, load_index_metadata_safe
-from .services.config_service import apply_config_updates, get_config_snapshot
+from .services.config_service import (
+    apply_config_updates,
+    get_config_origin_labels,
+    get_config_resolution,
+)
 from .services.init_service import run_init_wizard, should_auto_run_init
 from .services.index_service import IndexStatus, build_index, clear_index_entries
 from .services.search_service import SearchRequest, perform_search, _select_cache_superset
@@ -201,6 +205,16 @@ def _parse_boolean(value: str) -> bool:
     if token in {"0", "false", "f", "no", "n", "off"}:
         return False
     raise ValueError(Messages.ERROR_BOOLEAN_INVALID.format(value=value))
+
+
+def _load_config_or_exit(directory: Path | str | None = None) -> config_module.Config:
+    """Load config for a CLI command and render failures without a traceback."""
+
+    try:
+        return load_config(directory)
+    except (ValueError, OSError, UnicodeDecodeError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 def _prepare_flashrank_model(model_name: str | None) -> None:
@@ -417,7 +431,8 @@ def search(
     ),
 ) -> None:
     """Run the semantic search."""
-    config = load_config()
+    directory = resolve_directory(path)
+    config = _load_config_or_exit(directory)
     provider = (config.provider or DEFAULT_PROVIDER).lower()
     model_name = resolve_default_model(provider, config.model)
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
@@ -443,7 +458,6 @@ def search(
     except ValueError as exc:  # pragma: no cover - validated by Typer
         raise typer.BadParameter(str(exc)) from exc
 
-    directory = resolve_directory(path)
     mode_value = _validate_mode(mode)
     recursive = not no_recursive
     normalized_exts = normalize_extensions(extensions)
@@ -605,7 +619,8 @@ def index(
     ),
 ) -> None:
     """Create or refresh the cached index for the given directory."""
-    config = load_config()
+    directory = resolve_directory(path)
+    config = _load_config_or_exit(directory)
     provider = (config.provider or DEFAULT_PROVIDER).lower()
     model_name = resolve_default_model(provider, config.model)
     batch_size = config.batch_size if config.batch_size is not None else DEFAULT_BATCH_SIZE
@@ -615,7 +630,6 @@ def index(
     base_url = config.base_url
     api_key = config.api_key
 
-    directory = resolve_directory(path)
     if local:
         project_cache_dir = cache.create_project_cache_dir(directory)
         console.print(
@@ -879,7 +893,7 @@ def config(
         help=Messages.HELP_CLEAR_INDEX_ALL,
     ),
 ) -> None:
-    """Manage Vexor configuration stored in ~/.vexor/config.json."""
+    """Manage global config and inspect effective project settings."""
     if set_batch_option is not None and set_batch_option < 0:
         raise typer.BadParameter(Messages.ERROR_BATCH_NEGATIVE)
     if set_embed_concurrency_option is not None and set_embed_concurrency_option < 1:
@@ -982,7 +996,7 @@ def config(
                 raise typer.BadParameter(Messages.ERROR_FLASHRANK_MISSING)
         set_rerank_option = normalized_rerank
 
-    config_snapshot = load_config()
+    config_snapshot = _load_config_or_exit()
     current_provider = (config_snapshot.provider or DEFAULT_PROVIDER).lower()
     pending_provider = set_provider_option or current_provider
     pending_model = set_model_option if set_model_option is not None else config_snapshot.model
@@ -1158,7 +1172,7 @@ def config(
             flashrank_model = (
                 set_flashrank_model_option
                 if set_flashrank_model_option is not None
-                else get_config_snapshot().flashrank_model
+                else _load_config_or_exit().flashrank_model
             )
             console.print(_styled(Messages.INFO_FLASHRANK_SETUP_START, Styles.INFO))
             try:
@@ -1276,16 +1290,24 @@ def config(
         return
 
     if show:
-        cfg = get_config_snapshot()
+        try:
+            resolution = get_config_resolution(Path.cwd())
+        except (ValueError, OSError, UnicodeDecodeError) as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        cfg = resolution.config
+        origins = get_config_origin_labels(resolution)
         provider = (cfg.provider or DEFAULT_PROVIDER).lower()
         rerank = (cfg.rerank or DEFAULT_RERANK).lower()
         flashrank_line = ""
         remote_rerank_line = ""
         if rerank == "flashrank":
             model_label = cfg.flashrank_model or f"default ({DEFAULT_FLASHRANK_MODEL})"
-            flashrank_line = (
-                f"{Messages.INFO_FLASHRANK_MODEL_SUMMARY.format(value=model_label)}\n"
+            flashrank_summary = Messages.INFO_FLASHRANK_MODEL_SUMMARY.format(
+                value=model_label,
+                origin=origins["flashrank_model"],
             )
+            flashrank_line = f"{flashrank_summary}\n"
         if rerank == "remote":
             remote_cfg = cfg.remote_rerank
             if remote_cfg is None:
@@ -1295,17 +1317,25 @@ def config(
                 model_label = remote_cfg.model or "unset"
                 key_label = "yes" if remote_cfg.api_key else "no"
                 remote_label = f"{url_label} (model {model_label}, key {key_label})"
-            remote_rerank_line = (
-                f"{Messages.INFO_REMOTE_RERANK_SUMMARY.format(value=remote_label)}\n"
+            remote_rerank_summary = Messages.INFO_REMOTE_RERANK_SUMMARY.format(
+                value=remote_label,
+                origin=origins["remote_rerank"],
             )
+            remote_rerank_line = f"{remote_rerank_summary}\n"
+        embedding_dimensions = cfg.embedding_dimensions or "default"
+        batch_size = (
+            cfg.batch_size
+            if cfg.batch_size is not None
+            else DEFAULT_BATCH_SIZE
+        )
         console.print(
             _styled(
                 Messages.INFO_CONFIG_SUMMARY.format(
                     api="yes" if cfg.api_key else "no",
                     provider=provider,
                     model=resolve_default_model(provider, cfg.model),
-                    embedding_dimensions=cfg.embedding_dimensions if cfg.embedding_dimensions else "default",
-                    batch=cfg.batch_size if cfg.batch_size is not None else DEFAULT_BATCH_SIZE,
+                    embedding_dimensions=embedding_dimensions,
+                    batch=batch_size,
                     concurrency=cfg.embed_concurrency,
                     extract_concurrency=cfg.extract_concurrency,
                     extract_backend=cfg.extract_backend,
@@ -1316,6 +1346,19 @@ def config(
                     remote_rerank_line=remote_rerank_line,
                     local_cuda="yes" if cfg.local_cuda else "no",
                     base_url=cfg.base_url or "none",
+                    api_origin=origins["api_key"],
+                    provider_origin=origins["provider"],
+                    model_origin=origins["model"],
+                    embedding_dimensions_origin=origins["embedding_dimensions"],
+                    batch_origin=origins["batch_size"],
+                    concurrency_origin=origins["embed_concurrency"],
+                    extract_concurrency_origin=origins["extract_concurrency"],
+                    extract_backend_origin=origins["extract_backend"],
+                    auto_index_origin=origins["auto_index"],
+                    update_check_origin=origins["update_check"],
+                    rerank_origin=origins["rerank"],
+                    local_cuda_origin=origins["local_cuda"],
+                    base_url_origin=origins["base_url"],
                 ),
                 Styles.INFO,
             )
@@ -1607,15 +1650,30 @@ def doctor(
     console.print()
 
     config_load_error: DoctorCheckResult | None = None
+    config_resolution = None
     try:
-        config = load_config()
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        config_resolution = get_config_resolution(Path.cwd())
+        config = config_resolution.config
+    except (ValueError, OSError, UnicodeDecodeError) as exc:
         config = config_module.Config()
+        if isinstance(exc, config_module.ProjectConfigError):
+            message = str(exc)
+            detail = None
+        elif isinstance(exc, ValueError) and not isinstance(
+            exc, json.JSONDecodeError
+        ):
+            message = str(exc)
+            detail = None
+        else:
+            message = Messages.DOCTOR_CONFIG_INVALID.format(
+                path=config_module.CONFIG_FILE
+            )
+            detail = str(exc)
         config_load_error = DoctorCheckResult(
             name="Config JSON",
             passed=False,
-            message=Messages.DOCTOR_CONFIG_INVALID.format(path=config_module.CONFIG_FILE),
-            detail=str(exc),
+            message=message,
+            detail=detail,
         )
 
     provider = (config.provider or DEFAULT_PROVIDER).lower()
@@ -1636,6 +1694,7 @@ def doctor(
             rerank=config.rerank,
             flashrank_model=config.flashrank_model,
             remote_rerank=config.remote_rerank,
+            config_resolution=config_resolution,
         )
     )
 
@@ -1647,7 +1706,8 @@ def doctor(
 
         console.print(f"  {icon} [bold]{result.name}:[/bold] {result.message}")
         if result.detail:
-            console.print(f"      [dim]{result.detail}[/dim]")
+            for line in result.detail.splitlines():
+                console.print(f"      [dim]{line}[/dim]")
 
     console.print()
     if has_failure:

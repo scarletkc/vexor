@@ -35,6 +35,19 @@ vexor "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--exclude-patte
 - `--no-cache`: in-memory only, do not read/write index cache
 - `vexor index --local`: create and use project-local `.vexor/index.db` storage
 
+## Project Config
+
+- The nearest `.vexor/config.json` applies automatically for the resolved
+  search or index path.
+- It accepts only `rerank`, `auto_index`, `model`, `embedding_dimensions`,
+  `batch_size`, `embed_concurrency`, and `extract_concurrency`.
+- Credentials and endpoints (`api_key`, `base_url`, `remote_rerank`) and all
+  other fields are rejected.
+- Precedence is global config, project config, environment overrides, then
+  explicit arguments.
+- `vexor config --show` and `vexor doctor` show each field's origin; mutating
+  `vexor config` commands remain global-only.
+
 ## Modes (pick the cheapest that works)
 
 - `auto`: routes by file type (default)
@@ -51,7 +64,7 @@ vexor "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--exclude-patte
 - Need ignored or hidden files: add `--include-hidden` and/or `--no-respect-gitignore`.
 - Scriptable output: use `--format porcelain` (TSV) or `--format porcelain-z` (NUL-delimited).
 - Get detailed help: `vexor search --help`.
-- Config issues: `vexor doctor` or `vexor config --show` diagnoses API, cache, and connectivity (tell the user to set up).
+- Config issues: `vexor doctor` or `vexor config --show` reports effective values and their origins.
 
 ## Examples
 

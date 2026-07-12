@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from contextlib import contextmanager
 from contextvars import ContextVar
 from collections.abc import Mapping
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse, urlunparse
@@ -60,6 +61,21 @@ SUPPORTED_EXTRACT_BACKENDS: tuple[str, ...] = ("auto", "thread", "process")
 ENV_CONFIG_JSON = "VEXOR_CONFIG_JSON"
 ENV_NO_UPDATE_CHECK = "VEXOR_NO_UPDATE_CHECK"
 REMOTE_RERANK_ENV = "VEXOR_REMOTE_RERANK_API_KEY"
+PROJECT_CONFIG_FILENAME = "config.json"
+PROJECT_CONFIG_FIELDS = frozenset(
+    {
+        "auto_index",
+        "batch_size",
+        "embed_concurrency",
+        "embedding_dimensions",
+        "extract_concurrency",
+        "model",
+        "rerank",
+    }
+)
+PROJECT_CONFIG_SENSITIVE_FIELDS = frozenset(
+    {"api_key", "base_url", "remote_rerank"}
+)
 
 
 @dataclass
@@ -86,6 +102,39 @@ class Config:
     flashrank_model: str | None = None
     remote_rerank: RemoteRerankConfig | None = None
     embedding_dimensions: int | None = None
+
+
+class ConfigOrigin(str, Enum):
+    """Source of an effective configuration field."""
+
+    DEFAULT = "default"
+    GLOBAL = "global"
+    PROJECT = "project"
+    ENVIRONMENT = "environment"
+
+
+CONFIG_FIELD_NAMES = tuple(Config.__dataclass_fields__)
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigResolution:
+    """Effective configuration plus source metadata for each field."""
+
+    config: Config
+    origins: Mapping[str, ConfigOrigin]
+    global_file: Path
+    project_file: Path | None = None
+
+    def origin_for(self, field: str) -> ConfigOrigin:
+        return self.origins.get(field, ConfigOrigin.DEFAULT)
+
+
+class ProjectConfigError(ValueError):
+    """Raised when a project-controlled config cannot be applied safely."""
+
+    def __init__(self, message: str, *, path: Path) -> None:
+        super().__init__(message)
+        self.path = path
 
 
 def _parse_remote_rerank(raw: object) -> RemoteRerankConfig | None:
@@ -115,6 +164,27 @@ def _resolve_config_file() -> Path:
     return CONFIG_FILE
 
 
+def _resolve_project_config_file(
+    directory: Path | str | None,
+) -> Path | None:
+    """Return the config candidate under the nearest project marker."""
+
+    if directory is None:
+        return None
+
+    # Import lazily so importing the standalone config module does not pull in
+    # the cache's NumPy/SQLite dependencies.
+    from .cache import find_project_cache_dir
+
+    project_dir = find_project_cache_dir(Path(directory))
+    if project_dir is None:
+        return None
+    project_file = project_dir / PROJECT_CONFIG_FILENAME
+    if project_file.resolve() == _resolve_config_file().resolve():
+        return None
+    return project_file
+
+
 @contextmanager
 def config_dir_context(path: Path | str | None):
     """Temporarily override the config directory for the current context."""
@@ -132,7 +202,11 @@ def config_dir_context(path: Path | str | None):
         _CONFIG_DIR_OVERRIDE.reset(token)
 
 
-def _apply_env_overrides(config: Config) -> Config:
+def _apply_env_overrides(
+    config: Config,
+    *,
+    origins: dict[str, ConfigOrigin] | None = None,
+) -> Config:
     """Merge the VEXOR_CONFIG_JSON environment override over *config*.
 
     Lets MCP client configs (and CI) inject any non-secret config field via
@@ -159,6 +233,10 @@ def _apply_env_overrides(config: Config) -> Config:
                     )
                 )
             config = config_from_json(data, base=config)
+            if origins is not None:
+                for field in data:
+                    if field in origins:
+                        origins[field] = ConfigOrigin.ENVIRONMENT
         except ValueError as exc:
             raise ValueError(
                 Messages.ERROR_ENV_CONFIG_JSON_INVALID.format(reason=exc)
@@ -170,18 +248,31 @@ def _apply_env_overrides(config: Config) -> Config:
     api_key = os.getenv(ENV_API_KEY)
     if api_key:
         config.api_key = api_key
+        if origins is not None:
+            origins["api_key"] = ConfigOrigin.ENVIRONMENT
     remote_rerank_api_key = os.getenv(REMOTE_RERANK_ENV)
     if remote_rerank_api_key and config.remote_rerank is not None:
         config.remote_rerank.api_key = remote_rerank_api_key
+        if origins is not None:
+            origins["remote_rerank"] = ConfigOrigin.ENVIRONMENT
     return config
 
 
-def _load_stored_config() -> Config:
-    """Load the persisted config without applying environment overrides."""
+def _load_stored_config_payload() -> Mapping[str, object]:
+    """Load the persisted global JSON object without applying it."""
+
     config_file = _resolve_config_file()
     if not config_file.exists():
-        return Config()
+        return {}
     raw = json.loads(config_file.read_text(encoding="utf-8"))
+    if not isinstance(raw, Mapping):
+        raise ValueError(Messages.ERROR_CONFIG_JSON_INVALID)
+    return raw
+
+
+def _config_from_stored_payload(raw: Mapping[str, object]) -> Config:
+    """Build a Config while preserving the global file's legacy coercions."""
+
     rerank = (raw.get("rerank") or DEFAULT_RERANK).strip().lower()
     if rerank not in SUPPORTED_RERANKERS:
         rerank = DEFAULT_RERANK
@@ -206,9 +297,103 @@ def _load_stored_config() -> Config:
     )
 
 
-def load_config() -> Config:
-    """Load persisted configuration and apply process-local environment overrides."""
-    return _apply_env_overrides(_load_stored_config())
+def _load_stored_config() -> Config:
+    """Load the persisted config without applying environment overrides."""
+
+    return _config_from_stored_payload(_load_stored_config_payload())
+
+
+def _load_project_config(
+    base: Config,
+    directory: Path | str | None,
+) -> tuple[Config, Path | None, tuple[str, ...]]:
+    project_file = _resolve_project_config_file(directory)
+    if project_file is None or not project_file.exists():
+        return base, project_file, ()
+
+    try:
+        raw = json.loads(project_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        raise ProjectConfigError(
+            Messages.ERROR_PROJECT_CONFIG_INVALID.format(
+                path=project_file,
+                reason=exc,
+            ),
+            path=project_file,
+        ) from exc
+    if not isinstance(raw, Mapping):
+        raise ProjectConfigError(
+            Messages.ERROR_PROJECT_CONFIG_INVALID.format(
+                path=project_file,
+                reason=Messages.ERROR_CONFIG_JSON_INVALID,
+            ),
+            path=project_file,
+        )
+
+    fields = set(raw)
+    sensitive = sorted(fields & PROJECT_CONFIG_SENSITIVE_FIELDS)
+    if sensitive:
+        raise ProjectConfigError(
+            Messages.ERROR_PROJECT_CONFIG_SENSITIVE.format(
+                path=project_file,
+                fields=", ".join(sensitive),
+            ),
+            path=project_file,
+        )
+    unsupported = sorted(fields - PROJECT_CONFIG_FIELDS)
+    if unsupported:
+        raise ProjectConfigError(
+            Messages.ERROR_PROJECT_CONFIG_UNSUPPORTED.format(
+                path=project_file,
+                fields=", ".join(unsupported),
+                allowed=", ".join(sorted(PROJECT_CONFIG_FIELDS)),
+            ),
+            path=project_file,
+        )
+
+    try:
+        config = config_from_json(raw, base=base)
+    except ValueError as exc:
+        raise ProjectConfigError(
+            Messages.ERROR_PROJECT_CONFIG_INVALID.format(
+                path=project_file,
+                reason=exc,
+            ),
+            path=project_file,
+        ) from exc
+    return config, project_file, tuple(sorted(fields))
+
+
+def resolve_config(
+    directory: Path | str | None = None,
+) -> ConfigResolution:
+    """Resolve global, project, and environment config with field origins."""
+
+    global_file = _resolve_config_file()
+    stored = _load_stored_config_payload()
+    config = _config_from_stored_payload(stored)
+    origins = {field: ConfigOrigin.DEFAULT for field in CONFIG_FIELD_NAMES}
+    for field in stored:
+        if field in origins:
+            origins[field] = ConfigOrigin.GLOBAL
+
+    config, project_file, project_fields = _load_project_config(config, directory)
+    for field in project_fields:
+        origins[field] = ConfigOrigin.PROJECT
+
+    config = _apply_env_overrides(config, origins=origins)
+    return ConfigResolution(
+        config=config,
+        origins=origins,
+        global_file=global_file,
+        project_file=project_file,
+    )
+
+
+def load_config(directory: Path | str | None = None) -> Config:
+    """Load effective config for *directory* and apply environment overrides."""
+
+    return resolve_config(directory).config
 
 
 def save_config(config: Config) -> None:
