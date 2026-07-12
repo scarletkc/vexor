@@ -12,7 +12,7 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
-from ..config import DEFAULT_GEMINI_MODEL
+from .capabilities import DEFAULT_GEMINI_MODEL
 from ..text import Messages
 
 

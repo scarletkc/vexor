@@ -14,20 +14,22 @@ from .config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_EXTRACT_BACKEND,
     DEFAULT_EXTRACT_CONCURRENCY,
-    DEFAULT_PROVIDER,
     DEFAULT_RERANK,
     Config,
     RemoteRerankConfig,
     SUPPORTED_RERANKERS,
     config_from_json,
     config_dir_context,
-    validate_embedding_dimensions_for_model,
     load_config,
-    resolve_default_model,
     set_config_dir,
 )
 from .cache import cache_dir_context, set_cache_dir
 from .modes import available_modes, get_strategy
+from .providers.capabilities import (
+    DEFAULT_PROVIDER,
+    resolve_default_model,
+    validate_embedding_dimensions_for_model,
+)
 from .services.index_service import (
     IndexResult,
     build_index,

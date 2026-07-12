@@ -5,7 +5,7 @@
   - `cli.py`, `__main__.py` — Typer CLI entrypoints; `api.py` — public Python API; `search.py` — search/result models.
   - Shared helpers: `cache.py`, `config.py`, `modes.py`, `output.py`, `text.py`, `utils.py`.
   - `vexor/services/` — orchestration layer: indexing, search, config, cache inspection, content/keyword extraction, JS parsing, init/setup flows, system diagnostics, skill installation, and the MCP stdio server (`mcp_service.py`, exposed via `vexor mcp`).
-  - `vexor/providers/` — embedding provider adapters (`gemini.py`, `openai.py`, `local.py`); the `voyageai` and `custom` providers flow through the OpenAI-compatible path.
+  - `vexor/providers/` — embedding provider adapters (`gemini.py`, `openai.py`, `local.py`) and `capabilities.py` (provider capability metadata: default models, env vars, base URLs, dimension rules); the `voyageai` and `custom` providers flow through the OpenAI-compatible path.
 - `docs/` — `configuration.md`, `cli.md`, `mcp.md`, `api/python.md`, `development.md`, `roadmap.md`. The README stays lean and links into these. `docs/roadmap.md` is the source of truth for priorities.
 - `gui/` — desktop app (Vue + Electron). Maintenance mode: security/dependency bumps only, no new features (see "GUI policy" in the roadmap).
 - `plugins/vexor/` — bundled agent assets, including `skills/vexor-cli/`.
