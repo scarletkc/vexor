@@ -1704,10 +1704,13 @@ def doctor(
         if not result.passed:
             has_failure = True
 
-        console.print(f"  {icon} [bold]{result.name}:[/bold] {result.message}")
+        console.print(
+            f"  {icon} [bold]{result.name}:[/bold] {result.message}",
+            soft_wrap=True,
+        )
         if result.detail:
             for line in result.detail.splitlines():
-                console.print(f"      [dim]{line}[/dim]")
+                console.print(f"      [dim]{line}[/dim]", soft_wrap=True)
 
     console.print()
     if has_failure:
