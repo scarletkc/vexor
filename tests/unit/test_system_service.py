@@ -223,7 +223,7 @@ def test_command_config_api_key_and_cache_checks(monkeypatch, tmp_path):
     assert writable.passed is True
 
 
-def test_check_config_exists_includes_resolution_origins(tmp_path):
+def test_check_config_exists_reports_override_summary(tmp_path):
     from vexor.config import (
         CONFIG_FIELD_NAMES,
         Config,
@@ -239,7 +239,9 @@ def test_check_config_exists_includes_resolution_origins(tmp_path):
     project_file.write_text("{}", encoding="utf-8")
     origins = {field: ConfigOrigin.DEFAULT for field in CONFIG_FIELD_NAMES}
     origins["provider"] = ConfigOrigin.GLOBAL
+    origins["rerank"] = ConfigOrigin.PROJECT
     origins["model"] = ConfigOrigin.PROJECT
+    origins["batch_size"] = ConfigOrigin.ENVIRONMENT
     resolution = ConfigResolution(
         config=Config(),
         origins=origins,
@@ -252,13 +254,37 @@ def test_check_config_exists_includes_resolution_origins(tmp_path):
     assert result.passed is True
     assert result.detail is not None
     assert f"Project config: {project_file}" in result.detail
-    assert "provider: global" in result.detail
-    assert "model: project" in result.detail
-    assert "base_url: default" in result.detail
+    assert "Project overrides: model, rerank" in result.detail
+    assert "Environment overrides: batch_size" in result.detail
+    assert "provider: global" not in result.detail
 
     global_file.unlink()
     project_only = system_service.check_config_exists(resolution)
     assert "Project config file exists" in project_only.message
+
+
+def test_check_config_exists_omits_override_lines_without_overrides(tmp_path):
+    from vexor.config import (
+        CONFIG_FIELD_NAMES,
+        Config,
+        ConfigOrigin,
+        ConfigResolution,
+    )
+
+    global_file = tmp_path / "global" / "config.json"
+    global_file.parent.mkdir()
+    global_file.write_text("{}", encoding="utf-8")
+    origins = {field: ConfigOrigin.GLOBAL for field in CONFIG_FIELD_NAMES}
+    resolution = ConfigResolution(
+        config=Config(),
+        origins=origins,
+        global_file=global_file,
+        project_file=None,
+    )
+
+    result = system_service.check_config_exists(resolution)
+
+    assert result.detail == "Project config: none"
 
 
 def test_check_cache_directory_reports_create_and_write_failures(monkeypatch, tmp_path):

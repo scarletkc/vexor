@@ -43,24 +43,20 @@ Reranking is a config setting rather than a search flag — see
 [Configuration → Rerank](configuration.md#rerank) for the available
 strategies (`off`, `bm25`, `flashrank`, `remote`, `hybrid`).
 
+Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`,
+`start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
+
 ## Project Configuration
 
 Search and index commands walk upward from their resolved `--path` and apply
-`config.json` from the nearest `.vexor/` marker. Project config v1 accepts only
-`rerank`, `auto_index`, `model`, `embedding_dimensions`, `batch_size`,
-`embed_concurrency`, and `extract_concurrency`. Credentials and endpoints
-(`api_key`, `base_url`, `remote_rerank`) and every other field are rejected.
-
-Precedence is global config, then project config, then environment overrides,
-then explicit arguments. `vexor config --show` and `vexor doctor` use the
-current working directory and show each effective field's origin. Mutating
-`vexor config` options always write `~/.vexor/config.json`; edit the project
-file directly for project-specific values. See
+`config.json` from the nearest `.vexor/` marker as a safe overlay on the
+global config; credentials and endpoints are rejected. `vexor config --show`
+and `vexor doctor` resolve from the current working directory: `--show`
+labels each effective field's origin, `doctor` lists active overrides.
+Mutating `vexor config` options always write `~/.vexor/config.json`; edit the
+project file directly for project-specific values. See
 [Configuration → Project configuration](configuration.md#project-configuration)
-for the full contract.
-
-Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`,
-`start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
+for the accepted fields and precedence.
 
 ## Ignore Files
 

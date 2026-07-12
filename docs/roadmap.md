@@ -56,8 +56,8 @@ never leaving the machine.
     `embed_concurrency`, and `extract_concurrency`. The strict allowlist
     rejects credentials, endpoints, and every other field. Precedence is
     global config < project config < environment overrides < explicit
-    arguments, and `vexor config --show` plus `vexor doctor` report each
-    effective field's origin. Mutating config commands remain global-only.
+    arguments, and `vexor config --show` plus `vexor doctor` surface each
+    effective value's origin. Mutating config commands remain global-only.
   - v2 (only if v1 sees real use): per-project scan defaults (`mode`,
     `extensions`, `exclude_patterns`) — these are per-invocation CLI
     arguments today, not config fields, so supporting them means new

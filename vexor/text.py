@@ -150,7 +150,7 @@ class Messages:
         "Set the remote rerank API key (or use VEXOR_REMOTE_RERANK_API_KEY)."
     )
     HELP_CLEAR_REMOTE_RERANK = "Clear remote rerank configuration."
-    HELP_SHOW_CONFIG = "Show current configuration."
+    HELP_SHOW_CONFIG = "Show effective configuration and each field's origin."
     HELP_SHOW_INDEX_ALL = "Show metadata for every index in the active cache database."
     HELP_CLEAR_INDEX_ALL = "Delete every index in the active cache database."
     HELP_INSTALL_SKILLS = (
@@ -460,7 +460,9 @@ class Messages:
     DOCTOR_CONFIG_DEFAULT = "No config file (using defaults)"
     DOCTOR_CONFIG_NO_GLOBAL = "No global config file"
     DOCTOR_CONFIG_INVALID = "Config file is invalid JSON at {path}"
-    DOCTOR_CONFIG_SOURCES = "Project config: {project}\nField origins:\n{origins}"
+    DOCTOR_CONFIG_PROJECT = "Project config: {project}"
+    DOCTOR_CONFIG_PROJECT_OVERRIDES = "Project overrides: {fields}"
+    DOCTOR_CONFIG_ENV_OVERRIDES = "Environment overrides: {fields}"
     DOCTOR_CACHE_CREATED = "Created cache directory at {path}"
     DOCTOR_CACHE_WRITABLE = "Cache directory writable at {path}"
     DOCTOR_CACHE_NOT_WRITABLE = "Cache directory not writable at {path}"

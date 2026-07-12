@@ -183,11 +183,11 @@ The tool returns `{path, mode, status, files_indexed}` where `status` is `stored
   extra fields).
 - Relative `path` arguments resolve against the server's default path
   (`--path`, or the server's working directory).
-- Each resolved tool path uses `config.json` from its nearest `.vexor/` marker.
-  Project config accepts only `rerank`, `auto_index`, `model`,
-  `embedding_dimensions`, `batch_size`, `embed_concurrency`, and
-  `extract_concurrency`; credentials, endpoints, and all other fields fail
-  explicitly. MCP client environment overrides take precedence over it.
+- Each resolved tool path applies `config.json` from its nearest `.vexor/`
+  marker — a strict behavior-field allowlist that rejects credentials and
+  endpoints (see
+  [Project configuration](configuration.md#project-configuration)). MCP
+  client environment overrides take precedence over it.
 - Index cache keys follow the same rules as the CLI (see
   [Cache Behavior](cli.md#cache-behavior)): tool calls with the same
   path/mode/filters share indexes with CLI usage. When a project contains

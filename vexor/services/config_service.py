@@ -8,6 +8,7 @@ from pathlib import Path
 from ..config import (
     CONFIG_FIELD_NAMES,
     Config,
+    ConfigOrigin,
     ConfigResolution,
     load_config,
     resolve_config,
@@ -208,13 +209,17 @@ def get_config_resolution(
     return resolve_config(directory)
 
 
-def format_config_origins(resolution: ConfigResolution) -> str:
-    """Format all config field origins in stable schema order."""
+def collect_config_overrides(
+    resolution: ConfigResolution,
+) -> dict[ConfigOrigin, tuple[str, ...]]:
+    """Return fields overridden by the project or environment, sorted by name."""
 
-    labels = get_config_origin_labels(resolution)
-    return "\n".join(
-        f"{field}: {labels[field]}" for field in CONFIG_FIELD_NAMES
-    )
+    grouped: dict[ConfigOrigin, list[str]] = {}
+    for field in sorted(CONFIG_FIELD_NAMES):
+        origin = resolution.origin_for(field)
+        if origin in (ConfigOrigin.PROJECT, ConfigOrigin.ENVIRONMENT):
+            grouped.setdefault(origin, []).append(field)
+    return {origin: tuple(fields) for origin, fields in grouped.items()}
 
 
 def get_config_origin_labels(

@@ -45,8 +45,8 @@ vexor "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--exclude-patte
   other fields are rejected.
 - Precedence is global config, project config, environment overrides, then
   explicit arguments.
-- `vexor config --show` and `vexor doctor` show each field's origin; mutating
-  `vexor config` commands remain global-only.
+- `vexor config --show` labels each field's origin and `vexor doctor` lists
+  active overrides; mutating `vexor config` commands remain global-only.
 
 ## Modes (pick the cheapest that works)
 

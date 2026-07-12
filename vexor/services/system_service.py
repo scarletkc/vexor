@@ -20,6 +20,7 @@ from urllib import error, request
 
 from ..config import (
     Config,
+    ConfigOrigin,
     ConfigResolution,
     DEFAULT_FLASHRANK_MODEL,
     DEFAULT_RERANK,
@@ -31,7 +32,7 @@ from ..config import (
     update_check_file,
 )
 from ..text import Messages
-from .config_service import format_config_origins
+from .config_service import collect_config_overrides
 
 EDITOR_FALLBACKS = ("nano", "vi", "notepad", "notepad.exe")
 
@@ -100,10 +101,21 @@ def check_config_exists(
         return result
 
     project_label = str(project_file) if project_exists else "none"
-    source_detail = Messages.DOCTOR_CONFIG_SOURCES.format(
-        project=project_label,
-        origins=format_config_origins(resolution),
-    )
+    detail_lines = [Messages.DOCTOR_CONFIG_PROJECT.format(project=project_label)]
+    overrides = collect_config_overrides(resolution)
+    project_fields = overrides.get(ConfigOrigin.PROJECT)
+    if project_fields:
+        detail_lines.append(
+            Messages.DOCTOR_CONFIG_PROJECT_OVERRIDES.format(
+                fields=", ".join(project_fields)
+            )
+        )
+    env_fields = overrides.get(ConfigOrigin.ENVIRONMENT)
+    if env_fields:
+        detail_lines.append(
+            Messages.DOCTOR_CONFIG_ENV_OVERRIDES.format(fields=", ".join(env_fields))
+        )
+    source_detail = "\n".join(detail_lines)
     result.detail = (
         f"{result.detail}\n{source_detail}" if result.detail else source_detail
     )

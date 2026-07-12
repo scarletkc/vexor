@@ -55,6 +55,7 @@ from .providers.capabilities import (
     DIMENSION_SUPPORTED_MODELS,
     SUPPORTED_PROVIDERS,
     get_supported_dimensions,
+    resolve_api_key,
     resolve_default_model,
     supports_dimensions,
 )
@@ -1315,23 +1316,30 @@ def config(
             else:
                 url_label = remote_cfg.base_url or "unset"
                 model_label = remote_cfg.model or "unset"
-                key_label = "yes" if remote_cfg.api_key else "no"
+                if os.getenv(config_module.REMOTE_RERANK_ENV):
+                    key_label = "from env"
+                else:
+                    key_label = "yes" if remote_cfg.api_key else "no"
                 remote_label = f"{url_label} (model {model_label}, key {key_label})"
             remote_rerank_summary = Messages.INFO_REMOTE_RERANK_SUMMARY.format(
                 value=remote_label,
                 origin=origins["remote_rerank"],
             )
             remote_rerank_line = f"{remote_rerank_summary}\n"
-        embedding_dimensions = cfg.embedding_dimensions or "default"
+        embedding_dimensions = cfg.embedding_dimensions or "auto"
         batch_size = (
             cfg.batch_size
             if cfg.batch_size is not None
             else DEFAULT_BATCH_SIZE
         )
+        effective_api_key = cfg.api_key or resolve_api_key(None, provider)
+        api_origin = origins["api_key"]
+        if effective_api_key and not cfg.api_key:
+            api_origin = config_module.ConfigOrigin.ENVIRONMENT.value
         console.print(
             _styled(
                 Messages.INFO_CONFIG_SUMMARY.format(
-                    api="yes" if cfg.api_key else "no",
+                    api="yes" if effective_api_key else "no",
                     provider=provider,
                     model=resolve_default_model(provider, cfg.model),
                     embedding_dimensions=embedding_dimensions,
@@ -1346,7 +1354,7 @@ def config(
                     remote_rerank_line=remote_rerank_line,
                     local_cuda="yes" if cfg.local_cuda else "no",
                     base_url=cfg.base_url or "none",
-                    api_origin=origins["api_key"],
+                    api_origin=api_origin,
                     provider_origin=origins["provider"],
                     model_origin=origins["model"],
                     embedding_dimensions_origin=origins["embedding_dimensions"],
@@ -1655,7 +1663,12 @@ def doctor(
         config_resolution = get_config_resolution(Path.cwd())
         config = config_resolution.config
     except (ValueError, OSError, UnicodeDecodeError) as exc:
-        config = config_module.Config()
+        # Fall back to the global-only config so the remaining checks reflect
+        # the user's real settings instead of blank defaults.
+        try:
+            config = get_config_resolution(None).config
+        except (ValueError, OSError, UnicodeDecodeError):
+            config = config_module.Config()
         if isinstance(exc, config_module.ProjectConfigError):
             message = str(exc)
             detail = None

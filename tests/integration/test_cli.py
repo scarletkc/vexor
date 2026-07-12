@@ -1057,6 +1057,48 @@ def test_config_show_reports_global_project_and_environment_origins(
     assert "Default batch size: 23 (environment)" in output
     assert "Auto index: no (project)" in output
     assert "Custom base URL: none (default)" in output
+    assert "Embedding dimensions: auto (default)" in output
+
+
+def test_config_show_reports_provider_env_api_key(monkeypatch, temp_config_home):
+    runner = CliRunner()
+    temp_config_home.parent.mkdir(parents=True)
+    temp_config_home.write_text(json.dumps({"provider": "openai"}), encoding="utf-8")
+    monkeypatch.delenv("VEXOR_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env-key")
+
+    result = runner.invoke(app, ["config", "--show"])
+    output = strip_ansi(result.stdout)
+
+    assert result.exit_code == 0
+    assert "API key set: yes (environment)" in output
+
+
+def test_config_show_remote_rerank_env_key_keeps_block_origin(
+    monkeypatch, temp_config_home
+):
+    runner = CliRunner()
+    temp_config_home.parent.mkdir(parents=True)
+    temp_config_home.write_text(
+        json.dumps(
+            {
+                "rerank": "remote",
+                "remote_rerank": {
+                    "base_url": "https://rerank.example.test/rerank",
+                    "model": "rerank-model",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("VEXOR_REMOTE_RERANK_API_KEY", "env-remote-key")
+
+    result = runner.invoke(app, ["config", "--show"])
+    output = strip_ansi(result.stdout)
+
+    assert result.exit_code == 0
+    flat = " ".join(output.split())
+    assert "key from env) (global)" in flat
 
 
 def test_config_setter_in_project_still_updates_only_global_config(
@@ -1575,7 +1617,7 @@ def test_doctor_handles_malformed_config(monkeypatch, temp_config_home):
     assert "invalid json" in result.stdout.lower()
 
 
-def test_doctor_reports_project_config_field_origins(
+def test_doctor_reports_project_config_overrides(
     tmp_path, monkeypatch, temp_config_home
 ):
     from vexor.services import system_service
@@ -1593,6 +1635,7 @@ def test_doctor_reports_project_config_field_origins(
         json.dumps({"model": "project-model", "rerank": "hybrid"}),
         encoding="utf-8",
     )
+    monkeypatch.setenv("VEXOR_CONFIG_JSON", json.dumps({"batch_size": 23}))
     monkeypatch.chdir(project)
     monkeypatch.setattr(
         system_service,
@@ -1612,10 +1655,10 @@ def test_doctor_reports_project_config_field_origins(
     assert "Project config:" in output
     assert ".vexor" in output
     assert "config.json" in output
-    assert "model: project" in output
-    assert "rerank: project" in output
-    assert "provider: global" in output
-    assert "base_url: default" in output
+    assert "Project overrides: model, rerank" in output
+    assert "Environment overrides: batch_size" in output
+    assert "provider: global" not in output
+    assert "base_url: default" not in output
 
 
 def test_doctor_reports_disallowed_project_config_without_traceback(
@@ -1637,6 +1680,39 @@ def test_doctor_reports_disallowed_project_config_without_traceback(
     assert ".vexor" in result.stdout
     assert "config.json" in result.stdout
     assert "Traceback" not in result.output
+
+
+def test_doctor_project_config_error_falls_back_to_global_config(
+    tmp_path, monkeypatch, temp_config_home
+):
+    from vexor.services import system_service
+
+    runner = CliRunner()
+    temp_config_home.parent.mkdir(parents=True)
+    temp_config_home.write_text(json.dumps({"provider": "local"}), encoding="utf-8")
+    project_config = tmp_path / "project" / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text("{broken", encoding="utf-8")
+    monkeypatch.chdir(project_config.parent.parent)
+    monkeypatch.setattr(
+        system_service,
+        "check_command_on_path",
+        lambda: system_service.DoctorCheckResult("Command", True, "ok"),
+    )
+    monkeypatch.setattr(
+        system_service,
+        "check_cache_directory",
+        lambda: system_service.DoctorCheckResult("Cache Dir", True, "ok"),
+    )
+
+    result = runner.invoke(app, ["doctor", "--skip-api-test"])
+    output = strip_ansi(result.stdout)
+
+    assert result.exit_code == 1
+    assert "Invalid project config" in output
+    # The global provider=local still drives the remaining checks.
+    assert "no API key required" in output
+    assert "API key not configured" not in output
 
 
 def test_update_detects_newer_version(monkeypatch):

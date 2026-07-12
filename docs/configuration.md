@@ -68,9 +68,11 @@ Effective precedence, from lowest to highest, is:
 5. Explicit runtime or API arguments
 
 `vexor config --show` and `vexor doctor` resolve the project from the current
-working directory and label every effective field with its origin. All
-mutating `vexor config` options and `vexor init` still write only the global
-config; edit `.vexor/config.json` directly to change a project override.
+working directory: `--show` labels every effective field with its origin, and
+`doctor` reports the project config file plus any project or environment
+overrides. All mutating `vexor config` options and `vexor init` still write
+only the global config; edit `.vexor/config.json` directly to change a
+project override.
 
 ## Commands
 

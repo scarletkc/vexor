@@ -252,9 +252,9 @@ def _apply_env_overrides(
             origins["api_key"] = ConfigOrigin.ENVIRONMENT
     remote_rerank_api_key = os.getenv(REMOTE_RERANK_ENV)
     if remote_rerank_api_key and config.remote_rerank is not None:
+        # Key-only injection: the endpoint/model still come from the stored
+        # block, so the field's origin is left unchanged.
         config.remote_rerank.api_key = remote_rerank_api_key
-        if origins is not None:
-            origins["remote_rerank"] = ConfigOrigin.ENVIRONMENT
     return config
 
 
