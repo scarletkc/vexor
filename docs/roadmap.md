@@ -10,25 +10,18 @@ never leaving the machine.
 
 ## P0 — Agent-first distribution
 
-- **Shipped behind `--rerank hybrid`:** hybrid retrieval as a first-class path
-  fuses BM25 and dense scores
-  (e.g. reciprocal rank fusion) during search instead of offering BM25
-  only as an opt-in reranker. Dependencies (`rank-bm25`, `tokenizers`)
-  are already present. Pure semantic search is weak on exact identifiers;
-  hybrid is the ecosystem default now.
-  - Why the existing `--rerank bm25` is not hybrid: it only reorders the
-    dense top candidates (`clamp(top*2, 20, 150)`), so lexical-only
-    matches that dense retrieval misses never reach the reranker. True
-    hybrid scores the full chunk set on both paths before fusing.
-  - Full-corpus BM25 needs term statistics persisted alongside the index
-    cache — rebuilding them per query is O(corpus). Design this together
-    with the `vectors.npy`/memmap work in P1.
-  - The default flip remains pending. Flip the ranking default only after the evaluation benchmark (next
-    item) confirms hybrid beats dense-only, and call the change out in
-    release notes since result ordering shifts for existing users.
+- Flip the default ranking to hybrid retrieval (shipped opt-in behind
+  `--rerank hybrid` in 0.25.0) once the benchmark confirms it beats
+  dense-only across embedding models. Current `scripts/eval_hybrid.py`
+  status on this repo: hybrid wins with the small local model but still
+  trails a strong remote model (bge-m3) on MRR@10. Tune the fusion
+  (RRF k, dense/BM25 weights, doc-length normalization) against a larger
+  query set and more corpora first, and call the flip out in release
+  notes since result ordering shifts for existing users.
 - Publish an evaluation: token cost + answer quality of agent+Vexor vs
   grep-only workflows (30–50 QA tasks), feature the chart in the README.
   Benchmarks are what make these tools travel (see mgrep's launch).
+  `scripts/eval_hybrid.py` and `scripts/eval_queries.jsonl` are the seed.
 
 ## P1 — Performance & experience
 
@@ -57,17 +50,23 @@ never leaving the machine.
 ## P2 — Coverage & polish
 
 - Add AST-aware `code` mode chunking for Go and Rust (tree-sitter support).
-- Support `.vexorignore` for per-project ignore rules.
-- Project-level local cache (per-folder cache root override).
-- Project-level config (`<project>/.vexor/config.json`) for behavior-only
-  settings such as mode preferences, rerank, extensions, and exclude
-  patterns. Security constraint: repo files are attacker-controllable
-  input, so the loader must whitelist behavior fields and reject
-  credentials and endpoints (`api_key`, `base_url`, `remote_rerank`) with
-  an explicit error — stricter than the `VEXOR_CONFIG_JSON` env override,
-  which permits `base_url`. Reuse the guarded `config_from_json(base=...)`
-  merge; `vexor config --show` and `vexor doctor` should display each
-  field's origin (global vs project).
+- Project-level config (`<project>/.vexor/config.json`).
+  - v1: overlay limited to behavior fields that already exist in the
+    Config schema (`rerank`, `auto_index`, `model`,
+    `embedding_dimensions`, batch/concurrency). Security constraint: repo
+    files are attacker-controllable input, so the loader must whitelist
+    those fields and reject credentials and endpoints (`api_key`,
+    `base_url`, `remote_rerank`) with an explicit error — stricter than
+    the `VEXOR_CONFIG_JSON` env override, which permits `base_url`.
+    Precedence: global config < project config < env overrides < explicit
+    arguments. Reuse the guarded `config_from_json(base=...)` merge; the
+    structural change is making config resolution directory-aware
+    (`load_config()` takes no path today). `vexor config --show` and
+    `vexor doctor` should display each field's origin (global vs project).
+  - v2 (only if v1 sees real use): per-project scan defaults (`mode`,
+    `extensions`, `exclude_patterns`) — these are per-invocation CLI
+    arguments today, not config fields, so supporting them means new
+    config surface and CLI-default plumbing.
 - Additional embedding providers (Azure).
 - Evaluate an optional LLM reranker that reads a bounded set of retrieved
   candidates and judges their relevance to the query. Keep dense/BM25
@@ -106,8 +105,9 @@ never leaving the machine.
 
 - Package for homebrew, scoop, and winget (standalone binaries already
   exist in releases).
-- Write a launch post when MCP + hybrid search ship (Show HN, Chinese
-  dev community follow-up — Vexor appeared in Ruan Yifeng's Weekly #379).
+- Write the launch post — MCP and hybrid search have both shipped as of
+  0.25.0 (Show HN, Chinese dev community follow-up — Vexor appeared in
+  Ruan Yifeng's Weekly #379).
 - README: add a comparison table vs mgrep / claude-context highlighting
   local-first, no account, provider-agnostic, reranking options.
 
@@ -122,13 +122,6 @@ never leaving the machine.
     remains on its own version. This is workable, but release notes and
     asset naming should make the split explicit, or the GUI should get an
     independent documented release track.
-- Split provider-specific config validation out of `config.py` if provider
-  support keeps growing.
-  - `config.py` now owns default model resolution, provider environment
-    variables, base URLs, embedding dimension validation, and config
-    persistence. Keep it stable for now, but consider moving provider
-    capability metadata into a dedicated module before adding more
-    provider-specific rules.
 - Make user-facing error handling more systematic.
   - Most messages are centralized in `text.py`, but several runtime
     validation paths still build detailed errors inline. Consider adding
