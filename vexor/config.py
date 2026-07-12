@@ -49,7 +49,13 @@ DEFAULT_EXTRACT_BACKEND = "auto"
 DEFAULT_RERANK = "off"
 DEFAULT_FLASHRANK_MODEL = "ms-marco-TinyBERT-L-2-v2"
 DEFAULT_FLASHRANK_MAX_LENGTH = 256
-SUPPORTED_RERANKERS: tuple[str, ...] = ("off", "bm25", "flashrank", "remote")
+SUPPORTED_RERANKERS: tuple[str, ...] = (
+    "off",
+    "bm25",
+    "flashrank",
+    "remote",
+    "hybrid",
+)
 SUPPORTED_EXTRACT_BACKENDS: tuple[str, ...] = ("auto", "thread", "process")
 ENV_CONFIG_JSON = "VEXOR_CONFIG_JSON"
 ENV_NO_UPDATE_CHECK = "VEXOR_NO_UPDATE_CHECK"

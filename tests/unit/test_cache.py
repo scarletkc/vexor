@@ -84,6 +84,58 @@ def test_store_and_load_index(tmp_path, monkeypatch):
     assert meta["extensions"] == ()
 
 
+def test_store_and_load_bm25_statistics(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    root = tmp_path / "project"
+    root.mkdir()
+    file_path = root / "alpha.py"
+    file_path.write_text("alpha")
+    entry = cache.IndexedChunk(
+        path=file_path,
+        rel_path="alpha.py",
+        chunk_index=0,
+        preview="alpha",
+        embedding=[1.0, 0.0],
+        bm25_terms={"alpha": 2, "python": 1},
+        bm25_doc_len=3,
+    )
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        entries=[entry],
+    )
+    _, _, metadata = cache.load_index_vectors(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+    )
+    index_id = metadata["index_id"]
+    chunk_id = metadata["chunk_ids"][0]
+
+    assert cache.load_bm25_stats(index_id) == (1, 3.0)
+    assert cache.load_bm25_postings(index_id, ["alpha", "missing"]) == {
+        "alpha": [(chunk_id, 2, 3)]
+    }
+
+
+def test_bm25_readers_fall_back_when_tables_are_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    connection = cache._connect(cache.cache_db_path())
+    try:
+        cache._ensure_schema(connection)
+        connection.execute("DROP TABLE bm25_posting")
+        connection.execute("DROP TABLE bm25_doc")
+        assert cache.load_bm25_stats(1, conn=connection) == (0, 0.0)
+        assert cache.load_bm25_postings(1, ["alpha"], conn=connection) == {}
+    finally:
+        connection.close()
+
+
 def test_cache_dir_context_overrides_cache_db_path(tmp_path):
     original_cache_dir = cache.CACHE_DIR
     with cache.cache_dir_context(tmp_path):
@@ -458,6 +510,87 @@ def test_apply_index_updates_handles_add_modify_delete(tmp_path, monkeypatch):
     assert meta["dimension"] == 2
 
 
+def test_apply_index_updates_rewrites_cascades_and_preserves_bm25(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    root = tmp_path / "project"
+    root.mkdir()
+    files = [root / name for name in ("a.txt", "b.txt", "c.txt")]
+    for file_path in files:
+        file_path.write_text(file_path.stem)
+    entries = []
+    for idx, (file_path, term) in enumerate(
+        zip(files, ("alpha", "beta", "gamma"))
+    ):
+        entries.append(
+            cache.IndexedChunk(
+                path=file_path,
+                rel_path=file_path.name,
+                chunk_index=0,
+                preview=term,
+                embedding=np.array([1.0, float(idx)], dtype=np.float32),
+                bm25_terms={term: 1},
+                bm25_doc_len=1,
+            )
+        )
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        entries=entries,
+    )
+    _, _, before_meta = cache.load_index_vectors(
+        root, "model", False, MODE, True
+    )
+    index_id = before_meta["index_id"]
+    gamma_before = cache.load_bm25_postings(index_id, ["gamma"])
+
+    files[0].write_text("delta")
+    stat_c = files[2].stat()
+    changed = cache.IndexedChunk(
+        path=files[0],
+        rel_path="a.txt",
+        chunk_index=0,
+        preview="delta",
+        embedding=np.array([0.0, 1.0], dtype=np.float32),
+        bm25_terms={"delta": 1},
+        bm25_doc_len=1,
+    )
+    cache.apply_index_updates(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        ordered_entries=[("a.txt", 0), ("c.txt", 0)],
+        changed_entries=[changed],
+        touched_entries=[
+            (
+                "c.txt",
+                0,
+                stat_c.st_size,
+                stat_c.st_mtime,
+                "gamma",
+                None,
+                None,
+                "",
+            )
+        ],
+        removed_rel_paths=["b.txt"],
+    )
+
+    postings = cache.load_bm25_postings(
+        index_id, ["alpha", "beta", "gamma", "delta"]
+    )
+    assert "alpha" not in postings
+    assert "beta" not in postings
+    assert postings["delta"][0][1:] == (1, 1)
+    assert postings["gamma"] == gamma_before["gamma"]
+
+
 def test_apply_index_updates_allows_deletions_without_embeddings(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
     root = tmp_path / "project"
@@ -829,3 +962,40 @@ def test_project_cache_context_preserves_existing_gitignore(tmp_path, monkeypatc
         pass
 
     assert (marker / ".gitignore").read_text(encoding="utf-8") == "custom\n"
+
+
+def test_compare_snapshot_current_for_nested_paths(tmp_path, monkeypatch):
+    """Stored posix rel_paths must match compare_snapshot's rel_path form."""
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+
+    root = tmp_path / "project"
+    sub = root / "sub"
+    sub.mkdir(parents=True)
+    nested = sub / "nested.txt"
+    nested.write_text("data", encoding="utf-8")
+
+    entries = [
+        cache.IndexedChunk(
+            path=nested,
+            rel_path="sub/nested.txt",
+            chunk_index=0,
+            preview="nested",
+            embedding=np.array([1.0, 0.0], dtype=np.float32),
+        )
+    ]
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        entries=entries,
+    )
+    meta = cache.load_index(root, "model", False, MODE, True)
+
+    assert cache.compare_snapshot(
+        root,
+        False,
+        meta["files"],
+        recursive=True,
+    ) is True

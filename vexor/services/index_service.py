@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import itertools
 import os
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -17,6 +18,7 @@ from .cache_service import load_index_metadata_safe
 from .content_extract_service import TEXT_EXTENSIONS
 from .js_parser import JSTS_EXTENSIONS
 from ..cache import CACHE_VERSION, IndexedChunk, backfill_chunk_lines
+from .. import bm25
 from ..config import (
     DEFAULT_EMBED_CONCURRENCY,
     DEFAULT_EXTRACT_BACKEND,
@@ -502,6 +504,8 @@ def build_index_in_memory(
                 "chunk_index": entry.chunk_index,
                 "start_line": entry.start_line,
                 "end_line": entry.end_line,
+                "bm25_terms": entry.bm25_terms,
+                "bm25_doc_len": entry.bm25_doc_len,
             }
         )
         if rel_path not in file_snapshot:
@@ -783,7 +787,7 @@ def _relative_to_root(path: Path, root: Path) -> str:
         rel = path.relative_to(root)
     except ValueError:
         rel = path
-    return str(rel)
+    return rel.as_posix()
 
 
 def _cached_chunk_map(chunk_entries: Sequence[dict]) -> dict[str, list[int]]:
@@ -1019,10 +1023,13 @@ def _build_index_entries(
     from ..cache import embedding_cache_key  # local import
     for idx, payload in enumerate(payloads):
         stat = _stat_for_path(payload.file, stat_cache)
+        rel_path = _relative_to_root(payload.file, root)
+        document = bm25.build_document(rel_path, payload.label)
+        tokens = bm25.tokenize(document)
         entries.append(
             IndexedChunk(
                 path=payload.file,
-                rel_path=_relative_to_root(payload.file, root),
+                rel_path=rel_path,
                 chunk_index=payload.chunk_index,
                 preview=payload.preview or "",
                 embedding=embeddings[idx],
@@ -1031,6 +1038,8 @@ def _build_index_entries(
                 mtime=stat.st_mtime,
                 start_line=payload.start_line,
                 end_line=payload.end_line,
+                bm25_terms=dict(Counter(tokens)),
+                bm25_doc_len=len(tokens),
             )
         )
     return entries

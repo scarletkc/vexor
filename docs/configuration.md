@@ -30,6 +30,7 @@ vexor config --set-update-check false       # disable the daily update notice (d
 vexor config --rerank bm25                  # optional BM25 rerank for top-k results
 vexor config --rerank flashrank             # FlashRank rerank (requires optional extra)
 vexor config --rerank remote                # remote rerank via HTTP endpoint
+vexor config --rerank hybrid                # full-corpus BM25 + dense rank fusion
 vexor config --set-flashrank-model ms-marco-MultiBERT-L-12  # multilingual model
 vexor config --set-flashrank-model          # reset FlashRank model to default
 vexor config --clear-flashrank              # remove cached FlashRank models
@@ -65,10 +66,17 @@ CI), merged over `~/.vexor/config.json`. Credential fields inside
 Rerank reorders the semantic results with a secondary ranker. Candidate
 sizing uses `clamp(int(--top * 2), 20, 150)`.
 
+`hybrid` is different from the candidate rerankers: it scores BM25 over every
+indexed chunk and fuses that full lexical ranking with the full dense ranking
+using reciprocal rank fusion. Hybrid result scores are normalized rank-fusion
+scores in `[0, 1]`, not cosine similarities. A score of `1.0` means a chunk was
+ranked first by both retrieval paths.
+
 Recommended defaults:
 
 - Keep `off` unless you want extra precision.
 - Use `bm25` for lightweight lexical boosts; it is fast and lightweight.
+- Use `hybrid` when exact identifiers and lexical-only matches matter.
 - BM25 uses a multilingual tokenizer (Bert pre-tokenizer), so it can handle CJK better.
 - Use `flashrank` for stronger reranking (requires `pip install "vexor[flashrank]"` and
   downloads a model to `~/.vexor/flashrank`).
@@ -76,6 +84,10 @@ Recommended defaults:
   returns ranked indexes.
 - For Chinese or multi-language content, set `--set-flashrank-model ms-marco-MultiBERT-L-12`.
 - If unset, FlashRank defaults to `ms-marco-TinyBERT-L-2-v2`.
+
+This release raises the index cache schema version. Older index caches are
+invalidated and rebuilt automatically; cached embeddings are shared and reused,
+so the migration does not require re-embedding unchanged content.
 
 ## Providers: Remote vs Local
 

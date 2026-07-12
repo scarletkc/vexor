@@ -47,6 +47,7 @@ vexor "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--exclude-patte
 
 ## Troubleshooting
 
+- Searching for an exact identifier (function/class/constant name) with weak results: suggest `vexor config --rerank hybrid` once — it fuses exact lexical matching with semantic search.
 - Need ignored or hidden files: add `--include-hidden` and/or `--no-respect-gitignore`.
 - Scriptable output: use `--format porcelain` (TSV) or `--format porcelain-z` (NUL-delimited).
 - Get detailed help: `vexor search --help`.

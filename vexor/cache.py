@@ -25,7 +25,7 @@ _CACHE_DIR_OVERRIDE: ContextVar[Path | None] = ContextVar(
     "vexor_cache_dir_override",
     default=None,
 )
-CACHE_VERSION = 6
+CACHE_VERSION = 7
 DB_FILENAME = "index.db"
 EMBED_CACHE_TTL_DAYS = 30
 EMBED_CACHE_MAX_ENTRIES = 50_000
@@ -47,6 +47,8 @@ class IndexedChunk:
     mtime: float | None = None
     start_line: int | None = None
     end_line: int | None = None
+    bm25_terms: Mapping[str, int] | None = None
+    bm25_doc_len: int | None = None
 
 
 def _cache_key(
@@ -363,6 +365,8 @@ def _reset_index_schema(conn: sqlite3.Connection) -> None:
         DROP TABLE IF EXISTS file_embedding;
         DROP TABLE IF EXISTS chunk_embedding;
         DROP TABLE IF EXISTS chunk_meta;
+        DROP TABLE IF EXISTS bm25_posting;
+        DROP TABLE IF EXISTS bm25_doc;
         DROP TABLE IF EXISTS indexed_chunk;
         DROP TABLE IF EXISTS indexed_file;
         DROP TABLE IF EXISTS index_metadata;
@@ -425,6 +429,19 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             end_line INTEGER
         );
 
+        CREATE TABLE IF NOT EXISTS bm25_doc (
+            chunk_id INTEGER PRIMARY KEY REFERENCES indexed_chunk(id) ON DELETE CASCADE,
+            token_count INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS bm25_posting (
+            index_id INTEGER NOT NULL REFERENCES index_metadata(id) ON DELETE CASCADE,
+            chunk_id INTEGER NOT NULL REFERENCES indexed_chunk(id) ON DELETE CASCADE,
+            term TEXT NOT NULL,
+            tf INTEGER NOT NULL,
+            PRIMARY KEY (index_id, term, chunk_id)
+        ) WITHOUT ROWID;
+
         CREATE TABLE IF NOT EXISTS query_cache (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             index_id INTEGER NOT NULL REFERENCES index_metadata(id) ON DELETE CASCADE,
@@ -455,6 +472,9 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_embedding_cache_lookup
             ON embedding_cache(model, text_hash);
+
+        CREATE INDEX IF NOT EXISTS idx_bm25_posting_chunk
+            ON bm25_posting(chunk_id);
         """
     )
 
@@ -622,6 +642,30 @@ def store_index(
                     (row["id"], vector_blobs[idx])
                     for idx, row in enumerate(inserted_ids)
                 ),
+            )
+            bm25_doc_rows: list[tuple[int, int]] = []
+            bm25_posting_rows: list[tuple[int, int, str, int]] = []
+            for idx, row in enumerate(inserted_ids):
+                entry = entries[idx]
+                if entry.bm25_terms is None:
+                    continue
+                chunk_id = int(row["id"])
+                doc_len = int(entry.bm25_doc_len or 0)
+                bm25_doc_rows.append((chunk_id, doc_len))
+                bm25_posting_rows.extend(
+                    (int(index_id), chunk_id, term, int(tf))
+                    for term, tf in entry.bm25_terms.items()
+                )
+            conn.executemany(
+                "INSERT INTO bm25_doc (chunk_id, token_count) VALUES (?, ?)",
+                bm25_doc_rows,
+            )
+            conn.executemany(
+                """
+                INSERT INTO bm25_posting (index_id, chunk_id, term, tf)
+                VALUES (?, ?, ?, ?)
+                """,
+                bm25_posting_rows,
             )
             conn.executemany(
                 """
@@ -814,6 +858,31 @@ def apply_index_updates(
                             (row["id"], vector_blobs[idx])
                             for idx, row in enumerate(inserted_ids)
                         ),
+                    )
+                    bm25_doc_rows: list[tuple[int, int]] = []
+                    bm25_posting_rows: list[tuple[int, int, str, int]] = []
+                    for idx, row in enumerate(inserted_ids):
+                        entry = chunk_list[idx]
+                        if entry.bm25_terms is None:
+                            continue
+                        chunk_id = int(row["id"])
+                        bm25_doc_rows.append(
+                            (chunk_id, int(entry.bm25_doc_len or 0))
+                        )
+                        bm25_posting_rows.extend(
+                            (int(index_id), chunk_id, term, int(tf))
+                            for term, tf in entry.bm25_terms.items()
+                        )
+                    conn.executemany(
+                        "INSERT INTO bm25_doc (chunk_id, token_count) VALUES (?, ?)",
+                        bm25_doc_rows,
+                    )
+                    conn.executemany(
+                        """
+                        INSERT INTO bm25_posting (index_id, chunk_id, term, tf)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        bm25_posting_rows,
                     )
                     conn.executemany(
                         """
@@ -1383,6 +1452,89 @@ def load_chunk_metadata(
             connection.close()
 
 
+def load_bm25_stats(
+    index_id: int,
+    conn: sqlite3.Connection | None = None,
+) -> tuple[int, float]:
+    """Return the BM25 document count and average document length."""
+
+    db_path = cache_db_path()
+    owns_connection = conn is None
+    try:
+        connection = conn or _connect(db_path, readonly=True)
+    except sqlite3.OperationalError:
+        return 0, 0.0
+    try:
+        try:
+            _ensure_schema_readonly(
+                connection,
+                tables=("indexed_chunk", "bm25_doc"),
+            )
+        except sqlite3.OperationalError:
+            return 0, 0.0
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS doc_count, AVG(d.token_count) AS avg_doc_len
+            FROM bm25_doc AS d
+            JOIN indexed_chunk AS c ON c.id = d.chunk_id
+            WHERE c.index_id = ?
+            """,
+            (index_id,),
+        ).fetchone()
+        if row is None or not row["doc_count"]:
+            return 0, 0.0
+        return int(row["doc_count"]), float(row["avg_doc_len"] or 0.0)
+    finally:
+        if owns_connection:
+            connection.close()
+
+
+def load_bm25_postings(
+    index_id: int,
+    terms: Sequence[str],
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, list[tuple[int, int, int]]]:
+    """Load BM25 posting lists for the requested terms."""
+
+    unique_terms = list(dict.fromkeys(term for term in terms if term))
+    if not unique_terms:
+        return {}
+    db_path = cache_db_path()
+    owns_connection = conn is None
+    try:
+        connection = conn or _connect(db_path, readonly=True)
+    except sqlite3.OperationalError:
+        return {}
+    try:
+        try:
+            _ensure_schema_readonly(
+                connection,
+                tables=("bm25_doc", "bm25_posting"),
+            )
+        except sqlite3.OperationalError:
+            return {}
+        results: dict[str, list[tuple[int, int, int]]] = {}
+        for term_chunk in _chunk_values(unique_terms, 900):
+            placeholders = ", ".join("?" for _ in term_chunk)
+            rows = connection.execute(
+                f"""
+                SELECT p.term, p.chunk_id, p.tf, d.token_count
+                FROM bm25_posting AS p
+                JOIN bm25_doc AS d ON d.chunk_id = p.chunk_id
+                WHERE p.index_id = ? AND p.term IN ({placeholders})
+                """,
+                (index_id, *term_chunk),
+            ).fetchall()
+            for row in rows:
+                results.setdefault(row["term"], []).append(
+                    (int(row["chunk_id"]), int(row["tf"]), int(row["token_count"]))
+                )
+        return results
+    finally:
+        if owns_connection:
+            connection.close()
+
+
 def load_query_vector(
     index_id: int,
     query_hash: str,
@@ -1793,4 +1945,6 @@ def _relative_path(path: Path, root: Path) -> str:
         rel = path.relative_to(root)
     except ValueError:
         rel = path
-    return str(rel)
+    # Must match the posix form index_service._relative_to_root stores in the
+    # DB, or compare_snapshot marks nested paths stale on Windows forever.
+    return rel.as_posix()

@@ -140,7 +140,7 @@ The `config` payload (dict/JSON) supports:
 - `embedding_dimensions`: integer or null
 - `auto_index`: boolean
 - `local_cuda`: boolean (local provider only)
-- `rerank`: `off`, `bm25`, `flashrank`, `remote`
+- `rerank`: `off`, `bm25`, `flashrank`, `remote`, `hybrid`
 - `flashrank_model`: string or null
 - `remote_rerank`: object with `base_url`, `api_key`, `model`
 

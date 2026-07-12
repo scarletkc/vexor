@@ -39,6 +39,10 @@
 | `--no-cache` | In-memory only; do not read/write index cache |
 | `--local` | With `index`, create and use `<path>/.vexor/index.db` |
 
+Rerank values are `off`, `bm25`, `flashrank`, `remote`, and `hybrid`.
+`hybrid` fuses full-corpus BM25 and dense rankings, allowing exact lexical
+matches outside the dense candidate window to be retrieved.
+
 Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`,
 `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
 

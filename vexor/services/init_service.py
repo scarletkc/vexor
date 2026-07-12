@@ -294,6 +294,11 @@ def _collect_rerank_settings(*, dry_run: bool) -> dict[str, object]:
         Messages.INIT_OPTION_RERANK_FLASHRANK_DESC,
     )
     _print_option("4", Messages.INIT_OPTION_RERANK_REMOTE, Messages.INIT_OPTION_RERANK_REMOTE_DESC)
+    _print_option(
+        "5",
+        Messages.INIT_OPTION_RERANK_HYBRID,
+        Messages.INIT_OPTION_RERANK_HYBRID_DESC,
+    )
     console.print()
     rerank_choice = _prompt_choice(
         Messages.INIT_PROMPT_RERANK,
@@ -307,9 +312,11 @@ def _collect_rerank_settings(*, dry_run: bool) -> dict[str, object]:
             "flashrank": "flashrank",
             "4": "remote",
             "remote": "remote",
+            "5": "hybrid",
+            "hybrid": "hybrid",
         },
         default="1",
-        allowed="1/2/3/4",
+        allowed="1/2/3/4/5",
     )
     console.print()
 

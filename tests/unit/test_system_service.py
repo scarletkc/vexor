@@ -143,6 +143,29 @@ def test_check_rerank_flashrank_ready(monkeypatch):
     assert result.passed is True
 
 
+def test_check_rerank_hybrid_ready_and_degraded(monkeypatch):
+    monkeypatch.setattr(system_service.importlib.util, "find_spec", lambda _name: object())
+    ready = system_service.check_rerank_configured(
+        "hybrid",
+        flashrank_model=None,
+        remote_rerank=None,
+        skip_api_test=False,
+    )
+    assert ready is not None
+    assert ready.passed is True
+
+    monkeypatch.setattr(system_service.importlib.util, "find_spec", lambda _name: None)
+    degraded = system_service.check_rerank_configured(
+        "hybrid",
+        flashrank_model=None,
+        remote_rerank=None,
+        skip_api_test=False,
+    )
+    assert degraded is not None
+    assert degraded.passed is True
+    assert "degraded" in degraded.message.lower()
+
+
 def test_check_rerank_remote_incomplete():
     result = system_service.check_rerank_configured(
         "remote",

@@ -30,6 +30,161 @@ def test_bm25_tokenizer_handles_cjk() -> None:
     assert tokens
 
 
+def _hybrid_request(tmp_path: Path, query: str, rerank: str) -> SearchRequest:
+    return SearchRequest(
+        query=query,
+        directory=tmp_path,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="name",
+        recursive=True,
+        top_k=1,
+        model_name="model",
+        batch_size=0,
+        provider="local",
+        base_url=None,
+        api_key=None,
+        local_cuda=False,
+        exclude_patterns=(),
+        extensions=(),
+        auto_index=False,
+        rerank=rerank,
+    )
+
+
+def test_hybrid_retrieves_lexical_match_outside_dense_candidate_clamp(
+    tmp_path: Path,
+) -> None:
+    from vexor import bm25
+    from vexor.services import search_service as service
+
+    paths = [tmp_path / f"dense-{idx}.txt" for idx in range(24)]
+    paths.append(tmp_path / "lexical-only.txt")
+    vectors = np.array(
+        [[1.0 - idx * 0.01, 0.0] for idx in range(24)] + [[-1.0, 0.0]],
+        dtype=np.float32,
+    )
+    chunks = []
+    for idx, path in enumerate(paths):
+        document = "needle" if idx == 24 else "semantic candidate"
+        tokens = bm25.tokenize(document)
+        chunks.append(
+            {
+                "path": path.name,
+                "chunk_index": 0,
+                "preview": document,
+                "bm25_terms": bm25.term_frequencies(tokens),
+                "bm25_doc_len": len(tokens),
+            }
+        )
+    metadata = {"chunks": chunks}
+    meta_getter = service._chunk_meta_from_entries(chunks)
+
+    legacy, legacy_label = service._rank_results(
+        _hybrid_request(tmp_path, "needle", "bm25"),
+        paths=paths,
+        file_vectors=vectors,
+        query_vector=np.array([1.0, 0.0], dtype=np.float32),
+        chunk_meta_getter=meta_getter,
+    )
+    hybrid, hybrid_label = service._rank_results(
+        _hybrid_request(tmp_path, "needle", "hybrid"),
+        paths=paths,
+        file_vectors=vectors,
+        query_vector=np.array([1.0, 0.0], dtype=np.float32),
+        chunk_meta_getter=meta_getter,
+        lexical_scorer=service._hybrid_scorer_from_entries(chunks),
+    )
+
+    assert legacy_label == "bm25"
+    assert legacy[0].path != paths[-1]
+    assert hybrid_label == "hybrid"
+    assert hybrid[0].path == paths[-1]
+
+
+def test_hybrid_ranks_exact_identifier_above_sub_token_matches(tmp_path: Path) -> None:
+    from vexor import bm25
+    from vexor.services import search_service as service
+
+    documents = ["alpha beta gamma" for _ in range(12)]
+    documents.insert(1, "alpha_beta_gamma")
+    paths = [tmp_path / f"chunk-{idx}.txt" for idx in range(len(documents))]
+    vectors = np.array(
+        [[0.99 - idx * 0.01, 0.0] for idx in range(len(documents))],
+        dtype=np.float32,
+    )
+    vectors[1] = [1.0, 0.0]
+    chunks = []
+    for document in documents:
+        tokens = bm25.tokenize(document)
+        chunks.append(
+            {
+                "chunk_index": 0,
+                "preview": document,
+                "bm25_terms": bm25.term_frequencies(tokens),
+                "bm25_doc_len": len(tokens),
+            }
+        )
+
+    results, reranker = service._rank_results(
+        _hybrid_request(tmp_path, "alpha_beta_gamma", "hybrid"),
+        paths=paths,
+        file_vectors=vectors,
+        query_vector=np.array([1.0, 0.0], dtype=np.float32),
+        chunk_meta_getter=service._chunk_meta_from_entries(chunks),
+        lexical_scorer=service._hybrid_scorer_from_entries(chunks),
+    )
+
+    assert reranker == "hybrid"
+    assert results[0].path == paths[1]
+
+
+def test_hybrid_empty_tokens_fall_back_to_dense(tmp_path: Path) -> None:
+    from vexor.services import search_service as service
+
+    chunks = [
+        {
+            "chunk_index": 0,
+            "bm25_terms": {"alpha": 1},
+            "bm25_doc_len": 1,
+        }
+    ]
+    results, reranker = service._rank_results(
+        _hybrid_request(tmp_path, "!!!", "hybrid"),
+        paths=[tmp_path / "a.txt"],
+        file_vectors=np.array([[1.0, 0.0]], dtype=np.float32),
+        query_vector=np.array([1.0, 0.0], dtype=np.float32),
+        chunk_meta_getter=service._chunk_meta_from_entries(chunks),
+        lexical_scorer=service._hybrid_scorer_from_entries(chunks),
+    )
+
+    assert results[0].score == 1.0
+    assert reranker is None
+
+
+def test_hybrid_caps_unique_query_terms(tmp_path: Path) -> None:
+    from vexor.services import search_service as service
+
+    captured: list[str] = []
+
+    def scorer(terms):
+        captured.extend(terms)
+        return {0: 1.0}
+
+    scorer.has_data = True
+    query = " ".join(f"term{idx}" for idx in range(40))
+    service._rank_results(
+        _hybrid_request(tmp_path, query, "hybrid"),
+        paths=[tmp_path / "a.txt"],
+        file_vectors=np.array([[1.0, 0.0]], dtype=np.float32),
+        query_vector=np.array([1.0, 0.0], dtype=np.float32),
+        chunk_meta_getter=service._chunk_meta_from_entries([{}]),
+        lexical_scorer=scorer,
+    )
+
+    assert len(captured) == 32
+
+
 def test_perform_search_auto_indexes_when_missing(monkeypatch, tmp_path: Path) -> None:
     calls: dict[str, object] = {"load": 0, "indexed": 0, "index_kwargs": None}
 
