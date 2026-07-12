@@ -1,0 +1,30 @@
+{"query": "_apply_bm25_rerank", "expected": "vexor/services/search_service.py"}
+{"query": "load_index_vectors", "expected": "vexor/cache.py"}
+{"query": "EMBED_CACHE_TTL_DAYS", "expected": "vexor/cache.py"}
+{"query": "compare_snapshot", "expected": "vexor/cache.py"}
+{"query": "BertPreTokenizer", "expected": "vexor/bm25.py"}
+{"query": "_resolve_rerank_candidates", "expected": "vexor/services/search_service.py"}
+{"query": "VEXOR_CONFIG_JSON", "expected": "vexor/config.py"}
+{"query": "backfill_chunk_lines", "expected": "vexor/cache.py"}
+{"query": "build_exclude_spec", "expected": "vexor/utils.py"}
+{"query": "DEFAULT_FLASHRANK_MODEL", "expected": "vexor/config.py"}
+{"query": "where is the sqlite schema created", "expected": "vexor/cache.py"}
+{"query": "how does incremental indexing decide what to re-embed", "expected": "vexor/services/index_service.py"}
+{"query": "render search results as a table", "expected": "vexor/cli.py"}
+{"query": "load cached query embedding", "expected": "vexor/cache.py"}
+{"query": "extract keywords from document content", "expected": "vexor/services/keyword_service.py"}
+{"query": "validate embedding dimensions for a model", "expected": "vexor/config.py"}
+{"query": "filter indexed results by extension", "expected": "vexor/services/search_service.py"}
+{"query": "detect stale index cache", "expected": "vexor/services/cache_service.py"}
+{"query": "configure an OpenAI compatible provider", "expected": "vexor/providers/openai.py"}
+{"query": "start the MCP stdio server", "expected": "vexor/services/mcp_service.py"}
+{"query": "mcp search tool schema", "expected": "vexor/services/mcp_service.py"}
+{"query": "flashrank model cache directory", "expected": "vexor/config.py"}
+{"query": "plugins/vexor skill installer", "expected": "vexor/services/skill_service.py"}
+{"query": "docs configuration rerank strategies", "expected": "docs/configuration.md"}
+{"query": "tests CLI doctor command", "expected": "tests/integration/test_cli.py"}
+{"query": "local embedding provider ONNX", "expected": "vexor/providers/local.py"}
+{"query": "JavaScript TypeScript parser chunks", "expected": "vexor/services/js_parser.py"}
+{"query": "query cache sqlite table", "expected": "vexor/cache.py"}
+{"query": "porcelain search output fields", "expected": "docs/cli.md"}
+{"query": "roadmap hybrid retrieval benchmark", "expected": "docs/roadmap.md"}

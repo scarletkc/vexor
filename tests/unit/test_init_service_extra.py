@@ -155,6 +155,11 @@ def test_collect_rerank_settings_variants(monkeypatch):
         "remote_rerank_api_key": "secret",
     }
 
+    _prompt_sequence(monkeypatch, ["hybrid"])
+    assert init_service._collect_rerank_settings(dry_run=False) == {
+        "rerank": "hybrid"
+    }
+
 
 def test_alias_helpers_and_prompt_alias_setup(monkeypatch, tmp_path):
     monkeypatch.setenv("SHELL", "/bin/zsh")

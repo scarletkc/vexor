@@ -82,6 +82,29 @@ def test_search_outputs_table(tmp_path, monkeypatch):
     assert captured["mode"] == "auto"
 
 
+def test_search_outputs_hybrid_reranker_label(tmp_path, monkeypatch):
+    sample_file = tmp_path / "exact.py"
+    sample_file.write_text("data")
+
+    def fake_perform_search(_request):
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[SearchResult(path=sample_file, score=1.0)],
+            is_stale=False,
+            index_empty=False,
+            reranker="hybrid",
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+    result = CliRunner().invoke(
+        app, ["search", "exact", "--path", str(tmp_path)]
+    )
+
+    assert result.exit_code == 0
+    assert "Reranker: hybrid" in result.stdout
+
+
 def test_search_no_respect_gitignore_flag_sets_false(tmp_path, monkeypatch):
     runner = CliRunner()
     sample_file = tmp_path / "alpha.txt"
@@ -881,6 +904,19 @@ def test_config_set_and_show(tmp_path):
     assert "Extract backend: process" in strip_ansi(result_show.stdout)
     assert "Rerank: bm25" in strip_ansi(result_show.stdout)
     assert "FlashRank model" not in strip_ansi(result_show.stdout)
+
+
+def test_config_hybrid_rerank_round_trip(tmp_path):
+    runner = CliRunner()
+    result = runner.invoke(app, ["config", "--rerank", "hybrid"])
+
+    assert result.exit_code == 0
+    config_path = tmp_path / "config" / "config.json"
+    assert json.loads(config_path.read_text())["rerank"] == "hybrid"
+
+    shown = runner.invoke(app, ["config", "--show"])
+    assert shown.exit_code == 0
+    assert "hybrid" in shown.stdout
 
 
 def test_config_set_flashrank_model_empty_resets_to_default(tmp_path):

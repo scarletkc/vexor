@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 import json
-import re
 import numpy as np
-from typing import Sequence, TYPE_CHECKING
+from typing import Callable, Sequence, TYPE_CHECKING
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
+from .. import bm25
 from ..config import (
     DEFAULT_EMBED_CONCURRENCY,
     DEFAULT_EXTRACT_BACKEND,
@@ -69,22 +69,18 @@ class SearchResponse:
     reranker: str | None = None
 
 
-_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
-_BM25_K1 = 1.5
-_BM25_B = 0.75
+_TOKEN_RE = bm25._TOKEN_RE
+_BM25_K1 = bm25.BM25_K1
+_BM25_B = bm25.BM25_B
 _FUSION_SEMANTIC_WEIGHT = 0.7
 
 
-@lru_cache(maxsize=1)
-def _get_bm25_tokenizer():
-    try:
-        from tokenizers.pre_tokenizers import BertPreTokenizer
-    except Exception:
-        return None
-    return BertPreTokenizer()
+_get_bm25_tokenizer = bm25._get_bm25_tokenizer
 
 
 def _bm25_tokenize(text: str) -> list[str]:
+    # Keep the local getter indirection for callers that monkeypatch this
+    # long-standing private compatibility surface.
     tokenizer = _get_bm25_tokenizer()
     if tokenizer is None:
         return _TOKEN_RE.findall(text.lower())
@@ -97,6 +93,65 @@ def _bm25_tokenize(text: str) -> list[str]:
         if any(ch.isalnum() for ch in cleaned):
             normalized.append(cleaned.lower())
     return normalized
+
+
+def _hybrid_scorer_from_cache(
+    index_id: int | None,
+    chunk_ids: Sequence[int],
+) -> Callable[[Sequence[str]], dict[int, float]] | None:
+    """Build a full-corpus lexical scorer backed by persisted postings."""
+
+    if index_id is None or not chunk_ids:
+        return None
+    from .. import cache
+
+    row_by_chunk_id = {int(chunk_id): row for row, chunk_id in enumerate(chunk_ids)}
+
+    def score(query_terms: Sequence[str]) -> dict[int, float]:
+        doc_count, avg_doc_len = cache.load_bm25_stats(int(index_id))
+        score.has_data = doc_count > 0
+        if not score.has_data:
+            return {}
+        postings = cache.load_bm25_postings(int(index_id), query_terms)
+        scores_by_chunk = bm25.score_postings(
+            query_terms, postings, doc_count, avg_doc_len
+        )
+        return {
+            row_by_chunk_id[chunk_id]: value
+            for chunk_id, value in scores_by_chunk.items()
+            if chunk_id in row_by_chunk_id
+        }
+
+    score.has_data = False
+    return score
+
+
+def _hybrid_scorer_from_entries(
+    chunk_entries: Sequence[dict],
+) -> Callable[[Sequence[str]], dict[int, float]] | None:
+    """Build a transient full-corpus lexical scorer from in-memory chunks."""
+
+    postings: dict[str, list[tuple[int, int, int]]] = {}
+    doc_lengths: list[int] = []
+    for row, entry in enumerate(chunk_entries):
+        terms = entry.get("bm25_terms")
+        doc_len = entry.get("bm25_doc_len")
+        if terms is None or doc_len is None:
+            continue
+        length = int(doc_len)
+        doc_lengths.append(length)
+        for term, tf in terms.items():
+            postings.setdefault(str(term), []).append((row, int(tf), length))
+    if not doc_lengths:
+        return None
+    doc_count = len(doc_lengths)
+    avg_doc_len = sum(doc_lengths) / doc_count
+
+    def score(query_terms: Sequence[str]) -> dict[int, float]:
+        return bm25.score_postings(query_terms, postings, doc_count, avg_doc_len)
+
+    score.has_data = True
+    return score
 
 
 def _build_rerank_document(result: SearchResult) -> str:
@@ -502,6 +557,7 @@ def _rank_results(
     file_vectors: np.ndarray,
     query_vector: np.ndarray,
     chunk_meta_getter,
+    lexical_scorer: Callable[[Sequence[str]], dict[int, float]] | None = None,
 ) -> tuple[list, str | None]:
     """Score the index against the query, then rank and optionally rerank."""
     from ..search import SearchResult  # local import
@@ -528,6 +584,37 @@ def _rank_results(
         )
 
     similarities = np.asarray(file_vectors @ query_vector, dtype=np.float32)
+    if rerank == "hybrid":
+        query_terms = list(dict.fromkeys(bm25.tokenize(request.query)))[
+            : bm25.MAX_QUERY_TERMS
+        ]
+        if query_terms and lexical_scorer is not None:
+            bm25_scores_by_row = lexical_scorer(query_terms)
+            if bm25_scores_by_row or getattr(lexical_scorer, "has_data", False):
+                dense_order = np.argsort(-similarities, kind="stable")
+                fused = bm25.rrf_fuse(
+                    dense_order, bm25_scores_by_row, len(paths)
+                )
+                top_indices = _top_indices(fused, request.top_k)
+                chunk_meta_for = chunk_meta_getter(top_indices)
+                scored: list[SearchResult] = []
+                for idx in top_indices:
+                    chunk_meta = chunk_meta_for(idx) or {}
+                    start_line = chunk_meta.get("start_line")
+                    end_line = chunk_meta.get("end_line")
+                    scored.append(
+                        SearchResult(
+                            path=paths[idx],
+                            score=float(fused[idx]),
+                            preview=chunk_meta.get("preview"),
+                            chunk_index=int(chunk_meta.get("chunk_index", 0)),
+                            start_line=(
+                                int(start_line) if start_line is not None else None
+                            ),
+                            end_line=int(end_line) if end_line is not None else None,
+                        )
+                    )
+                return scored, "hybrid"
     top_indices = _top_indices(similarities, candidate_count)
     chunk_meta_for = chunk_meta_getter(top_indices)
     scored: list[SearchResult] = []
@@ -740,6 +827,13 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         file_vectors=state.file_vectors,
         query_vector=query_vector,
         chunk_meta_getter=_chunk_meta_from_cache(state.chunk_ids, state.chunk_entries),
+        lexical_scorer=(
+            _hybrid_scorer_from_cache(
+                state.metadata.get("index_id"), state.chunk_ids
+            )
+            if (request.rerank or "").strip().lower() == "hybrid"
+            else None
+        ),
     )
     return SearchResponse(
         base_path=request.directory,
@@ -772,6 +866,11 @@ def search_from_vectors(
         file_vectors=file_vectors,
         query_vector=query_vector,
         chunk_meta_getter=_chunk_meta_from_entries(metadata.get("chunks", [])),
+        lexical_scorer=(
+            _hybrid_scorer_from_entries(metadata.get("chunks", []))
+            if (request.rerank or "").strip().lower() == "hybrid"
+            else None
+        ),
     )
     return SearchResponse(
         base_path=request.directory,

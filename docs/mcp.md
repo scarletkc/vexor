@@ -45,6 +45,10 @@ codex mcp add vexor -- vexor mcp
 }
 ```
 
+The `reranker` response field can be `"hybrid"`. In that case, each result's
+`score` is a normalized reciprocal-rank-fusion score in `[0, 1]`, rather than a
+cosine similarity.
+
 If `vexor` is not on the client's PATH, use an absolute command path, or
 `python` with `"args": ["-m", "vexor", "mcp"]`.
 

@@ -139,7 +139,7 @@ class Messages:
     HELP_SET_UPDATE_CHECK = (
         "Enable/disable the daily background update check (default: enabled)."
     )
-    HELP_SET_RERANK = "Set the rerank strategy (off, bm25, flashrank, remote)."
+    HELP_SET_RERANK = "Set the rerank strategy (off, bm25, flashrank, remote, hybrid)."
     HELP_SET_FLASHRANK_MODEL = (
         "Set the FlashRank model name (omit or empty resets to default)."
     )
@@ -278,11 +278,13 @@ class Messages:
     INIT_OPTION_RERANK_OFF_DESC = "default"
     INIT_OPTION_RERANK_BM25 = "BM25"
     INIT_OPTION_RERANK_BM25_DESC = "almost no extra latency"
+    INIT_OPTION_RERANK_HYBRID = "Hybrid"
+    INIT_OPTION_RERANK_HYBRID_DESC = "BM25 + dense fusion; best for exact identifiers"
     INIT_OPTION_RERANK_FLASHRANK = "FlashRank"
     INIT_OPTION_RERANK_FLASHRANK_DESC = "more accurate, slower"
     INIT_OPTION_RERANK_REMOTE = "Remote"
     INIT_OPTION_RERANK_REMOTE_DESC = "network-dependent"
-    INIT_PROMPT_RERANK = "Choose 1/2/3/4"
+    INIT_PROMPT_RERANK = "Choose 1/2/3/4/5"
     INIT_FLASHRANK_MISSING = "FlashRank is not installed."
     INIT_CONFIRM_INSTALL_FLASHRANK = "Install FlashRank now? (vexor[flashrank])"
     INIT_CONFIRM_FLASHRANK_DOWNLOAD = "Download the FlashRank model now? (recommended)"
@@ -465,6 +467,10 @@ class Messages:
     DOCTOR_LOCAL_FAILED = "Local model test failed"
     DOCTOR_RERANK_BM25_READY = "BM25 rerank ready"
     DOCTOR_RERANK_BM25_MISSING = "BM25 rerank dependencies missing"
+    DOCTOR_RERANK_HYBRID_READY = "Hybrid retrieval ready"
+    DOCTOR_RERANK_HYBRID_DEGRADED = (
+        "Hybrid retrieval ready with regex tokenization; CJK tokenization is degraded"
+    )
     DOCTOR_RERANK_FLASHRANK_READY = "FlashRank rerank ready (model: {model})"
     DOCTOR_RERANK_FLASHRANK_MISSING = "FlashRank rerank not installed"
     DOCTOR_RERANK_REMOTE_READY = "Remote rerank configured (model: {model})"

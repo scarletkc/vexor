@@ -239,6 +239,21 @@ def test_success_results_include_structured_content(tmp_path):
     assert result["structuredContent"]["results"][0]["rank"] == 1
 
 
+def test_search_response_carries_hybrid_reranker(tmp_path):
+    server, client = make_server(tmp_path)
+    original_search = client.search
+
+    def hybrid_search(query, **kwargs):
+        response = original_search(query, **kwargs)
+        response.reranker = "hybrid"
+        return response
+
+    client.search = hybrid_search
+    response = server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))
+
+    assert decode_tool_payload(response)["reranker"] == "hybrid"
+
+
 def test_error_results_omit_structured_content(tmp_path):
     server, _ = make_server(tmp_path, search_error=RuntimeError("boom"))
     response = server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))

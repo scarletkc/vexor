@@ -10,7 +10,8 @@ never leaving the machine.
 
 ## P0 — Agent-first distribution
 
-- Hybrid retrieval as a first-class path: fuse BM25 and dense scores
+- **Shipped behind `--rerank hybrid`:** hybrid retrieval as a first-class path
+  fuses BM25 and dense scores
   (e.g. reciprocal rank fusion) during search instead of offering BM25
   only as an opt-in reranker. Dependencies (`rank-bm25`, `tokenizers`)
   are already present. Pure semantic search is weak on exact identifiers;
@@ -22,7 +23,7 @@ never leaving the machine.
   - Full-corpus BM25 needs term statistics persisted alongside the index
     cache — rebuilding them per query is O(corpus). Design this together
     with the `vectors.npy`/memmap work in P1.
-  - Flip the ranking default only after the evaluation benchmark (next
+  - The default flip remains pending. Flip the ranking default only after the evaluation benchmark (next
     item) confirms hybrid beats dense-only, and call the change out in
     release notes since result ordering shifts for existing users.
 - Publish an evaluation: token cost + answer quality of agent+Vexor vs
@@ -58,6 +59,15 @@ never leaving the machine.
 - Add AST-aware `code` mode chunking for Go and Rust (tree-sitter support).
 - Support `.vexorignore` for per-project ignore rules.
 - Project-level local cache (per-folder cache root override).
+- Project-level config (`<project>/.vexor/config.json`) for behavior-only
+  settings such as mode preferences, rerank, extensions, and exclude
+  patterns. Security constraint: repo files are attacker-controllable
+  input, so the loader must whitelist behavior fields and reject
+  credentials and endpoints (`api_key`, `base_url`, `remote_rerank`) with
+  an explicit error — stricter than the `VEXOR_CONFIG_JSON` env override,
+  which permits `base_url`. Reuse the guarded `config_from_json(base=...)`
+  merge; `vexor config --show` and `vexor doctor` should display each
+  field's origin (global vs project).
 - Additional embedding providers (Azure).
 - Evaluate an optional LLM reranker that reads a bounded set of retrieved
   candidates and judges their relevance to the query. Keep dense/BM25

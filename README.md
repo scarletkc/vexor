@@ -18,6 +18,9 @@
 **Vexor** is a semantic search engine that builds reusable indexes over files and code.
 It supports configurable embedding and reranking providers, and exposes the same core through a Python API, a CLI tool, and an optional desktop frontend.
 
+- Hybrid retrieval fuses full-corpus BM25 with dense search, so exact
+  identifiers can surface even when dense retrieval misses them.
+
 <video src="https://github.com/user-attachments/assets/4d53eefd-ab35-4232-98a7-f8dc005983a9" controls="controls" style="max-width: 600px;">
       Vexor Demo Video
     </video>

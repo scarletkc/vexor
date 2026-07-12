@@ -263,6 +263,18 @@ def check_rerank_configured(
             passed=True,
             message=Messages.DOCTOR_RERANK_BM25_READY,
         )
+    if normalized == "hybrid":
+        if importlib.util.find_spec("tokenizers") is None:
+            return DoctorCheckResult(
+                name="Rerank",
+                passed=True,
+                message=Messages.DOCTOR_RERANK_HYBRID_DEGRADED,
+            )
+        return DoctorCheckResult(
+            name="Rerank",
+            passed=True,
+            message=Messages.DOCTOR_RERANK_HYBRID_READY,
+        )
     if normalized == "flashrank":
         if importlib.util.find_spec("flashrank") is None:
             return DoctorCheckResult(

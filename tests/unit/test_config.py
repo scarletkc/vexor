@@ -114,6 +114,14 @@ def test_save_and_load_rerank(tmp_path, monkeypatch):
     assert cfg.rerank == "bm25"
 
 
+def test_hybrid_rerank_is_supported_and_round_trips(tmp_path, monkeypatch):
+    _prepare_config(tmp_path, monkeypatch)
+    config_module.save_config(config_module.Config(rerank="hybrid"))
+
+    assert "hybrid" in config_module.SUPPORTED_RERANKERS
+    assert config_module.load_config().rerank == "hybrid"
+
+
 def test_save_and_load_flashrank_model(tmp_path, monkeypatch):
     _prepare_config(tmp_path, monkeypatch)
 
