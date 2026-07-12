@@ -283,6 +283,7 @@ def collect_files(
         spec_by_dir[directory] = ignore_spec
 
         for dirpath, dirnames, filenames in os.walk(directory, topdown=True):
+            dirnames[:] = [d for d in dirnames if d != ".vexor"]
             if not include_hidden:
                 dirnames[:] = [d for d in dirnames if not d.startswith(".")]
                 filenames = [f for f in filenames if not f.startswith(".")]
@@ -339,6 +340,8 @@ def collect_files(
                     rel_dir,
                 )
         for entry in directory.iterdir():
+            if entry.name == ".vexor":
+                continue
             if entry.is_dir():
                 continue
             if respect_gitignore and entry.name == ".git":

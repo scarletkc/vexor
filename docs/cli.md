@@ -37,6 +37,7 @@
 | `--format porcelain` | Script-friendly TSV output |
 | `--format porcelain-z` | NUL-delimited output |
 | `--no-cache` | In-memory only; do not read/write index cache |
+| `--local` | With `index`, create and use `<path>/.vexor/index.db` |
 
 Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`,
 `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
@@ -79,10 +80,26 @@ Index cache keys derive from: `--path`, `--mode`, `--include-hidden`,
 
 Keep flags consistent to reuse cache; changing flags creates a separate index.
 
+By default, indexes are stored in `~/.vexor/index.db`. Project-local caching is
+opt-in: create a `.vexor/` directory in a project root, or run
+`vexor index --local`. Either way, Vexor writes a self-ignoring `.gitignore`
+(`*`) inside `.vexor/` on first use so the index database cannot be committed
+by accident. For each index or search operation, Vexor walks upward
+from the resolved target path and uses the nearest `.vexor/` directory it
+finds. This means nested projects use their nearest marker. Searching a parent
+directory above a project root does not discover markers in its children and
+therefore uses the global database.
+
+Cache location precedence is: an explicit API/cache override, then the nearest
+project `.vexor/`, then `~/.vexor/`. Only `index.db` moves into a project.
+Configuration, update-check data, FlashRank assets, and local embedding models
+remain under the global `~/.vexor/` directory.
+
 ```bash
 vexor config --show-index-all    # list all cached indexes
 vexor config --clear-index-all   # clear all cached indexes
 vexor index --path . --clear     # clear index for specific path
+vexor index --path . --local     # create/use ./.vexor/index.db
 ```
 
 Re-running `vexor index` only re-embeds changed files; >50% changes trigger

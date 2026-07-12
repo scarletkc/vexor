@@ -518,3 +518,46 @@ def test_config_context_yields_configured_client(tmp_path, monkeypatch) -> None:
         client.search("hello", path=tmp_path, mode="name")
 
     assert captured["request"].provider == "gemini"
+
+
+def test_index_explicit_cache_dir_wins_over_project_marker(tmp_path, monkeypatch) -> None:
+    from vexor import cache as cache_module
+
+    project = tmp_path / "project"
+    (project / ".vexor").mkdir(parents=True)
+    (project / "sample.txt").write_text("sample", encoding="utf-8")
+    explicit = tmp_path / "explicit"
+
+    def fake_build_index(*_args, **_kwargs):
+        db_path = cache_module.cache_db_path()
+        db_path.write_text("index", encoding="utf-8")
+        return IndexResult(
+            status=IndexStatus.STORED,
+            files_indexed=1,
+            cache_path=db_path,
+        )
+
+    monkeypatch.setattr(api_module, "build_index", fake_build_index)
+
+    api_module.index(project, mode="name", use_config=False, cache_dir=explicit)
+
+    assert (explicit / cache_module.DB_FILENAME).is_file()
+    assert not (project / ".vexor" / cache_module.DB_FILENAME).exists()
+
+
+def test_index_local_creates_project_cache_and_uses_it(tmp_path, monkeypatch) -> None:
+    from vexor import cache as cache_module
+
+    def fake_build_index(*_args, **_kwargs):
+        return IndexResult(
+            status=IndexStatus.STORED,
+            cache_path=cache_module.cache_db_path(),
+        )
+
+    monkeypatch.setattr(api_module, "build_index", fake_build_index)
+
+    result = api_module.index(tmp_path, mode="name", use_config=False, local=True)
+
+    assert (tmp_path / ".vexor" / ".gitignore").is_file()
+    expected_cache_path = tmp_path / ".vexor" / cache_module.DB_FILENAME
+    assert result.cache_path == expected_cache_path.resolve()

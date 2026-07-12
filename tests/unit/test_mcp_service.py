@@ -474,3 +474,32 @@ def test_emit_update_notice_swallows_errors(monkeypatch):
     stream = io.StringIO()
     mcp_service.emit_update_notice(stream)
     assert stream.getvalue() == ""
+
+
+def test_index_tool_schema_includes_local(tmp_path):
+    index_tool = build_tool_definitions(tmp_path)[1]
+
+    assert index_tool["inputSchema"]["properties"]["local"] == {
+        "type": "boolean",
+        "default": False,
+        "description": "Create <path>/.vexor and store this project's index there",
+    }
+
+
+def test_index_tool_passes_local(tmp_path):
+    server, client = make_server(tmp_path)
+
+    response = server.handle_message(tool_call(INDEX_TOOL, {"local": True}))
+
+    assert response["result"]["isError"] is False
+    assert client.index_calls[0]["local"] is True
+
+
+def test_index_tool_rejects_non_boolean_local(tmp_path):
+    server, client = make_server(tmp_path)
+
+    response = server.handle_message(tool_call(INDEX_TOOL, {"local": "yes"}))
+
+    assert response["error"]["code"] == JSONRPC_INVALID_PARAMS
+    assert "'local' must be a boolean" in response["error"]["message"]
+    assert client.index_calls == []

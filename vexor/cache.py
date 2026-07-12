@@ -12,7 +12,7 @@ from contextvars import ContextVar
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Lock
-from typing import Iterable, Mapping, Sequence
+from typing import Iterable, Iterator, Mapping, Sequence
 
 import numpy as np
 
@@ -20,6 +20,7 @@ from .utils import collect_files
 
 DEFAULT_CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CACHE_DIR = DEFAULT_CACHE_DIR
+PROJECT_CACHE_DIRNAME = ".vexor"
 _CACHE_DIR_OVERRIDE: ContextVar[Path | None] = ContextVar(
     "vexor_cache_dir_override",
     default=None,
@@ -209,6 +210,65 @@ def cache_dir_context(path: Path | str | None):
         yield
     finally:
         _CACHE_DIR_OVERRIDE.reset(token)
+
+
+def find_project_cache_dir(path: Path) -> Path | None:
+    """Return the nearest project cache directory at or above *path*."""
+
+    resolved_path = path.expanduser().resolve()
+    global_cache_dir = (Path.home() / PROJECT_CACHE_DIRNAME).resolve()
+    for candidate in (resolved_path, *resolved_path.parents):
+        project_cache_dir = (candidate / PROJECT_CACHE_DIRNAME).resolve()
+        if project_cache_dir != global_cache_dir and project_cache_dir.is_dir():
+            return project_cache_dir
+    return None
+
+
+def _ensure_project_cache_self_ignore(project_cache_dir: Path) -> None:
+    """Write the self-ignoring .gitignore into *project_cache_dir* if missing.
+
+    Users can opt in by creating `.vexor/` by hand; without this marker the
+    index database would show up as untracked and could get committed.
+    """
+
+    gitignore_path = project_cache_dir / ".gitignore"
+    if gitignore_path.exists():
+        return
+    try:
+        gitignore_path.write_text("*\n", encoding="utf-8")
+    except OSError:
+        # Hygiene write only: a search against a read-only tree must not
+        # fail because the ignore marker could not be created.
+        pass
+
+
+def create_project_cache_dir(root: Path) -> Path:
+    """Create and return the project-local cache directory for *root*."""
+
+    project_cache_dir = root / PROJECT_CACHE_DIRNAME
+    project_cache_dir.mkdir(parents=True, exist_ok=True)
+    _ensure_project_cache_self_ignore(project_cache_dir)
+    return project_cache_dir
+
+
+@contextmanager
+def project_cache_context(directory: Path | None) -> Iterator[None]:
+    """Use the nearest project cache unless an explicit override is active."""
+
+    if (
+        directory is None
+        or _CACHE_DIR_OVERRIDE.get() is not None
+        or CACHE_DIR != DEFAULT_CACHE_DIR
+    ):
+        yield
+        return
+    project_cache_dir = find_project_cache_dir(directory)
+    if project_cache_dir is None:
+        yield
+        return
+    _ensure_project_cache_self_ignore(project_cache_dir)
+    with cache_dir_context(project_cache_dir):
+        yield
 
 
 def ensure_cache_dir() -> Path:

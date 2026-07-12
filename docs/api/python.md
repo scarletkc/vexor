@@ -50,6 +50,12 @@ Configuration is resolved in this order (highest to lowest priority):
 For pure library usage that should ignore on-disk config, pass `use_config=False`
 and set explicit arguments or `config=...`.
 
+Index cache location is resolved separately. Vexor walks upward from `path` and
+uses the nearest project `.vexor/index.db` when a `.vexor/` directory exists.
+Explicit per-call `cache_dir` or `data_dir` arguments, client-level overrides,
+and `set_cache_dir(...)` take precedence over project detection; otherwise the
+fallback is `~/.vexor/index.db`.
+
 ## API reference
 
 ### search(...)
@@ -86,7 +92,8 @@ Returns a `SearchResponse` with:
 ### index(...)
 
 Build or refresh the index for a directory. Accepts the same indexing and config
-parameters as `search`, plus `config` for per-call override.
+parameters as `search`, plus `config` for per-call override. Pass `local=True`
+to create `<path>/.vexor` and store the project's index there.
 
 Returns `IndexResult` with `status`, `cache_path`, `files_indexed`.
 

@@ -26,8 +26,13 @@ try:
 except ImportError:  # pragma: no cover - Typer before the vendored Click runtime
     from click import Command, Context, UsageError
 
-from . import __version__, config as config_module
-from .cache import clear_all_cache, list_cache_entries
+from . import __version__, cache, config as config_module
+from .cache import (
+    cache_db_path,
+    clear_all_cache,
+    list_cache_entries,
+    project_cache_context,
+)
 from .config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_FLASHRANK_MODEL,
@@ -480,9 +485,10 @@ def search(
                 )
             )
         else:
-            should_index_first = (
-                _should_index_before_search(request) if auto_index else False
-            )
+            with project_cache_context(directory):
+                should_index_first = (
+                    _should_index_before_search(request) if auto_index else False
+                )
             if should_index_first:
                 console.print(
                     _styled(
@@ -496,7 +502,8 @@ def search(
                     )
                 )
     try:
-        response = perform_search(request)
+        with project_cache_context(directory):
+            response = perform_search(request)
     except FileNotFoundError:
         message = Messages.ERROR_INDEX_MISSING.format(path=directory)
         if output_format == SearchOutputFormat.rich:
@@ -580,6 +587,11 @@ def index(
         "--show",
         help=Messages.HELP_INDEX_SHOW,
     ),
+    local: bool = typer.Option(
+        False,
+        "--local",
+        help=Messages.HELP_INDEX_LOCAL,
+    ),
     extensions: list[str] | None = typer.Option(
         None,
         "--ext",
@@ -604,6 +616,14 @@ def index(
     api_key = config.api_key
 
     directory = resolve_directory(path)
+    if local:
+        project_cache_dir = cache.create_project_cache_dir(directory)
+        console.print(
+            _styled(
+                Messages.INFO_PROJECT_CACHE_CREATED.format(path=project_cache_dir),
+                Styles.INFO,
+            )
+        )
     mode_value = _validate_mode(mode)
     recursive = not no_recursive
     respect_gitignore = not no_respect_gitignore
@@ -615,16 +635,17 @@ def index(
         raise typer.BadParameter(Messages.ERROR_INDEX_SHOW_CONFLICT)
 
     if show_cache:
-        metadata = load_index_metadata_safe(
-            directory,
-            model_name,
-            include_hidden,
-            respect_gitignore,
-            mode_value,
-            recursive,
-            exclude_patterns=normalized_excludes,
-            extensions=normalized_exts,
-        )
+        with project_cache_context(directory):
+            metadata = load_index_metadata_safe(
+                directory,
+                model_name,
+                include_hidden,
+                respect_gitignore,
+                mode_value,
+                recursive,
+                exclude_patterns=normalized_excludes,
+                extensions=normalized_exts,
+            )
         if not metadata:
             console.print(
                 _styled(
@@ -655,15 +676,16 @@ def index(
         return
 
     if clear:
-        removed = clear_index_entries(
-            directory,
-            include_hidden=include_hidden,
-            respect_gitignore=respect_gitignore,
-            mode=mode_value,
-            recursive=recursive,
-            exclude_patterns=normalized_excludes,
-            extensions=normalized_exts,
-        )
+        with project_cache_context(directory):
+            removed = clear_index_entries(
+                directory,
+                include_hidden=include_hidden,
+                respect_gitignore=respect_gitignore,
+                mode=mode_value,
+                recursive=recursive,
+                exclude_patterns=normalized_excludes,
+                extensions=normalized_exts,
+            )
         if removed:
             plural = "ies" if removed > 1 else "y"
             console.print(
@@ -687,25 +709,26 @@ def index(
 
     console.print(_styled(Messages.INFO_INDEX_RUNNING.format(path=directory), Styles.INFO))
     try:
-        result = build_index(
-            directory,
-            include_hidden=include_hidden,
-            respect_gitignore=respect_gitignore,
-            mode=mode_value,
-            recursive=recursive,
-            model_name=model_name,
-            batch_size=batch_size,
-            embed_concurrency=embed_concurrency,
-            extract_concurrency=extract_concurrency,
-            extract_backend=extract_backend,
-            provider=provider,
-            base_url=base_url,
-            api_key=api_key,
-            local_cuda=bool(config.local_cuda),
-            exclude_patterns=normalized_excludes,
-            extensions=normalized_exts,
-            embedding_dimensions=config.embedding_dimensions,
-        )
+        with project_cache_context(directory):
+            result = build_index(
+                directory,
+                include_hidden=include_hidden,
+                respect_gitignore=respect_gitignore,
+                mode=mode_value,
+                recursive=recursive,
+                model_name=model_name,
+                batch_size=batch_size,
+                embed_concurrency=embed_concurrency,
+                extract_concurrency=extract_concurrency,
+                extract_backend=extract_backend,
+                provider=provider,
+                base_url=base_url,
+                api_key=api_key,
+                local_cuda=bool(config.local_cuda),
+                exclude_patterns=normalized_excludes,
+                extensions=normalized_exts,
+                embedding_dimensions=config.embedding_dimensions,
+            )
     except (RuntimeError, ValueError) as exc:
         console.print(_styled(str(exc), Styles.ERROR))
         raise typer.Exit(code=1)
@@ -1220,7 +1243,14 @@ def config(
             )
 
     if clear_index_all:
-        removed = clear_all_cache()
+        with project_cache_context(Path.cwd()):
+            console.print(
+                _styled(
+                    Messages.INFO_CACHE_DB_PATH.format(path=cache_db_path()),
+                    Styles.INFO,
+                )
+            )
+            removed = clear_all_cache()
         if removed:
             plural = "ies" if removed > 1 else "y"
             console.print(
@@ -1292,7 +1322,14 @@ def config(
         )
 
     if show_index_all:
-        entries = list_cache_entries()
+        with project_cache_context(Path.cwd()):
+            console.print(
+                _styled(
+                    Messages.INFO_CACHE_DB_PATH.format(path=cache_db_path()),
+                    Styles.INFO,
+                )
+            )
+            entries = list_cache_entries()
         if not entries:
             console.print(_styled(Messages.INFO_INDEX_ALL_EMPTY, Styles.INFO))
         else:

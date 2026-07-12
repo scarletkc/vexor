@@ -23,7 +23,12 @@ from .config import (
     load_config,
     set_config_dir,
 )
-from .cache import cache_dir_context, set_cache_dir
+from .cache import (
+    cache_dir_context,
+    create_project_cache_dir,
+    project_cache_context,
+    set_cache_dir,
+)
 from .modes import available_modes, get_strategy
 from .providers.capabilities import (
     DEFAULT_PROVIDER,
@@ -355,6 +360,7 @@ class VexorClient:
         api_key: str | None = None,
         local_cuda: bool | None = None,
         embedding_dimensions: int | None = None,
+        local: bool = False,
         use_config: bool | None = None,
         config: Config | Mapping[str, object] | str | None = None,
         data_dir: Path | str | None = None,
@@ -385,6 +391,7 @@ class VexorClient:
             api_key=api_key,
             local_cuda=local_cuda,
             embedding_dimensions=embedding_dimensions,
+            local=local,
             use_config=resolved_use_config,
             config=config,
             runtime_config=self._runtime_config,
@@ -592,6 +599,7 @@ def index(
     api_key: str | None = None,
     local_cuda: bool | None = None,
     embedding_dimensions: int | None = None,
+    local: bool = False,
     use_config: bool = True,
     config: Config | Mapping[str, object] | str | None = None,
     data_dir: Path | str | None = None,
@@ -617,6 +625,7 @@ def index(
         api_key=api_key,
         local_cuda=local_cuda,
         embedding_dimensions=embedding_dimensions,
+        local=local,
         use_config=use_config,
         config=config,
         runtime_config=_RUNTIME_CONFIG,
@@ -740,7 +749,10 @@ def _search_with_settings(
     config_dir: Path | str | None,
     cache_dir: Path | str | None,
 ) -> SearchResponse:
-    with _data_dir_context(data_dir, config_dir=config_dir, cache_dir=cache_dir):
+    with (
+        _data_dir_context(data_dir, config_dir=config_dir, cache_dir=cache_dir),
+        project_cache_context(directory := resolve_directory(path)),
+    ):
         clean_query = query.strip()
         if not clean_query:
             raise VexorError(Messages.ERROR_EMPTY_QUERY)
@@ -749,7 +761,6 @@ def _search_with_settings(
         except ValueError as exc:
             raise VexorError(str(exc)) from exc
 
-        directory = resolve_directory(path)
         mode_value = _validate_mode(mode)
         normalized_exts = _normalize_extensions(extensions)
         normalized_excludes = _normalize_excludes(exclude_patterns)
@@ -822,6 +833,7 @@ def _index_with_settings(
     api_key: str | None,
     local_cuda: bool | None,
     embedding_dimensions: int | None,
+    local: bool,
     use_config: bool,
     config: Config | Mapping[str, object] | str | None,
     runtime_config: Config | None,
@@ -829,8 +841,13 @@ def _index_with_settings(
     config_dir: Path | str | None,
     cache_dir: Path | str | None,
 ) -> IndexResult:
-    with _data_dir_context(data_dir, config_dir=config_dir, cache_dir=cache_dir):
-        directory = resolve_directory(path)
+    directory = resolve_directory(path)
+    if local:
+        create_project_cache_dir(directory)
+    with (
+        _data_dir_context(data_dir, config_dir=config_dir, cache_dir=cache_dir),
+        project_cache_context(directory),
+    ):
         mode_value = _validate_mode(mode)
         normalized_exts = _normalize_extensions(extensions)
         normalized_excludes = _normalize_excludes(exclude_patterns)
@@ -902,8 +919,10 @@ def _index_in_memory_with_settings(
     config_dir: Path | str | None,
     cache_dir: Path | str | None,
 ) -> InMemoryIndex:
-    with _data_dir_context(data_dir, config_dir=config_dir, cache_dir=cache_dir):
-        directory = resolve_directory(path)
+    with (
+        _data_dir_context(data_dir, config_dir=config_dir, cache_dir=cache_dir),
+        project_cache_context(directory := resolve_directory(path)),
+    ):
         mode_value = _validate_mode(mode)
         normalized_exts = _normalize_extensions(extensions)
         normalized_excludes = _normalize_excludes(exclude_patterns)
@@ -980,8 +999,10 @@ def _clear_index_with_settings(
     config_dir: Path | str | None,
     cache_dir: Path | str | None,
 ) -> int:
-    with _data_dir_context(data_dir, config_dir=config_dir, cache_dir=cache_dir):
-        directory = resolve_directory(path)
+    with (
+        _data_dir_context(data_dir, config_dir=config_dir, cache_dir=cache_dir),
+        project_cache_context(directory := resolve_directory(path)),
+    ):
         mode_value = _validate_mode(mode)
         normalized_exts = _normalize_extensions(extensions)
         normalized_excludes = _normalize_excludes(exclude_patterns)

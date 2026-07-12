@@ -1741,3 +1741,69 @@ Child body.
     )
     assert search_result.exit_code == 0
     assert "Top > Child" in search_result.stdout
+
+
+def test_project_local_cache_index_search_show_and_clear(tmp_path, monkeypatch):
+    class DummySearcher:
+        def __init__(self, *args, **kwargs):
+            self.device = "dummy"
+
+        def embed_texts(self, texts):
+            if not texts:
+                return np.zeros((0, 3), dtype=np.float32)
+            return np.ones((len(texts), 3), dtype=np.float32)
+
+    monkeypatch.setattr("vexor.search.VexorSearcher", DummySearcher)
+    global_cache = tmp_path / "global-cache"
+    monkeypatch.setattr("vexor.cache.DEFAULT_CACHE_DIR", global_cache)
+    monkeypatch.setattr("vexor.cache.CACHE_DIR", global_cache)
+    project = tmp_path / "project-local"
+    subdirectory = project / "src"
+    subdirectory.mkdir(parents=True)
+    (subdirectory / "sample.txt").write_text("local cache content", encoding="utf-8")
+    runner = CliRunner()
+
+    index_result = runner.invoke(
+        app,
+        ["index", "--path", str(project), "--mode", "name", "--local"],
+    )
+
+    assert index_result.exit_code == 0
+    assert (project / ".vexor" / "index.db").is_file()
+    assert (project / ".vexor" / ".gitignore").read_text(encoding="utf-8") == "*\n"
+    assert not (global_cache / "index.db").exists()
+
+    root_search = runner.invoke(
+        app,
+        ["search", "sample", "--path", str(project), "--mode", "name"],
+    )
+    child_search = runner.invoke(
+        app,
+        ["search", "sample", "--path", str(subdirectory), "--mode", "name"],
+    )
+
+    assert root_search.exit_code == 0
+    assert child_search.exit_code == 0
+    assert "sample.txt" in root_search.stdout
+    assert "sample.txt" in child_search.stdout
+    assert not (global_cache / "index.db").exists()
+
+    show_result = runner.invoke(
+        app,
+        ["index", "--path", str(project), "--mode", "name", "--show"],
+    )
+    clear_result = runner.invoke(
+        app,
+        ["index", "--path", str(project), "--mode", "name", "--clear"],
+    )
+    show_after_clear = runner.invoke(
+        app,
+        ["index", "--path", str(project), "--mode", "name", "--show"],
+    )
+
+    assert show_result.exit_code == 0
+    assert "Cached index details" in show_result.stdout
+    assert clear_result.exit_code == 0
+    assert "Removed 1 cached index entry" in clear_result.stdout
+    assert show_after_clear.exit_code == 0
+    assert "No cached index found" in show_after_clear.stdout
