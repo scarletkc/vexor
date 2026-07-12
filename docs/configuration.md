@@ -13,6 +13,10 @@ Run `vexor index --local` to create the project directory and its ignore file.
 Only the index database, including embedding and query cache tables, is
 project-local.
 
+When an upgrade changes the index cache schema, existing index caches are
+invalidated and rebuilt automatically on next use; cached embeddings are
+reused, so the migration does not re-embed unchanged content.
+
 ## Commands
 
 ```bash
@@ -75,7 +79,7 @@ ranked first by both retrieval paths.
 Recommended defaults:
 
 - Keep `off` unless you want extra precision.
-- Use `bm25` for lightweight lexical boosts; it is fast and lightweight.
+- Use `bm25` for a lightweight lexical boost with almost no extra latency.
 - Use `hybrid` when exact identifiers and lexical-only matches matter.
 - BM25 uses a multilingual tokenizer (Bert pre-tokenizer), so it can handle CJK better.
 - Use `flashrank` for stronger reranking (requires `pip install "vexor[flashrank]"` and
@@ -84,10 +88,6 @@ Recommended defaults:
   returns ranked indexes.
 - For Chinese or multi-language content, set `--set-flashrank-model ms-marco-MultiBERT-L-12`.
 - If unset, FlashRank defaults to `ms-marco-TinyBERT-L-2-v2`.
-
-This release raises the index cache schema version. Older index caches are
-invalidated and rebuilt automatically; cached embeddings are shared and reused,
-so the migration does not require re-embedding unchanged content.
 
 ## Providers: Remote vs Local
 

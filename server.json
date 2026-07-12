@@ -7,13 +7,13 @@
     "url": "https://github.com/scarletkc/vexor",
     "source": "github"
   },
-  "version": "0.24.3",
+  "version": "0.25.0",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "vexor",
-      "version": "0.24.3",
+      "version": "0.25.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

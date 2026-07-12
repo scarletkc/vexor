@@ -35,10 +35,6 @@ When you remember what a file *does* but forget its name or location, Vexor find
 
 Designed for both humans and AI coding assistants, enabling semantic file discovery in autonomous agent workflows.
 
-Optional hybrid retrieval (`vexor config --rerank hybrid`) fuses full-corpus BM25 with dense search, so exact identifiers can surface even when dense retrieval misses them.
-
-Per-project `.vexorignore` files give you full gitignore-style control over what gets indexed, and you can opt in to per-project indexes by creating a `.vexor/` directory or running `vexor index --local`.
-
 ## Install
 
 Download standalone binary from [releases](https://github.com/scarletkc/vexor/releases) (no Python required), or:
@@ -161,17 +157,17 @@ The server exposes two tools: `vexor_search` (semantic file search) and `vexor_i
 vexor init                             # guided setup (recommended)
 vexor config --set-api-key "YOUR_KEY"  # or env: VEXOR_API_KEY / OPENAI_API_KEY / ...
 vexor config --set-provider openai     # default; also gemini/voyageai/custom/local
-vexor config --rerank bm25             # recommended: improves search accuracy
+vexor config --rerank hybrid           # optional: fuse exact keyword + semantic ranking
 vexor config --show                    # view current settings
 ```
 
 Config lives in `~/.vexor/config.json`. Any field can also be injected via the `VEXOR_CONFIG_JSON` environment variable (useful for MCP client configs and CI), and fully offline use is supported through local embedding models.
 
-See [`docs/configuration.md`](https://github.com/scarletkc/vexor/blob/main/docs/configuration.md) for the complete reference: all config commands, API keys and environment variables, rerank strategies (BM25 / FlashRank / remote), remote vs local providers, embedding dimensions, and offline local model setup.
+See [`docs/configuration.md`](https://github.com/scarletkc/vexor/blob/main/docs/configuration.md) for the complete reference: all config commands, API keys and environment variables, rerank strategies (hybrid / BM25 / FlashRank / remote), remote vs local providers, embedding dimensions, and offline local model setup.
 
 ## CLI Reference
 
-Everyday usage fits in `vexor "query"`, `vexor search`, and `vexor index` (see Quick Start). The full command table, common flags, index modes (`--mode auto/name/head/brief/full/code/outline`), cache behavior, and porcelain output format are documented in [`docs/cli.md`](https://github.com/scarletkc/vexor/blob/main/docs/cli.md).
+Everyday usage fits in `vexor "query"`, `vexor search`, and `vexor index` (see Quick Start). The full command table, common flags, index modes (`--mode auto/name/head/brief/full/code/outline`), `.vexorignore` files, project-local indexes (`vexor index --local`), cache behavior, and porcelain output format are documented in [`docs/cli.md`](https://github.com/scarletkc/vexor/blob/main/docs/cli.md).
 
 ## Documentation
 
