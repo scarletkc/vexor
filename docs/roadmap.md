@@ -105,9 +105,13 @@ never leaving the machine.
 
 - Package for homebrew, scoop, and winget (standalone binaries already
   exist in releases).
-- Write the launch post — MCP and hybrid search have both shipped as of
-  0.25.0 (Show HN, Chinese dev community follow-up — Vexor appeared in
-  Ruan Yifeng's Weekly #379).
+- Distribution pushes are gated on the P0 evaluation chart: the shareable
+  artifact is the benchmark, not an announcement post (what traveled in
+  mgrep's launch was the chart). Once the chart is in the README, follow
+  up with Ruan Yifeng's Weekly as the warm channel (Vexor appeared in
+  issue #379); Show HN is optional. A launch post without new evidence
+  is not worth writing — the always-on discovery channel is the MCP
+  registry and skill directories, which are already live.
 - README: add a comparison table vs mgrep / claude-context highlighting
   local-first, no account, provider-agnostic, reranking options.
 
