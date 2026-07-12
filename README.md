@@ -35,6 +35,8 @@ When you remember what a file *does* but forget its name or location, Vexor find
 
 Designed for both humans and AI coding assistants, enabling semantic file discovery in autonomous agent workflows.
 
+Per-project `.vexorignore` files give you full gitignore-style control over what gets indexed.
+
 ## Install
 
 Download standalone binary from [releases](https://github.com/scarletkc/vexor/releases) (no Python required), or:

@@ -29,6 +29,7 @@ vexor "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--exclude-patte
 - `--top/-k`: number of results
 - `--include-hidden`: include dotfiles
 - `--no-respect-gitignore`: include ignored files
+- `.vexorignore` project rules always apply, even with `--no-respect-gitignore`.
 - `--no-recursive`: only the top directory
 - `--format`: `rich` (default) or `porcelain`/`porcelain-z` for scripts
 - `--no-cache`: in-memory only, do not read/write index cache
