@@ -16,7 +16,7 @@ Run every command inside the project virtualenv: activate the existing one if th
 - `python -m pip install -e .[dev]` — install Vexor plus pytest, coverage, build, twine, and PyInstaller helpers.
 - `python -m vexor --help` — basic CLI smoke test; realistic checks: `python -m vexor search "api client config" --path . --mode auto --no-cache` and `python -m vexor index --path . --mode code`.
 - `python -m pytest` — main offline test command; narrow scope with `python -m pytest tests/unit -k cache` or `python -m pytest tests/integration/test_cli.py -k doctor`.
-- `python -m pytest --cov=vexor --cov-report=term-missing` — run before merging and check the report for obvious coverage regressions; there is no hard coverage gate.
+- `python -m pytest --cov=vexor --cov-report=term-missing` — run before merging and check the report for obvious coverage regressions; there is no hard coverage gate, but aim to keep core logic coverage at or above 90%.
 - `python -m build` — wheel and sdist in `dist/`; version bumps via `scripts/bump_version.py`.
 
 ## Coding Style & Naming Conventions
