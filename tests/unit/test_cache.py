@@ -8,6 +8,7 @@ import pytest
 import vexor.cache as cache
 
 MODE = "name"
+PROJECT_CACHE_GITIGNORE = "*\n!.gitignore\n!config.json\n"
 
 
 def _entries_for_files(
@@ -920,7 +921,17 @@ def test_create_project_cache_dir_creates_marker_and_gitignore(tmp_path):
 
     assert marker == tmp_path / ".vexor"
     assert marker.is_dir()
-    assert (marker / ".gitignore").read_text(encoding="utf-8") == "*\n"
+    assert (marker / ".gitignore").read_text(encoding="utf-8") == PROJECT_CACHE_GITIGNORE
+
+
+def test_create_project_cache_dir_migrates_legacy_gitignore(tmp_path):
+    marker = tmp_path / ".vexor"
+    marker.mkdir()
+    gitignore = marker / ".gitignore"
+    gitignore.write_text("*\n", encoding="utf-8")
+
+    assert cache.create_project_cache_dir(tmp_path) == marker
+    assert gitignore.read_text(encoding="utf-8") == PROJECT_CACHE_GITIGNORE
 
 
 def test_create_project_cache_dir_preserves_existing_gitignore(tmp_path):
@@ -931,6 +942,17 @@ def test_create_project_cache_dir_preserves_existing_gitignore(tmp_path):
 
     assert cache.create_project_cache_dir(tmp_path) == marker
     assert gitignore.read_text(encoding="utf-8") == "keep-this\n"
+
+
+def test_create_project_cache_dir_preserves_custom_legacy_based_gitignore(tmp_path):
+    marker = tmp_path / ".vexor"
+    marker.mkdir()
+    gitignore = marker / ".gitignore"
+    custom = "*\n!custom.json\n"
+    gitignore.write_text(custom, encoding="utf-8")
+
+    assert cache.create_project_cache_dir(tmp_path) == marker
+    assert gitignore.read_text(encoding="utf-8") == custom
 
 
 def test_project_cache_context_writes_self_ignore_for_manual_marker(
@@ -946,7 +968,7 @@ def test_project_cache_context_writes_self_ignore_for_manual_marker(
     with cache.project_cache_context(project):
         pass
 
-    assert (marker / ".gitignore").read_text(encoding="utf-8") == "*\n"
+    assert (marker / ".gitignore").read_text(encoding="utf-8") == PROJECT_CACHE_GITIGNORE
 
 
 def test_project_cache_context_preserves_existing_gitignore(tmp_path, monkeypatch):

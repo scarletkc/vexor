@@ -92,8 +92,9 @@ for hit in response.results:
     print(hit.path, hit.score)
 ```
 
-By default it reads `~/.vexor/config.json`. For runtime config overrides, cache
-controls, and per-call options, see [`docs/api/python.md`](https://github.com/scarletkc/vexor/tree/main/docs/api/python.md).
+Configuration follows the same global and project-level resolution as the CLI.
+For runtime overrides, cache controls, and per-call options, see
+[`docs/api/python.md`](https://github.com/scarletkc/vexor/tree/main/docs/api/python.md).
 
 ## AI Agent Skill
 
@@ -150,12 +151,16 @@ vexor init                             # guided setup (recommended)
 vexor config --set-api-key "YOUR_KEY"  # or env: VEXOR_API_KEY / OPENAI_API_KEY / ...
 vexor config --set-provider openai     # default; also gemini/voyageai/custom/local
 vexor config --rerank hybrid           # optional: fuse exact keyword + semantic ranking
-vexor config --show                    # view current settings
+vexor config --show                    # view effective settings and origins
 ```
 
-Config lives in `~/.vexor/config.json`. Any field can also be injected via the `VEXOR_CONFIG_JSON` environment variable (useful for MCP client configs and CI), and fully offline use is supported through local embedding models.
+Global config lives in `~/.vexor/config.json`; the nearest
+`<project>/.vexor/config.json` can safely override selected behavior for that
+project. Non-secret fields can also be injected via `VEXOR_CONFIG_JSON`
+(useful for MCP clients and CI), and fully offline use is supported through
+local embedding models.
 
-See [`docs/configuration.md`](https://github.com/scarletkc/vexor/blob/main/docs/configuration.md) for the complete reference: all config commands, API keys and environment variables, rerank strategies (hybrid / BM25 / FlashRank / remote), remote vs local providers, embedding dimensions, and offline local model setup.
+See [`docs/configuration.md`](https://github.com/scarletkc/vexor/blob/main/docs/configuration.md) for the complete reference: project config fields and precedence, all config commands, API keys and environment variables, rerank strategies (hybrid / BM25 / FlashRank / remote), remote vs local providers, embedding dimensions, and offline local model setup.
 
 ## CLI Reference
 

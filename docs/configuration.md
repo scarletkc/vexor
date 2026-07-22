@@ -1,21 +1,78 @@
 # Configuration
 
 Vexor is configured through `vexor config` commands (or the interactive
-`vexor init` wizard). Settings persist in `~/.vexor/config.json`.
+`vexor init` wizard). Global settings persist in `~/.vexor/config.json`.
 
 ## Where data lives
 
-Configuration, update-check data, FlashRank assets, and local embedding models
-stay in the global `~/.vexor/` directory. Indexes normally use
-`~/.vexor/index.db`, but a project containing a `.vexor/` directory uses
-`<project>/.vexor/index.db` for searches and indexing within that project.
+Global configuration, update-check data, FlashRank assets, and local embedding
+models stay under `~/.vexor/`. Indexes normally use `~/.vexor/index.db`, but a
+project containing a `.vexor/` directory uses `<project>/.vexor/index.db` for
+searches and indexing within that project. The same directory may contain a
+tracked `config.json` with safe project-level overrides.
+
 Run `vexor index --local` to create the project directory and its ignore file.
-Only the index database, including embedding and query cache tables, is
-project-local.
+This does not create a project config. The generated index and caches remain
+ignored while `.vexor/config.json` can be committed.
 
 When an upgrade changes the index cache schema, existing index caches are
 invalidated and rebuilt automatically on next use; cached embeddings are
 reused, so the migration does not re-embed unchanged content.
+
+## Project configuration
+
+For each path-aware search or index operation, Vexor resolves the target path
+and walks upward to the nearest `.vexor/` directory. If that marker contains
+`config.json`, Vexor overlays it on the global configuration. Nested projects
+therefore use their nearest marker; a search above a project does not discover
+markers below it. If the nearest marker has no `config.json`, Vexor uses the
+global configuration instead of continuing into an outer project.
+
+Project config v1 accepts exactly these fields:
+
+- `rerank`
+- `auto_index`
+- `model`
+- `embedding_dimensions`
+- `batch_size`
+- `embed_concurrency`
+- `extract_concurrency`
+
+Example `<project>/.vexor/config.json`:
+
+```json
+{
+  "model": "text-embedding-3-small",
+  "embedding_dimensions": 1024,
+  "batch_size": 32,
+  "embed_concurrency": 4,
+  "extract_concurrency": 4,
+  "auto_index": true,
+  "rerank": "hybrid"
+}
+```
+
+Repository files are untrusted input, so this is a strict allowlist. Project
+config explicitly rejects credentials and endpoints (`api_key`, `base_url`,
+and the entire `remote_rerank` object), as well as every other unsupported or
+unknown field. Configure those values globally, through environment variables,
+or with explicit Python API arguments. This is stricter than
+`VEXOR_CONFIG_JSON`, which may set non-secret fields such as `base_url`.
+
+Effective precedence, from lowest to highest, is:
+
+1. Built-in defaults
+2. Global `~/.vexor/config.json`
+3. The nearest project `.vexor/config.json`
+4. Environment overrides, including `VEXOR_CONFIG_JSON`
+5. Explicit runtime or API arguments
+
+`vexor config --show` and `vexor doctor` resolve the project from the current
+working directory: `--show` labels every effective field with its origin, and
+`doctor` reports the project config file plus any project or environment
+overrides. All mutating `vexor config` options and `vexor init` still write
+only the global config; edit `.vexor/config.json` directly to change a
+project override.
 
 ## Commands
 
@@ -44,7 +101,7 @@ vexor config --set-remote-rerank-api-key $VEXOR_REMOTE_RERANK_API_KEY  # or env 
 vexor config --clear-remote-rerank          # clear remote rerank config
 vexor config --set-base-url https://proxy.example.com  # optional proxy
 vexor config --clear-base-url               # reset to official endpoint
-vexor config --show                         # view current settings
+vexor config --show                         # view effective settings and origins
 ```
 
 Rerank defaults to `off`. **It is highly recommended to configure the
@@ -62,8 +119,8 @@ or `VOYAGE_API_KEY`; `VEXOR_API_KEY` takes precedence over a stored key.
 
 Any non-secret config field can also be injected as a JSON object via the
 `VEXOR_CONFIG_JSON` environment variable (useful for MCP client configs and
-CI), merged over `~/.vexor/config.json`. Credential fields inside
-`VEXOR_CONFIG_JSON` are rejected — use the dedicated variables above.
+CI), merged over the effective global and project config. Credential fields
+inside `VEXOR_CONFIG_JSON` are rejected — use the dedicated variables above.
 
 ## Rerank
 

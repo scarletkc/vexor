@@ -8,7 +8,7 @@
 | `vexor QUERY` | Shortcut for `vexor search QUERY` |
 | `vexor search QUERY --path PATH` | Semantic search (auto-indexes if needed) |
 | `vexor index --path PATH` | Build/refresh index manually |
-| `vexor config --show` | Display current configuration |
+| `vexor config --show` | Display effective configuration and each field's origin |
 | `vexor config --clear-flashrank` | Remove cached FlashRank models under `~/.vexor/flashrank` |
 | `vexor local --setup [--model MODEL]` | Download a local model and set provider to `local` |
 | `vexor local --clean-up` | Remove local model cache under `~/.vexor/models` |
@@ -45,6 +45,18 @@ strategies (`off`, `bm25`, `flashrank`, `remote`, `hybrid`).
 
 Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`,
 `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
+
+## Project Configuration
+
+Search and index commands walk upward from their resolved `--path` and apply
+`config.json` from the nearest `.vexor/` marker as a safe overlay on the
+global config; credentials and endpoints are rejected. `vexor config --show`
+and `vexor doctor` resolve from the current working directory: `--show`
+labels each effective field's origin, `doctor` lists active overrides.
+Mutating `vexor config` options always write `~/.vexor/config.json`; edit the
+project file directly for project-specific values. See
+[Configuration → Project configuration](configuration.md#project-configuration)
+for the accepted fields and precedence.
 
 ## Ignore Files
 
@@ -86,18 +98,18 @@ Keep flags consistent to reuse cache; changing flags creates a separate index.
 
 By default, indexes are stored in `~/.vexor/index.db`. Project-local caching is
 opt-in: create a `.vexor/` directory in a project root, or run
-`vexor index --local`. Either way, Vexor writes a self-ignoring `.gitignore`
-(`*`) inside `.vexor/` on first use so the index database cannot be committed
-by accident. For each index or search operation, Vexor walks upward
-from the resolved target path and uses the nearest `.vexor/` directory it
-finds. This means nested projects use their nearest marker. Searching a parent
-directory above a project root does not discover markers in its children and
-therefore uses the global database.
+`vexor index --local`. Either way, Vexor writes a `.gitignore` inside
+`.vexor/` on first use so generated indexes and caches cannot be committed by
+accident while `config.json` remains eligible for version control. For each
+index or search operation, Vexor walks upward from the resolved target path and
+uses the nearest `.vexor/` directory it finds. This means nested projects use
+their nearest marker. Searching a parent directory above a project root does
+not discover markers in its children and therefore uses the global database.
 
 Cache location precedence is: an explicit API/cache override, then the nearest
-project `.vexor/`, then `~/.vexor/`. Only `index.db` moves into a project.
-Configuration, update-check data, FlashRank assets, and local embedding models
-remain under the global `~/.vexor/` directory.
+project `.vexor/`, then `~/.vexor/`. The project directory may also contain the
+safe `config.json` overlay described above. Global configuration, update-check
+data, FlashRank assets, and local embedding models remain under `~/.vexor/`.
 
 ```bash
 vexor config --show-index-all    # list all cached indexes

@@ -82,6 +82,129 @@ def test_search_outputs_table(tmp_path, monkeypatch):
     assert captured["mode"] == "auto"
 
 
+def test_search_and_index_use_project_config_from_target_path(tmp_path, monkeypatch):
+    runner = CliRunner()
+    project = tmp_path / "project"
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps(
+            {
+                "model": "project-model",
+                "batch_size": 11,
+                "embed_concurrency": 3,
+                "extract_concurrency": 2,
+                "auto_index": False,
+                "rerank": "hybrid",
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["search"] = request
+        return SearchResponse(
+            base_path=project,
+            backend=None,
+            results=[],
+            is_stale=False,
+            index_empty=True,
+        )
+
+    def fake_build_index(_directory, **kwargs):
+        captured["index"] = kwargs
+        return IndexResult(status=IndexStatus.EMPTY)
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+    monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
+
+    search_result = runner.invoke(
+        app, ["search", "hello", "--path", str(project), "--mode", "name"]
+    )
+    index_result = runner.invoke(
+        app, ["index", "--path", str(project), "--mode", "name"]
+    )
+
+    assert search_result.exit_code == 0
+    assert index_result.exit_code == 0
+    request = captured["search"]
+    assert request.model_name == "project-model"
+    assert request.batch_size == 11
+    assert request.embed_concurrency == 3
+    assert request.extract_concurrency == 2
+    assert request.auto_index is False
+    assert request.rerank == "hybrid"
+    assert captured["index"]["model_name"] == "project-model"
+    assert captured["index"]["batch_size"] == 11
+
+
+def test_search_project_config_does_not_pollute_porcelain_output(
+    tmp_path, monkeypatch
+):
+    runner = CliRunner()
+    project = tmp_path / "project"
+    sample = project / "alpha.txt"
+    sample.parent.mkdir()
+    sample.write_text("data", encoding="utf-8")
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir()
+    project_config.write_text(json.dumps({"batch_size": 11}), encoding="utf-8")
+
+    def fake_perform_search(_request):
+        return SearchResponse(
+            base_path=project,
+            backend=None,
+            results=[SearchResult(path=sample, score=0.9, preview="alpha")],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "hello",
+            "--path",
+            str(project),
+            "--mode",
+            "name",
+            "--format",
+            "porcelain",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout.count("\n") == 1
+    assert len(result.stdout.rstrip("\n").split("\t")) == 7
+    assert "(project)" not in result.stdout
+    assert "Field origins" not in result.stdout
+
+
+def test_search_rejects_sensitive_project_config_without_traceback(
+    tmp_path, monkeypatch
+):
+    runner = CliRunner()
+    project_config = tmp_path / "project" / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"api_key": "must-not-load"}), encoding="utf-8"
+    )
+
+    result = runner.invoke(
+        app,
+        ["search", "hello", "--path", str(project_config.parent.parent)],
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "must not contain: api_key" in result.stderr
+    assert str(project_config) in result.stderr
+    assert "Traceback" not in result.output
+
+
 def test_search_outputs_hybrid_reranker_label(tmp_path, monkeypatch):
     sample_file = tmp_path / "exact.py"
     sample_file.write_text("data")
@@ -906,6 +1029,99 @@ def test_config_set_and_show(tmp_path):
     assert "FlashRank model" not in strip_ansi(result_show.stdout)
 
 
+def test_config_show_reports_global_project_and_environment_origins(
+    tmp_path, monkeypatch, temp_config_home
+):
+    runner = CliRunner()
+    temp_config_home.parent.mkdir(parents=True)
+    temp_config_home.write_text(
+        json.dumps({"provider": "gemini", "model": "global-model"}),
+        encoding="utf-8",
+    )
+    project = tmp_path / "project"
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"model": "project-model", "auto_index": False}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("VEXOR_CONFIG_JSON", json.dumps({"batch_size": 23}))
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["config", "--show"])
+    output = strip_ansi(result.stdout)
+
+    assert result.exit_code == 0
+    assert "Default provider: gemini (global)" in output
+    assert "Default model: project-model (project)" in output
+    assert "Default batch size: 23 (environment)" in output
+    assert "Auto index: no (project)" in output
+    assert "Custom base URL: none (default)" in output
+    assert "Embedding dimensions: auto (default)" in output
+
+
+def test_config_show_reports_provider_env_api_key(monkeypatch, temp_config_home):
+    runner = CliRunner()
+    temp_config_home.parent.mkdir(parents=True)
+    temp_config_home.write_text(json.dumps({"provider": "openai"}), encoding="utf-8")
+    monkeypatch.delenv("VEXOR_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env-key")
+
+    result = runner.invoke(app, ["config", "--show"])
+    output = strip_ansi(result.stdout)
+
+    assert result.exit_code == 0
+    assert "API key set: yes (environment)" in output
+
+
+def test_config_show_remote_rerank_env_key_keeps_block_origin(
+    monkeypatch, temp_config_home
+):
+    runner = CliRunner()
+    temp_config_home.parent.mkdir(parents=True)
+    temp_config_home.write_text(
+        json.dumps(
+            {
+                "rerank": "remote",
+                "remote_rerank": {
+                    "base_url": "https://rerank.example.test/rerank",
+                    "model": "rerank-model",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("VEXOR_REMOTE_RERANK_API_KEY", "env-remote-key")
+
+    result = runner.invoke(app, ["config", "--show"])
+    output = strip_ansi(result.stdout)
+
+    assert result.exit_code == 0
+    flat = " ".join(output.split())
+    assert "key from env) (global)" in flat
+
+
+def test_config_setter_in_project_still_updates_only_global_config(
+    tmp_path, monkeypatch, temp_config_home
+):
+    runner = CliRunner()
+    project = tmp_path / "project"
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(json.dumps({"batch_size": 7}), encoding="utf-8")
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["config", "--set-batch-size", "42"])
+
+    assert result.exit_code == 0
+    assert json.loads(project_config.read_text(encoding="utf-8")) == {
+        "batch_size": 7
+    }
+    assert json.loads(temp_config_home.read_text(encoding="utf-8"))[
+        "batch_size"
+    ] == 42
+
+
 def test_config_hybrid_rerank_round_trip(tmp_path):
     runner = CliRunner()
     result = runner.invoke(app, ["config", "--rerank", "hybrid"])
@@ -1401,6 +1617,104 @@ def test_doctor_handles_malformed_config(monkeypatch, temp_config_home):
     assert "invalid json" in result.stdout.lower()
 
 
+def test_doctor_reports_project_config_overrides(
+    tmp_path, monkeypatch, temp_config_home
+):
+    from vexor.services import system_service
+
+    runner = CliRunner()
+    temp_config_home.parent.mkdir(parents=True)
+    temp_config_home.write_text(
+        json.dumps({"provider": "local", "model": "global-model"}),
+        encoding="utf-8",
+    )
+    project = tmp_path / "project"
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"model": "project-model", "rerank": "hybrid"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("VEXOR_CONFIG_JSON", json.dumps({"batch_size": 23}))
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(
+        system_service,
+        "check_command_on_path",
+        lambda: system_service.DoctorCheckResult("Command", True, "ok"),
+    )
+    monkeypatch.setattr(
+        system_service,
+        "check_cache_directory",
+        lambda: system_service.DoctorCheckResult("Cache Dir", True, "ok"),
+    )
+
+    result = runner.invoke(app, ["doctor", "--skip-api-test"])
+    output = strip_ansi(result.stdout)
+
+    assert result.exit_code == 0
+    assert "Project config:" in output
+    assert ".vexor" in output
+    assert "config.json" in output
+    assert "Project overrides: model, rerank" in output
+    assert "Environment overrides: batch_size" in output
+    assert "provider: global" not in output
+    assert "base_url: default" not in output
+
+
+def test_doctor_reports_disallowed_project_config_without_traceback(
+    tmp_path, monkeypatch
+):
+    runner = CliRunner()
+    project_config = tmp_path / "project" / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"base_url": "https://must-not-load.example"}),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(project_config.parent.parent)
+
+    result = runner.invoke(app, ["doctor", "--skip-api-test"])
+
+    assert result.exit_code == 1
+    assert "must not contain: base_url" in result.stdout
+    assert ".vexor" in result.stdout
+    assert "config.json" in result.stdout
+    assert "Traceback" not in result.output
+
+
+def test_doctor_project_config_error_falls_back_to_global_config(
+    tmp_path, monkeypatch, temp_config_home
+):
+    from vexor.services import system_service
+
+    runner = CliRunner()
+    temp_config_home.parent.mkdir(parents=True)
+    temp_config_home.write_text(json.dumps({"provider": "local"}), encoding="utf-8")
+    project_config = tmp_path / "project" / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text("{broken", encoding="utf-8")
+    monkeypatch.chdir(project_config.parent.parent)
+    monkeypatch.setattr(
+        system_service,
+        "check_command_on_path",
+        lambda: system_service.DoctorCheckResult("Command", True, "ok"),
+    )
+    monkeypatch.setattr(
+        system_service,
+        "check_cache_directory",
+        lambda: system_service.DoctorCheckResult("Cache Dir", True, "ok"),
+    )
+
+    result = runner.invoke(app, ["doctor", "--skip-api-test"])
+    output = strip_ansi(result.stdout)
+
+    assert result.exit_code == 1
+    assert "Invalid project config" in output
+    # The global provider=local still drives the remaining checks.
+    assert "no API key required" in output
+    assert "API key not configured" not in output
+
+
 def test_update_detects_newer_version(monkeypatch):
     runner = CliRunner()
     monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_args, **_kwargs: "9.9.9")
@@ -1806,7 +2120,9 @@ def test_project_local_cache_index_search_show_and_clear(tmp_path, monkeypatch):
 
     assert index_result.exit_code == 0
     assert (project / ".vexor" / "index.db").is_file()
-    assert (project / ".vexor" / ".gitignore").read_text(encoding="utf-8") == "*\n"
+    assert (project / ".vexor" / ".gitignore").read_text(encoding="utf-8") == (
+        "*\n!.gitignore\n!config.json\n"
+    )
     assert not (global_cache / "index.db").exists()
 
     root_search = runner.invoke(

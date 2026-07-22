@@ -20,6 +20,8 @@ from urllib import error, request
 
 from ..config import (
     Config,
+    ConfigOrigin,
+    ConfigResolution,
     DEFAULT_FLASHRANK_MODEL,
     DEFAULT_RERANK,
     ENV_NO_UPDATE_CHECK,
@@ -30,6 +32,7 @@ from ..config import (
     update_check_file,
 )
 from ..text import Messages
+from .config_service import collect_config_overrides
 
 EDITOR_FALLBACKS = ("nano", "vi", "notepad", "notepad.exe")
 
@@ -61,22 +64,62 @@ def check_command_on_path() -> DoctorCheckResult:
     )
 
 
-def check_config_exists() -> DoctorCheckResult:
+def check_config_exists(
+    resolution: ConfigResolution | None = None,
+) -> DoctorCheckResult:
     """Check if config file exists."""
     from ..config import CONFIG_FILE
 
-    if CONFIG_FILE.exists():
-        return DoctorCheckResult(
+    config_file = resolution.global_file if resolution is not None else CONFIG_FILE
+    project_file = resolution.project_file if resolution is not None else None
+    project_exists = project_file is not None and project_file.exists()
+    if config_file.exists():
+        result = DoctorCheckResult(
             name="Config",
             passed=True,
-            message=Messages.DOCTOR_CONFIG_EXISTS.format(path=CONFIG_FILE),
+            message=Messages.DOCTOR_CONFIG_EXISTS.format(path=config_file),
         )
-    return DoctorCheckResult(
-        name="Config",
-        passed=True,
-        message=Messages.DOCTOR_CONFIG_DEFAULT,
-        detail=str(CONFIG_FILE),
+    elif project_exists:
+        result = DoctorCheckResult(
+            name="Config",
+            passed=True,
+            message=Messages.DOCTOR_PROJECT_CONFIG_EXISTS.format(path=project_file),
+        )
+    else:
+        result = DoctorCheckResult(
+            name="Config",
+            passed=True,
+            message=(
+                Messages.DOCTOR_CONFIG_NO_GLOBAL
+                if resolution is not None
+                else Messages.DOCTOR_CONFIG_DEFAULT
+            ),
+            detail=str(config_file),
+        )
+
+    if resolution is None:
+        return result
+
+    project_label = str(project_file) if project_exists else "none"
+    detail_lines = [Messages.DOCTOR_CONFIG_PROJECT.format(project=project_label)]
+    overrides = collect_config_overrides(resolution)
+    project_fields = overrides.get(ConfigOrigin.PROJECT)
+    if project_fields:
+        detail_lines.append(
+            Messages.DOCTOR_CONFIG_PROJECT_OVERRIDES.format(
+                fields=", ".join(project_fields)
+            )
+        )
+    env_fields = overrides.get(ConfigOrigin.ENVIRONMENT)
+    if env_fields:
+        detail_lines.append(
+            Messages.DOCTOR_CONFIG_ENV_OVERRIDES.format(fields=", ".join(env_fields))
+        )
+    source_detail = "\n".join(detail_lines)
+    result.detail = (
+        f"{result.detail}\n{source_detail}" if result.detail else source_detail
     )
+    return result
 
 
 def check_api_key_configured(provider: str, api_key: str | None) -> DoctorCheckResult:
@@ -387,11 +430,17 @@ def run_all_doctor_checks(
     rerank: str | None = None,
     flashrank_model: str | None = None,
     remote_rerank: RemoteRerankConfig | None = None,
+    config_resolution: ConfigResolution | None = None,
 ) -> list[DoctorCheckResult]:
     """Run all doctor checks and return results."""
+    config_check = (
+        check_config_exists(config_resolution)
+        if config_resolution is not None
+        else check_config_exists()
+    )
     results = [
         check_command_on_path(),
-        check_config_exists(),
+        config_check,
         check_cache_directory(),
         check_api_key_configured(provider, api_key),
     ]
