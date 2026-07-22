@@ -28,6 +28,7 @@ Vexor has been recognized and featured by the community:
 
 - **[Ruan Yifeng's Weekly (Issue #379)](https://github.com/ruanyf/weekly/blob/master/docs/issue-379.md#ai-%E7%9B%B8%E5%85%B3)** - A leading tech newsletter in the Chinese developer community.
 - **[Awesome Claude Skills](https://github.com/VoltAgent/awesome-claude-skills?tab=readme-ov-file#development-and-testing)** - Curated list of best-in-class skills for AI agents.
+- **[Awesome MCP Servers](https://github.com/punkpeye/awesome-mcp-servers#-developer-tools)** - Curated list of Model Context Protocol servers.
 
 ## Why Vexor?
 
