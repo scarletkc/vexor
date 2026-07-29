@@ -10,6 +10,18 @@ never leaving the machine.
 
 ## P0 — Agent-first distribution
 
+- Add a filesystem-independent, general-purpose text collection API for
+  callers to submit records from databases directly, with operations such
+  as `upsert(id, text, metadata)`, `delete(id)`, and
+  `search(query, filters, top_k)`. Metadata should support fields such as
+  `user_id`, `chat_id`, timestamp, record type, and source, with strict
+  field-based filtering at search time. Reuse the existing embedding,
+  cache, BM25, hybrid ranking, and reranker layers without requiring text
+  to originate from files. Results should return the record ID, original
+  text, metadata, and relevance score instead of file paths and line
+  numbers. This lets integrations such as Telegram bots keep MySQL as the
+  source of truth and incrementally write chat excerpts to Vexor without
+  exporting temporary files or maintaining a parallel file tree.
 - Flip the default ranking to hybrid retrieval (shipped opt-in behind
   `--rerank hybrid` in 0.25.0) once the benchmark confirms it beats
   dense-only across embedding models. Current `scripts/eval_hybrid.py`
