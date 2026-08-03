@@ -41,6 +41,8 @@ vexor "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--exclude-patte
   search or index path.
 - It accepts only `rerank`, `auto_index`, `model`, `embedding_dimensions`,
   `batch_size`, `embed_concurrency`, and `extract_concurrency`.
+- `batch_size` must be at least `0`; both concurrency values must be at least
+  `1`.
 - Credentials and endpoints (`api_key`, `base_url`, `remote_rerank`) and all
   other fields are rejected.
 - Precedence is global config, project config, environment overrides, then

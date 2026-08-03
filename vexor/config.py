@@ -76,6 +76,11 @@ PROJECT_CONFIG_FIELDS = frozenset(
 PROJECT_CONFIG_SENSITIVE_FIELDS = frozenset(
     {"api_key", "base_url", "remote_rerank"}
 )
+_PROJECT_CONFIG_MINIMUMS = {
+    "batch_size": 0,
+    "embed_concurrency": 1,
+    "extract_concurrency": 1,
+}
 
 
 @dataclass
@@ -130,7 +135,7 @@ class ConfigResolution:
 
 
 class ProjectConfigError(ValueError):
-    """Raised when a project-controlled config cannot be applied safely."""
+    """Raised when a project-controlled config violates the restricted schema."""
 
     def __init__(self, message: str, *, path: Path) -> None:
         super().__init__(message)
@@ -250,11 +255,23 @@ def _apply_env_overrides(
         config.api_key = api_key
         if origins is not None:
             origins["api_key"] = ConfigOrigin.ENVIRONMENT
+    elif not config.api_key:
+        provider_api_key = resolve_api_key(None, config.provider)
+        if provider_api_key:
+            config.api_key = provider_api_key
+            if origins is not None:
+                origins["api_key"] = ConfigOrigin.ENVIRONMENT
     remote_rerank_api_key = os.getenv(REMOTE_RERANK_ENV)
     if remote_rerank_api_key and config.remote_rerank is not None:
         # Key-only injection: the endpoint/model still come from the stored
         # block, so the field's origin is left unchanged.
         config.remote_rerank.api_key = remote_rerank_api_key
+        if origins is not None:
+            origins["remote_rerank.api_key"] = ConfigOrigin.ENVIRONMENT
+    if os.getenv(ENV_NO_UPDATE_CHECK):
+        config.update_check = False
+        if origins is not None:
+            origins["update_check"] = ConfigOrigin.ENVIRONMENT
     return config
 
 
@@ -353,6 +370,7 @@ def _load_project_config(
 
     try:
         config = config_from_json(raw, base=base)
+        _validate_project_config_values(config, fields)
     except ValueError as exc:
         raise ProjectConfigError(
             Messages.ERROR_PROJECT_CONFIG_INVALID.format(
@@ -362,6 +380,21 @@ def _load_project_config(
             path=project_file,
         ) from exc
     return config, project_file, tuple(sorted(fields))
+
+
+def _validate_project_config_values(config: Config, fields: set[str]) -> None:
+    """Reject project-controlled numeric values the runtime would normalize."""
+
+    for field, minimum in _PROJECT_CONFIG_MINIMUMS.items():
+        if field not in fields:
+            continue
+        if getattr(config, field) < minimum:
+            raise ValueError(
+                Messages.ERROR_PROJECT_CONFIG_VALUE_MINIMUM.format(
+                    field=field,
+                    minimum=minimum,
+                )
+            )
 
 
 def resolve_config(

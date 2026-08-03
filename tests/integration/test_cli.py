@@ -205,6 +205,31 @@ def test_search_rejects_sensitive_project_config_without_traceback(
     assert "Traceback" not in result.output
 
 
+def test_search_rejects_invalid_project_config_value_without_traceback(
+    tmp_path,
+):
+    runner = CliRunner()
+    project_config = tmp_path / "project" / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"embed_concurrency": 0}), encoding="utf-8"
+    )
+
+    result = runner.invoke(
+        app,
+        ["search", "hello", "--path", str(project_config.parent.parent)],
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert (
+        "field 'embed_concurrency' must be greater than or equal to 1."
+        in result.stderr
+    )
+    assert str(project_config) in result.stderr
+    assert "Traceback" not in result.output
+
+
 def test_search_outputs_hybrid_reranker_label(tmp_path, monkeypatch):
     sample_file = tmp_path / "exact.py"
     sample_file.write_text("data")
@@ -1074,6 +1099,21 @@ def test_config_show_reports_provider_env_api_key(monkeypatch, temp_config_home)
     assert "API key set: yes (environment)" in output
 
 
+def test_config_show_reports_no_update_check_env(monkeypatch, temp_config_home):
+    runner = CliRunner()
+    temp_config_home.parent.mkdir(parents=True)
+    temp_config_home.write_text(
+        json.dumps({"update_check": True}), encoding="utf-8"
+    )
+    monkeypatch.setenv("VEXOR_NO_UPDATE_CHECK", "1")
+
+    result = runner.invoke(app, ["config", "--show"])
+    output = strip_ansi(result.stdout)
+
+    assert result.exit_code == 0
+    assert "Update check: no (environment)" in output
+
+
 def test_config_show_remote_rerank_env_key_keeps_block_origin(
     monkeypatch, temp_config_home
 ):
@@ -1470,7 +1510,7 @@ def test_config_sets_flashrank_and_prefetches(tmp_path, monkeypatch):
     result_show = runner.invoke(app, ["config", "--show"])
     assert "Rerank: flashrank" in strip_ansi(result_show.stdout)
     assert (
-        "FlashRank model: default (ms-marco-TinyBERT-L-2-v2)"
+        "FlashRank model: ms-marco-TinyBERT-L-2-v2 (default)"
         in strip_ansi(result_show.stdout)
     )
 
@@ -1636,6 +1676,7 @@ def test_doctor_reports_project_config_overrides(
         encoding="utf-8",
     )
     monkeypatch.setenv("VEXOR_CONFIG_JSON", json.dumps({"batch_size": 23}))
+    monkeypatch.setenv("VEXOR_NO_UPDATE_CHECK", "1")
     monkeypatch.chdir(project)
     monkeypatch.setattr(
         system_service,
@@ -1656,7 +1697,7 @@ def test_doctor_reports_project_config_overrides(
     assert ".vexor" in output
     assert "config.json" in output
     assert "Project overrides: model, rerank" in output
-    assert "Environment overrides: batch_size" in output
+    assert "Environment overrides: batch_size, update_check" in output
     assert "provider: global" not in output
     assert "base_url: default" not in output
 

@@ -421,6 +421,9 @@ class Messages:
         "Project config at {path} contains unsupported fields: {fields}. "
         "Allowed fields: {allowed}."
     )
+    ERROR_PROJECT_CONFIG_VALUE_MINIMUM = (
+        "field '{field}' must be greater than or equal to {minimum}."
+    )
     ERROR_CONFIG_VALUE_INVALID = "Config JSON has invalid value for {field}."
     INFO_CONFIG_SUMMARY = (
         "API key set: {api} ({api_origin})\n"

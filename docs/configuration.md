@@ -9,7 +9,7 @@ Global configuration, update-check data, FlashRank assets, and local embedding
 models stay under `~/.vexor/`. Indexes normally use `~/.vexor/index.db`, but a
 project containing a `.vexor/` directory uses `<project>/.vexor/index.db` for
 searches and indexing within that project. The same directory may contain a
-tracked `config.json` with safe project-level overrides.
+tracked `config.json` with restricted project-level overrides.
 
 Run `vexor index --local` to create the project directory and its ignore file.
 This does not create a project config. The generated index and caches remain
@@ -28,15 +28,15 @@ therefore use their nearest marker; a search above a project does not discover
 markers below it. If the nearest marker has no `config.json`, Vexor uses the
 global configuration instead of continuing into an outer project.
 
-Project config v1 accepts exactly these fields:
+Project config accepts exactly these fields:
 
 - `rerank`
 - `auto_index`
 - `model`
 - `embedding_dimensions`
-- `batch_size`
-- `embed_concurrency`
-- `extract_concurrency`
+- `batch_size` (must be greater than or equal to `0`)
+- `embed_concurrency` (must be greater than or equal to `1`)
+- `extract_concurrency` (must be greater than or equal to `1`)
 
 Example `<project>/.vexor/config.json`:
 
@@ -121,6 +121,8 @@ Any non-secret config field can also be injected as a JSON object via the
 `VEXOR_CONFIG_JSON` environment variable (useful for MCP client configs and
 CI), merged over the effective global and project config. Credential fields
 inside `VEXOR_CONFIG_JSON` are rejected — use the dedicated variables above.
+`VEXOR_NO_UPDATE_CHECK=1` is a hard off switch for automatic update checks and
+takes precedence over every config layer.
 
 ## Rerank
 

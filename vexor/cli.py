@@ -1303,7 +1303,7 @@ def config(
         flashrank_line = ""
         remote_rerank_line = ""
         if rerank == "flashrank":
-            model_label = cfg.flashrank_model or f"default ({DEFAULT_FLASHRANK_MODEL})"
+            model_label = cfg.flashrank_model or DEFAULT_FLASHRANK_MODEL
             flashrank_summary = Messages.INFO_FLASHRANK_MODEL_SUMMARY.format(
                 value=model_label,
                 origin=origins["flashrank_model"],
@@ -1316,7 +1316,10 @@ def config(
             else:
                 url_label = remote_cfg.base_url or "unset"
                 model_label = remote_cfg.model or "unset"
-                if os.getenv(config_module.REMOTE_RERANK_ENV):
+                if (
+                    resolution.origin_for("remote_rerank.api_key")
+                    is config_module.ConfigOrigin.ENVIRONMENT
+                ):
                     key_label = "from env"
                 else:
                     key_label = "yes" if remote_cfg.api_key else "no"

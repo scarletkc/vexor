@@ -242,6 +242,7 @@ def test_check_config_exists_reports_override_summary(tmp_path):
     origins["rerank"] = ConfigOrigin.PROJECT
     origins["model"] = ConfigOrigin.PROJECT
     origins["batch_size"] = ConfigOrigin.ENVIRONMENT
+    origins["remote_rerank.api_key"] = ConfigOrigin.ENVIRONMENT
     resolution = ConfigResolution(
         config=Config(),
         origins=origins,
@@ -255,7 +256,10 @@ def test_check_config_exists_reports_override_summary(tmp_path):
     assert result.detail is not None
     assert f"Project config: {project_file}" in result.detail
     assert "Project overrides: model, rerank" in result.detail
-    assert "Environment overrides: batch_size" in result.detail
+    assert (
+        "Environment overrides: batch_size, remote_rerank.api_key"
+        in result.detail
+    )
     assert "provider: global" not in result.detail
 
     global_file.unlink()

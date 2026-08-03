@@ -154,8 +154,8 @@ vexor config --show                    # view effective settings and origins
 ```
 
 Global config lives in `~/.vexor/config.json`; the nearest
-`<project>/.vexor/config.json` can safely override selected behavior for that
-project. Non-secret fields can also be injected via `VEXOR_CONFIG_JSON`
+`<project>/.vexor/config.json` can override a restricted set of behavior fields
+for that project. Non-secret fields can also be injected via `VEXOR_CONFIG_JSON`
 (useful for MCP clients and CI), and fully offline use is supported through
 local embedding models.
 

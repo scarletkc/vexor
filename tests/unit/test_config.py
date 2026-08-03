@@ -238,6 +238,30 @@ def test_project_config_wraps_invalid_allowed_field_value(tmp_path, monkeypatch)
     assert "invalid value for auto_index" in str(exc_info.value)
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "minimum"),
+    [
+        ("batch_size", -1, 0),
+        ("embed_concurrency", 0, 1),
+        ("extract_concurrency", -2, 1),
+    ],
+)
+def test_project_config_rejects_values_runtime_would_normalize(
+    tmp_path, monkeypatch, field, value, minimum
+):
+    _prepare_config(tmp_path, monkeypatch)
+    project_config = tmp_path / "project" / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(json.dumps({field: value}), encoding="utf-8")
+
+    with pytest.raises(config_module.ProjectConfigError) as exc_info:
+        config_module.load_config(project_config.parent.parent)
+
+    message = str(exc_info.value)
+    assert str(project_config) in message
+    assert f"field '{field}' must be greater than or equal to {minimum}" in message
+
+
 def test_project_config_env_precedence_and_origins(tmp_path, monkeypatch):
     config_file = _prepare_config(tmp_path, monkeypatch)
     config_file.parent.mkdir(parents=True)
@@ -266,6 +290,86 @@ def test_project_config_env_precedence_and_origins(tmp_path, monkeypatch):
     assert resolution.origin_for("model") is config_module.ConfigOrigin.ENVIRONMENT
     assert resolution.origin_for("batch_size") is config_module.ConfigOrigin.PROJECT
     assert resolution.origin_for("api_key") is config_module.ConfigOrigin.ENVIRONMENT
+
+
+def test_provider_api_key_env_is_resolved_with_environment_origin(
+    tmp_path, monkeypatch
+):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(json.dumps({"provider": "openai"}), encoding="utf-8")
+    monkeypatch.delenv(config_module.ENV_API_KEY, raising=False)
+    monkeypatch.setenv(config_module.OPENAI_ENV, "provider-env-key")
+
+    resolution = config_module.resolve_config()
+
+    assert resolution.config.api_key == "provider-env-key"
+    assert resolution.origin_for("api_key") is config_module.ConfigOrigin.ENVIRONMENT
+
+
+def test_stored_api_key_keeps_precedence_over_provider_env(tmp_path, monkeypatch):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(
+        json.dumps({"provider": "openai", "api_key": "stored-key"}),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv(config_module.ENV_API_KEY, raising=False)
+    monkeypatch.setenv(config_module.OPENAI_ENV, "provider-env-key")
+
+    resolution = config_module.resolve_config()
+
+    assert resolution.config.api_key == "stored-key"
+    assert resolution.origin_for("api_key") is config_module.ConfigOrigin.GLOBAL
+
+
+def test_remote_rerank_env_key_tracks_nested_origin(tmp_path, monkeypatch):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(
+        json.dumps(
+            {
+                "remote_rerank": {
+                    "base_url": "https://rerank.example.test",
+                    "model": "rerank-model",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(config_module.REMOTE_RERANK_ENV, "remote-env-key")
+
+    resolution = config_module.resolve_config()
+
+    assert resolution.config.remote_rerank is not None
+    assert resolution.config.remote_rerank.api_key == "remote-env-key"
+    assert (
+        resolution.origin_for("remote_rerank")
+        is config_module.ConfigOrigin.GLOBAL
+    )
+    assert (
+        resolution.origin_for("remote_rerank.api_key")
+        is config_module.ConfigOrigin.ENVIRONMENT
+    )
+
+
+def test_no_update_check_env_is_effective_and_tracks_origin(tmp_path, monkeypatch):
+    config_file = _prepare_config(tmp_path, monkeypatch)
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(json.dumps({"update_check": True}), encoding="utf-8")
+    monkeypatch.setenv(
+        config_module.ENV_CONFIG_JSON,
+        json.dumps({"update_check": True}),
+    )
+    monkeypatch.setenv(config_module.ENV_NO_UPDATE_CHECK, "1")
+
+    resolution = config_module.resolve_config()
+
+    assert resolution.config.update_check is False
+    assert (
+        resolution.origin_for("update_check")
+        is config_module.ConfigOrigin.ENVIRONMENT
+    )
 
 
 def test_config_dir_context_overrides_config_file(tmp_path):

@@ -49,7 +49,7 @@ Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`,
 ## Project Configuration
 
 Search and index commands walk upward from their resolved `--path` and apply
-`config.json` from the nearest `.vexor/` marker as a safe overlay on the
+`config.json` from the nearest `.vexor/` marker as a restricted overlay on the
 global config; credentials and endpoints are rejected. `vexor config --show`
 and `vexor doctor` resolve from the current working directory: `--show`
 labels each effective field's origin, `doctor` lists active overrides.
@@ -108,7 +108,7 @@ not discover markers in its children and therefore uses the global database.
 
 Cache location precedence is: an explicit API/cache override, then the nearest
 project `.vexor/`, then `~/.vexor/`. The project directory may also contain the
-safe `config.json` overlay described above. Global configuration, update-check
+restricted `config.json` overlay described above. Global configuration, update-check
 data, FlashRank assets, and local embedding models remain under `~/.vexor/`.
 
 ```bash

@@ -51,13 +51,11 @@ never leaving the machine.
 
 - Add AST-aware `code` mode chunking for Go and Rust (tree-sitter support).
 - Project-level config (`<project>/.vexor/config.json`).
-  - v1 (shipped): the nearest project marker may override `rerank`,
-    `auto_index`, `model`, `embedding_dimensions`, `batch_size`,
-    `embed_concurrency`, and `extract_concurrency`. The strict allowlist
-    rejects credentials, endpoints, and every other field. Precedence is
-    global config < project config < environment overrides < explicit
-    arguments, and `vexor config --show` plus `vexor doctor` surface each
-    effective value's origin. Mutating config commands remain global-only.
+  - v1 (implemented): restricted project overlays apply consistently across
+    the CLI, Python API, and MCP, while config inspection and diagnostics
+    report effective sources. See
+    [Project configuration](configuration.md#project-configuration) for the
+    schema and precedence contract.
   - v2 (only if v1 sees real use): per-project scan defaults (`mode`,
     `extensions`, `exclude_patterns`) — these are per-invocation CLI
     arguments today, not config fields, so supporting them means new

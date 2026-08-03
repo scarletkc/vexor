@@ -212,10 +212,10 @@ def get_config_resolution(
 def collect_config_overrides(
     resolution: ConfigResolution,
 ) -> dict[ConfigOrigin, tuple[str, ...]]:
-    """Return fields overridden by the project or environment, sorted by name."""
+    """Return fields and subfields overridden by project or environment."""
 
     grouped: dict[ConfigOrigin, list[str]] = {}
-    for field in sorted(CONFIG_FIELD_NAMES):
+    for field in sorted(resolution.origins):
         origin = resolution.origin_for(field)
         if origin in (ConfigOrigin.PROJECT, ConfigOrigin.ENVIRONMENT):
             grouped.setdefault(origin, []).append(field)

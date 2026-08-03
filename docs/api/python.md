@@ -54,12 +54,9 @@ For pure library usage that should ignore on-disk config, pass `use_config=False
 and set explicit arguments or `config=...`.
 
 Project resolution starts at the call's resolved `path` and uses the nearest
-`.vexor/` marker. The project file accepts exactly `rerank`, `auto_index`,
-`model`, `embedding_dimensions`, `batch_size`, `embed_concurrency`, and
-`extract_concurrency`. It rejects credentials and endpoints (`api_key`,
-`base_url`, `remote_rerank`) and every other field. This restricted schema
-applies only to `.vexor/config.json`; explicit API and runtime payloads retain
-the full schema below.
+`.vexor/` marker. Project files use the restricted schema documented in
+[Project configuration](../configuration.md#project-configuration); explicit
+API and runtime payloads retain the full schema below.
 
 Index cache location is resolved separately. Vexor walks upward from `path` and
 uses the nearest project `.vexor/index.db` when a `.vexor/` directory exists.

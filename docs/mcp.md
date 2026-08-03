@@ -3,7 +3,7 @@
 `vexor mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
 server over stdio, exposing Vexor's semantic search to any MCP-capable agent
 (Claude Code, Codex, Cursor, Windsurf, Zed, and others). It requires no extra
-dependencies and reuses your global Vexor configuration, the safe project
+dependencies and reuses your global Vexor configuration, the restricted project
 config selected by each tool path, and the corresponding index cache.
 
 ```bash
