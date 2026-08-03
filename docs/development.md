@@ -1,9 +1,11 @@
 # Development
-Run development tasks with:
+Run development tasks inside the project virtualenv, creating one only when the
+repository has none:
 ```bash
-pip install -e .[dev]
+python -m venv .venv          # only if .venv is missing
+python -m pip install -e .[dev]
 python -m vexor
-pytest
+python -m pytest
 ```
 Tests rely on fake embedding backends, so no network access is required.
 
