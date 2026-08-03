@@ -22,6 +22,95 @@ never leaving the machine.
   numbers. This lets integrations such as Telegram bots keep MySQL as the
   source of truth and incrementally write chat excerpts to Vexor without
   exporting temporary files or maintaining a parallel file tree.
+  - Reuse, unchanged: `bm25.py` already holds only pure functions over
+    ids and rows (`score_postings` returns `{id: score}`, `rrf_fuse`
+    fuses by row index); the `embedding_cache` table is keyed by
+    `(model, text_hash)` and its helpers open `cache_db_path()` on their
+    own connection, so a separate store still shares one embedding cache;
+    and `VexorSearcher.embed_texts` accepts arbitrary text and already
+    L2-normalizes, so a dot product is cosine similarity.
+  - Filesystem coupling to break: `index_metadata` keys on a path hash
+    and `indexed_file` requires `rel_path`, `abs_path`, `size_bytes`, and
+    `mtime`; `SearchResult.path` is a required `Path`; and all three
+    rerankers build their documents through `_build_rerank_document`,
+    which reads `result.path`.
+  - Storage location: give collections their own `collections.db` beside
+    `index.db` rather than new tables inside it. `clear_all_cache()`
+    unlinks the database file and `vexor config --clear-index-all` calls
+    it; a file index is rebuildable from disk, but collection records are
+    only rebuildable by making the caller re-upsert everything and pay
+    for embeddings a second time. Do not bump `CACHE_VERSION` for this
+    work — the new tables are additive under
+    `CREATE TABLE IF NOT EXISTS`, and a bump would invalidate every
+    existing user's file index. Extract the shared `_connect` and
+    `_chunk_values` helpers out of `cache.py` so both stores get the same
+    WAL and `busy_timeout` behavior under concurrent writers.
+  - Schema: `collection` (name, provider, model, dimension, schema
+    version) pins the embedding contract, and changing model or dimension
+    afterwards must raise and tell the caller to recreate the collection
+    instead of mixing vector widths. `collection_record` holds the
+    caller's `record_key` (unique per collection), the original text, a
+    `text_hash` computed with `embedding_cache_key` so an unchanged
+    upsert skips re-embedding, and the metadata JSON.
+    `collection_embedding` stores one normalized vector per record: v1
+    does not chunk, one record is one vector, and text that exceeds a
+    provider limit surfaces the provider error rather than being silently
+    truncated. `collection_bm25_doc` and `collection_bm25_posting`
+    deliberately mirror the shape of the existing `bm25_doc` and
+    `bm25_posting` tables so `bm25.score_postings` consumes their rows
+    unchanged.
+  - Metadata and filtering: keep metadata a flat mapping of scalars
+    (`str`, `int`, `float`, `bool`, `None`) and reject nested values
+    rather than accepting values that can never be filtered on, which
+    would surface later as a phantom recall bug. Index it in a
+    `collection_meta` EAV table carrying both `value_text` and
+    `value_num` so strings compare by equality while numbers,
+    timestamps, and booleans also support ranges; a `datetime` writes
+    ISO text and epoch seconds together. Support `eq`, `ne`, `in`,
+    `nin`, `gt`, `gte`, `lt`, `lte`, and `exists` with keys ANDed
+    together, and leave OR out of v1. Filtering must be strict: the
+    filter compiles to SQL and resolves to a candidate id set *before*
+    scoring, with only those vectors loaded into memory. Post-filtering
+    a global top-k returns nothing for a single chat whose records never
+    reach the global head, which is exactly the Telegram case. An
+    unknown metadata key is an empty result; a malformed operator or a
+    non-scalar value is an error.
+  - Ranking: once the filter resolves ids, dense scoring is a matrix
+    product against the query vector, and `hybrid` tokenizes with
+    `bm25.tokenize`, loads postings restricted to those ids, then fuses
+    through `score_postings` and `rrf_fuse` unchanged. Compute the BM25
+    `doc_count` and `avg_doc_len` over the filtered subset rather than
+    the whole collection so idf and scoring agree on what the corpus is.
+    Resolve the query embedding through the shared `embedding_cache`; the
+    per-index `query_cache` layer is index-scoped and not worth
+    duplicating here.
+  - Reranker seam: extract the result-agnostic core of the three
+    `_apply_*_rerank` functions into a helper that takes
+    `(query, documents)` and returns ranked `(index, score)` pairs. The
+    file path stays inside `_build_rerank_document` and collections pass
+    record text instead. This is a behavior-preserving refactor guarded
+    by the existing `tests/unit/test_search_service.py` cases, and it is
+    the only change to a code path users already depend on.
+  - Surface: `vexor/collection_store.py` for the SQLite layer beside
+    `cache.py`, `vexor/services/collection_service.py` for orchestration,
+    and a `VexorClient.collection(name)` handle exposing `upsert_many`,
+    `delete_many`, `get`, `search`, `count`, and `drop`. `upsert_many` is
+    the primary write path — one batched embedding call that skips
+    records whose `text_hash` is unchanged, the same trick
+    `_split_payloads_by_label` already uses for files — and single-record
+    `upsert` delegates to it. Provider and model resolution goes through
+    the existing `_resolve_settings` so config precedence matches every
+    other entry point. Results are a
+    `RecordResult(id, text, metadata, score)`.
+  - Delivery: land the reranker refactor first as its own PR, then the
+    store, service, and Python API with tests, then
+    `vexor collection list|info|search|delete|drop` plus an
+    `upsert --json -` NDJSON stdin path for bulk import from a database
+    dump. Tests must cover strict pre-filtering (a record ranked first
+    globally must not appear once filtered out), upsert idempotency,
+    cascade deletes, and model or dimension mismatch errors. Hold MCP
+    exposure: the server is path-scoped today, and deciding which
+    collection an agent may reach is a separate design question.
 - Flip the default ranking to hybrid retrieval (shipped opt-in behind
   `--rerank hybrid` in 0.25.0) once the benchmark confirms it beats
   dense-only across embedding models. Current `scripts/eval_hybrid.py`
