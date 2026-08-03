@@ -21,6 +21,8 @@ from .utils import collect_files
 DEFAULT_CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
 CACHE_DIR = DEFAULT_CACHE_DIR
 PROJECT_CACHE_DIRNAME = ".vexor"
+_LEGACY_PROJECT_CACHE_GITIGNORE = "*\n"
+_PROJECT_CACHE_GITIGNORE = "*\n!.gitignore\n!config.json\n"
 _CACHE_DIR_OVERRIDE: ContextVar[Path | None] = ContextVar(
     "vexor_cache_dir_override",
     default=None,
@@ -227,18 +229,22 @@ def find_project_cache_dir(path: Path) -> Path | None:
 
 
 def _ensure_project_cache_self_ignore(project_cache_dir: Path) -> None:
-    """Write the self-ignoring .gitignore into *project_cache_dir* if missing.
+    """Write or migrate the generated .gitignore in *project_cache_dir*.
 
     Users can opt in by creating `.vexor/` by hand; without this marker the
-    index database would show up as untracked and could get committed.
+    index database would show up as untracked and could get committed. The
+    project config and the ignore file itself remain available to version
+    control. Custom ignore files are left untouched.
     """
 
     gitignore_path = project_cache_dir / ".gitignore"
-    if gitignore_path.exists():
-        return
     try:
-        gitignore_path.write_text("*\n", encoding="utf-8")
-    except OSError:
+        if gitignore_path.exists():
+            current = gitignore_path.read_text(encoding="utf-8")
+            if current != _LEGACY_PROJECT_CACHE_GITIGNORE:
+                return
+        gitignore_path.write_text(_PROJECT_CACHE_GITIGNORE, encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
         # Hygiene write only: a search against a read-only tree must not
         # fail because the ignore marker could not be created.
         pass

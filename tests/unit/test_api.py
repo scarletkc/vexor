@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pytest
 
@@ -28,7 +30,7 @@ def test_search_uses_config_defaults(tmp_path, monkeypatch) -> None:
             model="rerank-model",
         ),
     )
-    monkeypatch.setattr(api_module, "load_config", lambda: cfg)
+    monkeypatch.setattr(api_module, "load_config", lambda _directory=None: cfg)
     captured: dict[str, object] = {}
 
     def fake_perform_search(request):
@@ -77,7 +79,7 @@ def test_search_overrides_config(tmp_path, monkeypatch) -> None:
         auto_index=True,
         local_cuda=False,
     )
-    monkeypatch.setattr(api_module, "load_config", lambda: cfg)
+    monkeypatch.setattr(api_module, "load_config", lambda _directory=None: cfg)
     captured: dict[str, object] = {}
 
     def fake_perform_search(request):
@@ -121,6 +123,205 @@ def test_search_overrides_config(tmp_path, monkeypatch) -> None:
     assert req.auto_index is False
     assert req.local_cuda is True
     assert req.embedding_dimensions == 512
+
+
+def test_project_config_applies_to_search_index_and_in_memory(
+    tmp_path, monkeypatch
+) -> None:
+    config_dir = tmp_path / "global-config"
+    config_dir.mkdir()
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "provider": "openai",
+                "model": "text-embedding-3-small",
+                "batch_size": 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+    project = tmp_path / "project"
+    project.mkdir()
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir()
+    project_config.write_text(
+        json.dumps(
+            {
+                "model": "text-embedding-3-large",
+                "batch_size": 9,
+                "embed_concurrency": 3,
+                "extract_concurrency": 2,
+                "embedding_dimensions": 512,
+                "auto_index": False,
+                "rerank": "hybrid",
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_perform_search(request):
+        captured["search"] = request
+        return SearchResponse(
+            base_path=project,
+            backend=None,
+            results=[],
+            is_stale=False,
+            index_empty=True,
+        )
+
+    def fake_build_index(_directory, **kwargs):
+        captured["index"] = kwargs
+        return IndexResult(status=IndexStatus.EMPTY)
+
+    def fake_build_index_in_memory(directory, **kwargs):
+        captured["memory"] = kwargs
+        return [], np.empty((0, 0), dtype=np.float32), {
+            "include_hidden": False,
+            "respect_gitignore": True,
+            "recursive": True,
+            "mode": "name",
+            "exclude_patterns": (),
+            "extensions": (),
+            "chunks": [],
+        }
+
+    monkeypatch.setattr(api_module, "perform_search", fake_perform_search)
+    monkeypatch.setattr(api_module, "build_index", fake_build_index)
+    monkeypatch.setattr(
+        api_module, "build_index_in_memory", fake_build_index_in_memory
+    )
+
+    api_module.search("hello", path=project, mode="name", config_dir=config_dir)
+    api_module.index(project, mode="name", config_dir=config_dir)
+    api_module.index_in_memory(project, mode="name", config_dir=config_dir)
+
+    search_request = captured["search"]
+    assert search_request.model_name == "text-embedding-3-large"
+    assert search_request.batch_size == 9
+    assert search_request.embed_concurrency == 3
+    assert search_request.extract_concurrency == 2
+    assert search_request.embedding_dimensions == 512
+    assert search_request.auto_index is False
+    assert search_request.rerank == "hybrid"
+    for key in ("index", "memory"):
+        kwargs = captured[key]
+        assert kwargs["model_name"] == "text-embedding-3-large"
+        assert kwargs["batch_size"] == 9
+        assert kwargs["embed_concurrency"] == 3
+        assert kwargs["extract_concurrency"] == 2
+        assert kwargs["embedding_dimensions"] == 512
+
+
+def test_api_explicit_and_per_call_config_override_project_config(
+    tmp_path, monkeypatch
+) -> None:
+    config_dir = tmp_path / "global-config"
+    config_dir.mkdir()
+    project = tmp_path / "project"
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps(
+            {
+                "model": "text-embedding-3-large",
+                "batch_size": 9,
+                "auto_index": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_perform_search(request):
+        captured["request"] = request
+        return SearchResponse(
+            base_path=project,
+            backend=None,
+            results=[],
+            is_stale=False,
+            index_empty=True,
+        )
+
+    monkeypatch.setattr(api_module, "perform_search", fake_perform_search)
+
+    api_module.search(
+        "hello",
+        path=project,
+        mode="name",
+        config_dir=config_dir,
+        config={"batch_size": 18, "auto_index": False},
+        model="text-embedding-3-small",
+        batch_size=20,
+        auto_index=True,
+    )
+
+    request = captured["request"]
+    assert request.model_name == "text-embedding-3-small"
+    assert request.batch_size == 20
+    assert request.auto_index is True
+
+
+def test_runtime_config_overrides_only_its_fields_after_project_config(
+    tmp_path, monkeypatch
+) -> None:
+    config_dir = tmp_path / "global-config"
+    config_dir.mkdir()
+    (config_dir / "config.json").write_text(
+        json.dumps({"model": "text-embedding-3-small", "batch_size": 4}),
+        encoding="utf-8",
+    )
+    project = tmp_path / "project"
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"model": "text-embedding-3-large", "batch_size": 9}),
+        encoding="utf-8",
+    )
+    captured: list[object] = []
+
+    def fake_perform_search(request):
+        captured.append(request)
+        return SearchResponse(
+            base_path=project,
+            backend=None,
+            results=[],
+            is_stale=False,
+            index_empty=True,
+        )
+
+    monkeypatch.setattr(api_module, "perform_search", fake_perform_search)
+    client = api_module.VexorClient(config_dir=config_dir)
+    client.set_config_json({"batch_size": 17})
+
+    client.search("hello", path=project, mode="name")
+
+    assert captured[-1].model_name == "text-embedding-3-large"
+    assert captured[-1].batch_size == 17
+
+    client.set_config_json({"batch_size": 5}, replace=True)
+    client.search("hello", path=project, mode="name")
+
+    assert captured[-1].model_name == DEFAULT_MODEL
+    assert captured[-1].batch_size == 5
+
+
+def test_api_wraps_project_config_errors(tmp_path) -> None:
+    config_dir = tmp_path / "global-config"
+    config_dir.mkdir()
+    project_config = tmp_path / "project" / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"api_key": "must-not-load"}), encoding="utf-8"
+    )
+
+    with pytest.raises(api_module.VexorError, match="must not contain: api_key"):
+        api_module.search(
+            "hello",
+            path=project_config.parent.parent,
+            mode="name",
+            config_dir=config_dir,
+        )
 
 
 def test_set_data_dir_updates_config_and_cache(tmp_path) -> None:
@@ -359,7 +560,9 @@ def test_search_uses_data_dir_override(tmp_path, monkeypatch) -> None:
 
 def test_client_config_context_scopes_runtime_config(tmp_path, monkeypatch) -> None:
     base_config = Config(provider="openai")
-    monkeypatch.setattr(api_module, "load_config", lambda: base_config)
+    monkeypatch.setattr(
+        api_module, "load_config", lambda _directory=None: base_config
+    )
     captured: list[object] = []
 
     def fake_perform_search(request):
@@ -499,7 +702,9 @@ def test_search_rejects_unsupported_dimension_for_model(tmp_path) -> None:
 
 def test_config_context_yields_configured_client(tmp_path, monkeypatch) -> None:
     base_config = Config(provider="openai")
-    monkeypatch.setattr(api_module, "load_config", lambda: base_config)
+    monkeypatch.setattr(
+        api_module, "load_config", lambda _directory=None: base_config
+    )
     captured: dict[str, object] = {}
 
     def fake_perform_search(request):

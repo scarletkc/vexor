@@ -510,6 +510,51 @@ def test_index_tool_passes_local(tmp_path):
     assert client.index_calls[0]["local"] is True
 
 
+def test_default_mcp_client_applies_project_config_for_tool_path(
+    tmp_path, monkeypatch
+):
+    from vexor import api as api_module
+    from vexor import config as config_module
+
+    global_config = tmp_path / "global" / "config.json"
+    global_config.parent.mkdir()
+    global_config.write_text(
+        json.dumps({"model": "global-model", "batch_size": 4}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_module, "CONFIG_DIR", global_config.parent)
+    monkeypatch.setattr(config_module, "CONFIG_FILE", global_config)
+    project = tmp_path / "project"
+    project_config = project / ".vexor" / "config.json"
+    project_config.parent.mkdir(parents=True)
+    project_config.write_text(
+        json.dumps({"model": "project-model", "batch_size": 13}),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["request"] = request
+        return SearchResponse(
+            base_path=project,
+            backend=None,
+            results=[],
+            is_stale=False,
+            index_empty=True,
+        )
+
+    monkeypatch.setattr(api_module, "perform_search", fake_perform_search)
+    server = VexorMcpServer(default_path=project)
+
+    response = server.handle_message(
+        tool_call(SEARCH_TOOL, {"query": "config loader"})
+    )
+
+    assert response["result"]["isError"] is False
+    assert captured["request"].model_name == "project-model"
+    assert captured["request"].batch_size == 13
+
+
 def test_index_tool_rejects_non_boolean_local(tmp_path):
     server, client = make_server(tmp_path)
 
