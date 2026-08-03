@@ -1,35 +1,65 @@
-# Repository Guidelines
+# Repository Instructions
 
-## Project Structure & Module Organization
-- `vexor/` — core runtime.
-  - `cli.py`, `__main__.py` — Typer CLI entrypoints; `api.py` — public Python API; `search.py` — search/result models.
-  - Shared helpers: `cache.py`, `config.py`, `modes.py`, `output.py`, `text.py`, `utils.py`.
-  - `vexor/services/` — orchestration layer: indexing, search, config, cache inspection, content/keyword extraction, JS parsing, init/setup flows, system diagnostics, skill installation, and the MCP stdio server (`mcp_service.py`, exposed via `vexor mcp`).
-  - `vexor/providers/` — embedding provider adapters (`gemini.py`, `openai.py`, `local.py`) and `capabilities.py` (provider capability metadata: default models, env vars, base URLs, dimension rules); the `voyageai` and `custom` providers flow through the OpenAI-compatible path.
-- `docs/` — `configuration.md`, `cli.md`, `mcp.md`, `api/python.md`, `development.md`, `roadmap.md`. The README stays lean and links into these. `docs/roadmap.md` is the source of truth for priorities.
-- `plugins/vexor/` — bundled agent assets, including `skills/vexor-cli/`.
-- `scripts/` and `vexor.spec` — release helpers; generated artifacts land in `build/` and `dist/`.
-- `tests/unit/` and `tests/integration/` — mirror the product surface.
+## Non-negotiables
 
-## Build, Test, and Development Commands
-Run every command inside the project virtualenv: activate the existing one if the repo already has one, and only create it when missing (e.g. `python -m venv .venv`); never install into the system interpreter. Substitute `python3` where your platform needs it.
-- `python -m pip install -e .[dev]` — install Vexor plus pytest, coverage, build, twine, and PyInstaller helpers.
-- `python -m vexor --help` — basic CLI smoke test; realistic checks: `python -m vexor search "api client config" --path . --mode auto --no-cache` and `python -m vexor index --path . --mode code`.
-- `python -m pytest` — main offline test command; narrow scope with `python -m pytest tests/unit -k cache` or `python -m pytest tests/integration/test_cli.py -k doctor`.
-- `python -m pytest --cov=vexor --cov-report=term-missing` — run before merging and check the report for obvious coverage regressions; there is no hard coverage gate, but aim to keep core logic coverage at or above 90%.
-- `python -m build` — wheel and sdist in `dist/`; version bumps via `scripts/bump_version.py`.
+- Run Python commands inside the repository's existing virtual environment. Create `.venv` only
+  when none exists; never install into the system interpreter.
+- Fix root causes. Do not swallow errors or add silent fallbacks. A degraded path is acceptable
+  only when it is deliberate and user-visible. When the root cause stays unclear, say so and name
+  the missing information; extending `vexor doctor` or verbose output beats a speculative fix.
+- Ask when requirements are ambiguous or inconsistent instead of inventing behavior. Do not ship
+  temporary, placeholder, or demo-only implementations unless explicitly requested.
+- Never commit API keys, private endpoints, or local credentials. Store them via Vexor's config
+  commands, provider environment variables, or a git-ignored `.env`.
 
-## Coding Style & Naming Conventions
-Follow PEP 8 with 4-space indentation and roughly 100-character lines. Use `snake_case` for modules/functions, `PascalCase` for classes, and lowercase imperative Typer command names. Type-annotate new Python code, keep CLI validation errors consistent with `typer.BadParameter` where appropriate, and route user-facing copy through `text.py` so CLI messaging stays centralized. Prefer structured rendering paths over ad hoc print strings, especially for Rich tables and porcelain output. Before writing new logic, look for an existing helper to reuse or extend (`utils.py`, `text.py`, the services layer) rather than duplicating an implementation; if the same behavior already lives in more than one place, extract it into the smallest shared helper that makes sense.
+## Project map
 
-## Engineering Principles
-Let errors surface instead of swallowing them: degraded paths (a missing optional extra, a provider failure turned into a friendly message) are fine only when they are deliberate, user-visible product behavior — never add silent fallbacks to make code appear to work. Fix root causes rather than papering over symptoms; if you cannot pin down the root cause, say so and state what information is missing (extending `vexor doctor` or verbose output beats a speculative fix). All code is production-quality by default: no temporary, placeholder, or demo-only implementations unless explicitly requested. When requirements are unclear, ambiguous, or inconsistent, ask instead of inventing details.
+- `vexor/` contains the runtime, `vexor/services/` the orchestration layer (including the MCP
+  stdio server in `mcp_service.py`, exposed via `vexor mcp`), and `vexor/providers/` the provider
+  adapters and capability metadata. The `voyageai` and `custom` providers route through the
+  OpenAI-compatible adapter instead of dedicated modules.
+- Tests mirror the product surface under `tests/unit/` and `tests/integration/`. Documentation
+  lives in `docs/`; `docs/roadmap.md` is the source of truth for priorities, and the README stays
+  lean and links into `docs/`.
+- `plugins/vexor/skills/vexor-cli/SKILL.md` is the bundled standalone agent guide. Check it when
+  commands or behavior change.
 
-## Testing Guidelines
-Tests live in `test_<subject>.py` under `tests/unit/` or `tests/integration/`; integration suites drive the Typer CLI end to end, including porcelain output. Use fixtures/stubs instead of real APIs and keep provider and network interactions mocked so tests stay offline. Assert behavior or structured output rather than brittle console formatting. Pair each behavior change with happy-path and failure coverage, especially for invalid modes, empty queries, malformed config, stale or missing indexes, optional extras such as `flashrank`, and platform-specific shell behavior. The offline suite cannot catch real provider regressions: before opening a PR that touches providers, indexing/search, or the MCP server, run a real end-to-end check that exercises your change (for example, `python -m vexor index --path . --mode code` plus a search) using your configured API credentials, or the local provider if you have none, and note the result in the PR.
+## Implementation
 
-## Commit & Pull Request Guidelines
-Commit subjects and PR titles follow [Conventional Commits](https://www.conventionalcommits.org): `type(scope): description`, e.g. `feat(mcp): add stdio server` or `fix(cache): handle locked index database`. Allowed types are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`; the scope is optional but encouraged and should name the touched area (`mcp`, `cache`, `cli`, `providers`, ...). Use the imperative mood, keep subjects under ~72 characters, and mark breaking changes with `!` (for example, `feat(config)!: drop legacy keys`). CI enforces the format on PR titles (`.github/workflows/conventional-commits.yml`); squash merges inherit the PR title as the commit subject, so a compliant title keeps `main` history clean. Name branches `type/short-slug` aligned with the commit type (e.g. `feat/hybrid-search`, `docs/roadmap-recover`); do all work on a branch and land it through a PR rather than committing directly to `main`. PRs should explain motivation, list the commands/tests exercised, link issues, and include pasted terminal output for CLI output changes. Call out config-schema, cache-schema, Python API, bundled skill, or provider/reranker changes so reviewers can check compatibility. When behavior or contributor workflow changes, update whichever of `README.md`, docs, plugin metadata, and this guide the change affects — the bundled skill (`plugins/vexor/skills/vexor-cli/SKILL.md`) is the easiest to forget.
+- Follow PEP 8 with 4-space indentation and roughly 100-character lines. Type-annotate new code
+  and keep Typer command names lowercase and imperative.
+- Route user-facing CLI copy through `vexor/text.py`. Reuse the services layer, structured output
+  paths, and shared helpers before adding new logic; extract the smallest useful helper when
+  behavior is duplicated.
+- Use `typer.BadParameter` for CLI validation where appropriate. Keep human and porcelain output
+  separate, and treat machine-readable output as a compatibility contract.
+- Treat filesystem paths, extracted content, embedding payloads, and provider or reranker
+  responses as untrusted input.
 
-## Security, Configuration & Maintenance
-Never commit API keys, private proxy endpoints, or local credentials; use `vexor config --set-api-key`, provider env vars, or ignored `.env` files. Persistent data lives under `~/.vexor`: config/cache data in the main directory, FlashRank assets under `~/.vexor/flashrank`, and local embedding models under `~/.vexor/models`. Sanitize filesystem paths, extension filters, and exclude patterns before using them. Treat extracted document text, embedding payloads, and remote rerank/provider responses as untrusted input before writing to disk or surfacing them elsewhere. Keep docs, bundled skills, and release metadata in sync when commands, packaging, or setup flows change.
+## Verification
+
+- Use `docs/development.md` for setup. `python -m pytest` is the main offline test command; run
+  focused tests while developing and the full suite before merging.
+- Cover relevant success and failure paths, especially optional extras such as `flashrank` and
+  platform-specific shell behavior. Use fixtures or stubs and keep provider and network
+  interactions mocked in the offline suite. Assert behavior or structured output rather than
+  brittle Rich formatting.
+- Before merging, run `python -m pytest --cov=vexor --cov-report=term-missing`. There is no hard
+  gate, but keep core logic coverage at or above 90%.
+- Changes to providers, indexing, search, or MCP require a real end-to-end check using configured
+  credentials or the local provider. Record the result in the PR.
+- Exercise the affected command for CLI changes (`python -m vexor --help` at minimum). Use
+  `python -m build` for packaging changes, `vexor.spec` for standalone binaries, and
+  `scripts/bump_version.py` for version bumps.
+
+## Delivery
+
+- Work on a branch named `type/short-slug` and land changes through a PR, not directly on `main`.
+- Commit subjects and PR titles follow Conventional Commits, use the imperative mood, stay under
+  ~72 characters, and mark breaking changes with `!`. The validation workflow in
+  `.github/workflows/conventional-commits.yml` is authoritative for accepted types.
+- PRs explain motivation and verification, link relevant issues, and include terminal output when
+  CLI output changes. Call out compatibility-sensitive config, cache, Python API, provider,
+  reranker, or bundled-skill changes.
+- Update the documentation affected by a behavior or workflow change. The bundled skill is the
+  easiest copy site to forget.
