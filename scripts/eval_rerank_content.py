@@ -16,14 +16,16 @@ Recorded result on this repository (30 queries, top 10, MRR@10):
     |-----------|-----------|--------|----------|
     | off       | -         | 0.628  | 0.611    |
     | remote    | preview   | 0.686  | 0.634    |
-    | remote    | 1000      | 0.591  | 0.550    |
+    | remote    | 1000      | 0.579  | 0.550    |
     | flashrank | preview   | 0.669  | 0.623    |
-    | flashrank | 1000      | 0.611  | 0.563    |
+    | flashrank | 1000      | 0.611  | 0.564    |
     | bm25      | preview   | 0.605  | 0.509    |
-    | bm25      | 1000      | 0.520  | 0.514    |
+    | bm25      | 1000      | 0.546  | 0.514    |
 
 No cap between 300 and 2000 characters beat the preview on any reranker, so
-the change was not shipped. See docs/roadmap.md.
+the change was not shipped. See docs/roadmap.md. The corpus is this repository,
+so the absolute numbers move as it changes; the gap between the columns is what
+the arms are being compared on.
 """
 
 from __future__ import annotations
@@ -75,16 +77,18 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _chunk_text(result, *, chars: int, verify: bool) -> str | None:
+def _chunk_text(result, *, chars: int, verify: bool, mode: str) -> str | None:
     if result.start_line is None or result.end_line is None:
         return None
+    anchor, anchor_offset = search_service._chunk_window_anchor(result, mode) or ("", 0)
     try:
         chunk = read_chunk_content(
             result.path,
             result.start_line,
             result.end_line,
             max_chars=chars,
-            anchor=search_service._chunk_window_anchor(result.preview),
+            anchor=anchor,
+            anchor_offset=anchor_offset,
         )
     except OSError:
         return None
@@ -129,7 +133,7 @@ class _Meter:
 
 
 @contextmanager
-def _rerank_documents(*, chars: int, verify: bool) -> Iterator[_Meter]:
+def _rerank_documents(*, chars: int, verify: bool, mode: str) -> Iterator[_Meter]:
     """Swap in chunk-text documents for the duration of one arm."""
 
     meter = _Meter()
@@ -140,7 +144,7 @@ def _rerank_documents(*, chars: int, verify: bool) -> Iterator[_Meter]:
             return meter.record(shipped(results))
         documents = []
         for result in results:
-            content = _chunk_text(result, chars=chars, verify=verify)
+            content = _chunk_text(result, chars=chars, verify=verify, mode=mode)
             documents.append(
                 _content_document(result, content)
                 if content
@@ -167,7 +171,7 @@ def _run_arm(
 ) -> dict[str, object]:
     details: list[dict[str, object]] = []
     started = time.perf_counter()
-    with _rerank_documents(chars=chars, verify=verify) as meter:
+    with _rerank_documents(chars=chars, verify=verify, mode=str(common["mode"])) as meter:
         for item in queries:
             response = api.search(
                 item["query"],

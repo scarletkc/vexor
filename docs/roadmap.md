@@ -19,10 +19,12 @@ never leaving the machine.
   - Feeding chunk content to the rerankers was measured and rejected. The
     premise was that scoring filename, path, and a 160-character preview caps
     rerank quality. It does not: replacing the preview with the chunk's source
-    text lost on every reranker and both embedding models. MRR@10 on this
-    repository (`scripts/eval_rerank_content.py`, 30 queries, top 10,
-    bge-m3 / e5-small): remote 0.686/0.634 → 0.591/0.550, FlashRank
-    0.669/0.623 → 0.611/0.563, BM25 0.605/0.509 → 0.520/0.514. No
+    text lost on five of the six reranker × embedding-model pairs and was flat
+    on the sixth. MRR@10 on this repository
+    (`scripts/eval_rerank_content.py`, 30 queries, top 10, bge-m3 / e5-small):
+    remote 0.686/0.634 → 0.579/0.550, FlashRank 0.669/0.623 → 0.611/0.564,
+    BM25 0.605/0.509 → 0.546/0.514 — the one non-loss, BM25 on e5-small, moves
+    less than a single query's rank change is worth on a set this size. No
     per-document cap between 300 and 2000 characters recovered it, and
     neither did keeping the preview alongside the body. A preview is not just
     a truncated chunk: for `code` and `outline` chunks it leads with the
