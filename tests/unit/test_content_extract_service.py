@@ -56,6 +56,67 @@ def test_read_chunk_content_handles_single_oversized_line(tmp_path):
     assert chunk.truncated is True
 
 
+def test_read_chunk_content_stops_reading_at_the_requested_lines(tmp_path):
+    """Reading a small chunk must not pull the whole file into memory."""
+    source = tmp_path / "big.txt"
+    # ~2 MB, with the wanted lines right at the top.
+    source.write_text("".join(f"line-{idx} {'x' * 200}\n" for idx in range(10_000)), encoding="utf-8")
+
+    read_sizes = []
+    real_open = Path.open
+
+    def counting_open(self, *args, **kwargs):
+        handle = real_open(self, *args, **kwargs)
+        if "b" not in (args[0] if args else kwargs.get("mode", "r")):
+            return handle
+        real_read = handle.read
+
+        def tracked_read(size=-1):
+            data = real_read(size)
+            read_sizes.append(len(data))
+            return data
+
+        handle.read = tracked_read
+        return handle
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Path, "open", counting_open)
+        chunk = read_chunk_content(source, 1, 3, max_chars=2000)
+
+    assert chunk is not None
+    assert chunk.text.startswith("line-0 ")
+    total_read = sum(read_sizes)
+    assert total_read < 200_000, f"read {total_read} bytes from a ~2MB file for 3 lines"
+
+
+def test_read_chunk_content_falls_back_for_non_utf8(tmp_path):
+    source = tmp_path / "latin.txt"
+    source.write_bytes("alpha\ncaf\xe9 beta\ngamma\n".encode("latin-1"))
+
+    chunk = read_chunk_content(source, 1, 3, max_chars=1000)
+
+    # charset detection may or may not recover this; it must never raise.
+    assert chunk is None or "alpha" in chunk.text
+
+
+def test_chunk_reader_and_indexers_share_the_same_bound():
+    """The reader must reach every line the indexers could have chunked.
+
+    If indexing is allowed to run past what reading covers, chunks near the end of a
+    large file start reporting as unreadable instead of returning their text.
+    """
+    import inspect
+
+    source = inspect.getsource(ces._read_text_through_line)
+    assert "FULL_CHAR_LIMIT" in source
+    assert inspect.signature(ces.extract_full_chunks_with_lines).parameters[
+        "char_limit"
+    ].default == ces.FULL_CHAR_LIMIT
+    assert inspect.signature(ces.extract_code_chunks).parameters[
+        "char_limit"
+    ].default == ces.FULL_CHAR_LIMIT
+
+
 def test_read_chunk_content_returns_none_for_bad_input(tmp_path):
     source = tmp_path / "a.txt"
     source.write_text("alpha\nbeta\n", encoding="utf-8")

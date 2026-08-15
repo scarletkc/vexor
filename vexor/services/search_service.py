@@ -40,6 +40,13 @@ DEFAULT_CONTENT_CHARS_TOTAL = 8000
 # result as stale rather than as out of budget.
 MIN_USEFUL_CONTENT_CHARS = 200
 
+# How much of a stored preview is compared against re-read text, and the shortest
+# probe worth comparing at all. Both are heuristics: the check exists to catch text
+# read from the wrong place, and it errs toward accepting, since a false negative
+# costs a preview fallback while a false positive hands back the wrong lines.
+PREVIEW_PROBE_CHARS = 40
+PREVIEW_PROBE_MIN_CHARS = 12
+
 # Reasons a result carries no content despite the caller asking for it.
 CONTENT_NO_LINE_RANGE = "no_line_range"
 CONTENT_STALE_LINE_RANGE = "stale_line_range"
@@ -206,13 +213,13 @@ def _content_matches_preview(content: str, preview: str | None) -> bool:
     """
 
     probe = _preview_probe(preview)
-    if len(probe) < 12:
+    if len(probe) < PREVIEW_PROBE_MIN_CHARS:
         # Too short to identify a location; nothing useful to verify against.
         return True
-    from ..modes import _normalize_preview_chunk
+    from ..modes import normalize_preview_chunk
 
-    normalized = _normalize_preview_chunk(content) or ""
-    return probe[:40] in normalized
+    normalized = normalize_preview_chunk(content) or ""
+    return probe[:PREVIEW_PROBE_CHARS] in normalized
 
 
 def _attach_chunk_content(

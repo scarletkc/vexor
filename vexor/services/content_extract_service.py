@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Dict, Protocol
 
 HEAD_CHAR_LIMIT = 1000
+# Also bounds how far ``read_chunk_content`` will read back: no indexer chunks past
+# this point, so no chunk can carry a line range beyond it either. Raising the limit
+# for indexing without raising it for reading would make late chunks report as
+# unreadable. ``test_chunk_reader_and_indexers_share_the_same_bound`` pins the pair.
 FULL_CHAR_LIMIT = 200_000
+# Read granularity when pulling a chunk's lines back out of a file.
+LINE_READ_BLOCK_BYTES = 64 * 1024
 DEFAULT_CHUNK_SIZE = 1000
 DEFAULT_CHUNK_OVERLAP = 100
 UTF8_BYTE_MULTIPLIER = 4
@@ -248,6 +254,38 @@ def extract_full_chunks_with_lines(
     return chunks
 
 
+def _read_text_through_line(path: Path, last_line: int) -> str | None:
+    """Return UTF-8 text covering the file's first *last_line* lines, and no more.
+
+    Reading the whole file to slice a few lines out of it is pure waste: a chunk is at
+    most a couple of kilobytes, while the file behind it can be far larger. Stops as
+    soon as enough newlines have been seen. Returns ``None`` when the file is not
+    readable as UTF-8, leaving the caller to fall back to charset detection.
+    """
+
+    if last_line < 1:
+        return None
+    try:
+        decoder = codecs.getincrementaldecoder("utf-8")()
+        parts: list[str] = []
+        newlines = 0
+        total_chars = 0
+        with path.open("rb") as handle:
+            while newlines < last_line and total_chars < FULL_CHAR_LIMIT:
+                data = handle.read(LINE_READ_BLOCK_BYTES)
+                if not data:
+                    parts.append(decoder.decode(b"", final=True))
+                    break
+                chunk = decoder.decode(data)
+                newlines += chunk.count("\n")
+                total_chars += len(chunk)
+                parts.append(chunk)
+    except (OSError, UnicodeDecodeError):
+        return None
+    text = "".join(parts)
+    return text or None
+
+
 def read_chunk_content(
     path: Path,
     start_line: int,
@@ -265,7 +303,11 @@ def read_chunk_content(
 
     if start_line < 1 or end_line < start_line or max_chars <= 0:
         return None
-    text = _read_text_full(path, FULL_CHAR_LIMIT)
+    text = _read_text_through_line(path, end_line)
+    if text is None:
+        # Not valid UTF-8 (or unreadable); fall back to the full read, which also
+        # carries the charset-detection path.
+        text = _read_text_full(path, FULL_CHAR_LIMIT)
     if text is None:
         return None
     lines = text.replace("\r\n", "\n").split("\n")
