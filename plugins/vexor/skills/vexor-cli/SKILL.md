@@ -99,9 +99,10 @@ vexor search "where JWT claims are validated" --path . --mode code --content
 ## Tips
 
 - First time search will index files (may take a minute). Long-lived MCP or
-  Python client sessions reuse mapped vectors and monitor source changes;
-  separate CLI invocations still validate the filesystem. Use longer timeouts
-  if needed.
+  Python client sessions reuse mapped vectors. With `vexor[watch]` installed,
+  they also monitor source changes and skip some snapshot scans; watcher setup
+  failures fall back to scanning. Separate CLI invocations still validate the
+  filesystem. Use longer timeouts if needed.
 - Results return similarity ranking, exact file location, line numbers, and matching snippet preview.
 - Add `--content` (or `--format json`) to get the matching source text in the same call, and skip reading those files separately. If a result shows `stale_line_range`, the file changed since indexing — re-run `vexor index`. Content is capped per response, so lower-ranked results may report `budget_exhausted`.
 - Combine `--ext` with `--exclude-pattern` to focus on a subset (exclude rules apply on top).

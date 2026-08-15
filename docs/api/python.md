@@ -191,10 +191,13 @@ over the environment.
 - `temporary_index=True`: no index cache read/write; embedding/query caches still used.
 - `no_cache=True`: disables all disk caches; forces in-memory indexing and embeddings.
 - When `no_cache=False`, a process-local LRU may reuse recent embeddings.
-- A `VexorClient` reuses loaded index state and watches searched directories
-  for mutations. After the first full snapshot validation, unchanged searches
-  skip the repeated directory scan. Call `close()` when a client is not used as
-  a context manager.
+- A `VexorClient` reuses loaded index state. Install `vexor[watch]` to also
+  monitor searched directories and skip repeated directory scans between
+  periodic full snapshot validations. Missing watcher support, watcher setup
+  failures, and expired watcher hints fall back to a full scan; they never make
+  an otherwise searchable directory fail. Source mutations invalidate the
+  hint, while generated `.vexor/` cache writes do not. Call `close()` when a
+  client is not used as a context manager.
 - Module-level `search(...)` calls do not retain a watcher between calls and
   therefore keep the full snapshot validation behavior.
 

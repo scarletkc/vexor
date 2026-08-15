@@ -43,7 +43,6 @@ dependencies = [
     "tree-sitter>=0.23.0",
     "tree-sitter-javascript>=0.23.0",
     "tree-sitter-typescript>=0.23.0",
-    "watchdog>=6.0.0",
 ]
 dynamic = ["version"]
 
@@ -62,6 +61,10 @@ dev = [
     "build>=1.2.1",
     "twine>=5.1.1",
     "pyinstaller>=6.0.0",
+    "watchdog>=6.0.0",
+]
+watch = [
+    "watchdog>=6.0.0",
 ]
 flashrank = [
     "flashrank>=0.2.9",

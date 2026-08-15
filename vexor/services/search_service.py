@@ -874,11 +874,15 @@ def _load_filtered_index(
                 extensions=request.extensions,
             )
             stable = True
-            if current and freshness_tracker is not None:
+            if (
+                current
+                and freshness_tracker is not None
+                and validation_token is not None
+            ):
                 stable = freshness_tracker.finish_validation(
                     request.directory,
                     freshness_key,
-                    int(validation_token),
+                    validation_token,
                 )
             stale = not current or not stable
     return _IndexState(

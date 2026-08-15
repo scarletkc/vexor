@@ -142,9 +142,9 @@ never leaving the machine.
 ## P1 — Performance & experience
 
 - Add a standalone `vexor watch` command for background incremental indexing
-  across separate CLI processes. Long-lived Python and MCP sessions already
-  track changes within their process, so this item specifically covers a
-  persistent CLI workflow.
+  across separate CLI processes. This item specifically covers a persistent
+  cross-process CLI workflow; in-process behavior belongs to the Python API's
+  [cache contract](api/python.md#cache-behavior).
 - Extend the MCP lazy-start path to other CLI commands; agents may invoke
   the CLI dozens of times per session so startup latency multiplies.
 - Dependency slimming: move document extractors (`pypdf`, `python-docx`,
