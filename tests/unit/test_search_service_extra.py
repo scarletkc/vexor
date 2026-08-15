@@ -47,6 +47,30 @@ def test_rank_documents_bm25_is_independent_of_search_results():
     assert all(0.0 <= score <= 1.0 for _, score in ranking)
 
 
+def test_rank_documents_bm25_rejects_mismatched_score_count():
+    """Documents and scores are built separately, so a mismatch has to be loud.
+
+    Zipping them would silently rank only the shorter half and leave the rest
+    holding unfused retrieval scores.
+    """
+    with pytest.raises(ValueError, match="line up"):
+        search_service._rank_documents_bm25("alpha", ["one", "two"], [0.5])
+
+
+def test_rank_documents_answer_an_empty_document_list_locally(monkeypatch):
+    """Neither ranker should load a model or call a provider to rank nothing."""
+
+    def fail(**_kwargs):  # pragma: no cover - must not run
+        raise AssertionError("no request should be sent")
+
+    monkeypatch.setattr(search_service, "_remote_rerank_request", fail)
+    monkeypatch.setitem(sys.modules, "flashrank", None)
+    search_service._get_flashranker.cache_clear()
+
+    assert search_service._rank_documents_remote("alpha", [], None) == []
+    assert search_service._rank_documents_flashrank("alpha", [], None) == []
+
+
 def test_apply_ranking_drops_bad_indices_and_keeps_the_tail():
     results = [_result("a.txt", 0.1), _result("b.txt", 0.2), _result("c.txt", 0.3)]
 
@@ -85,6 +109,7 @@ def test_flashrank_rerank_import_error_and_success(monkeypatch, tmp_path):
             assert request.query == "alpha"
             return [
                 {"id": None, "score": 0.0},
+                {"id": "not-an-index", "score": 0.0},
                 {"id": 99, "score": 0.0},
                 {"id": 1, "score": 0.95},
             ]

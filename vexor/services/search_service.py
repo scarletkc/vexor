@@ -279,8 +279,7 @@ def _attach_chunk_content(
 
 def _build_rerank_document(result: SearchResult) -> str:
     preview = result.preview or ""
-    document = f"{result.path.name} {result.path.as_posix()} {preview}".strip()
-    return document or result.path.as_posix()
+    return f"{result.path.name} {result.path.as_posix()} {preview}".strip()
 
 
 def _build_rerank_documents(results: Sequence[SearchResult]) -> list[str]:
@@ -363,6 +362,11 @@ def _rank_documents_bm25(
     caller's original order untouched.
     """
 
+    if len(documents) != len(base_scores):
+        raise ValueError(
+            "rerank documents and base scores must line up: "
+            f"got {len(documents)} documents and {len(base_scores)} scores"
+        )
     query_tokens = _bm25_tokenize(query)
     if not query_tokens:
         return None
@@ -411,6 +415,9 @@ def _rank_documents_flashrank(
     documents: Sequence[str],
     model_name: str | None,
 ) -> list[tuple[int, float | None]]:
+    if not documents:
+        # Nothing to rank, and loading a ranker model to say so would be waste.
+        return []
     try:
         from flashrank import RerankRequest
     except ImportError as exc:
@@ -559,6 +566,10 @@ def _rank_documents_remote(
     documents: Sequence[str],
     config: RemoteRerankConfig | None,
 ) -> list[tuple[int, float | None]]:
+    if not documents:
+        # Rerank endpoints reject an empty document array, so answer locally
+        # rather than turning "nothing to rank" into a provider error.
+        return []
     resolved = _resolve_remote_rerank_config(config)
     payload = _remote_rerank_request(
         config=resolved,
@@ -580,8 +591,6 @@ def _apply_remote_rerank(
         _build_rerank_documents(results),
         config,
     )
-    if not ranking:
-        return list(results)
     return _apply_ranking(results, ranking)
 
 
