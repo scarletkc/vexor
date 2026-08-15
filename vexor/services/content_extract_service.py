@@ -286,12 +286,24 @@ def _read_text_through_line(path: Path, last_line: int) -> str | None:
     return text or None
 
 
-def locate_anchor_line(lines: Sequence[str], anchor: str) -> int:
+def locate_anchor_line(
+    lines: Sequence[str],
+    anchor: str,
+    *,
+    expected_offset: int = 0,
+) -> int:
     """Return the index within *lines* where *anchor* starts, or 0 when absent.
 
     *anchor* is matched against the lines flattened the way previews are stored --
     stripped, blank lines dropped, joined by single spaces -- because that is the
     form the caller has to anchor with.
+
+    *expected_offset* is roughly how far into the unflattened text the caller
+    expects the match. Code repeats itself, so a 40-character anchor taken from
+    late in a symbol often occurs early in it as well; with no hint the first
+    match wins and the caller gets an earlier region that still passes every
+    downstream check. The occurrence nearest the hint is picked instead, which at
+    the default of 0 is simply the first one.
     """
 
     if not anchor:
@@ -313,7 +325,17 @@ def locate_anchor_line(lines: Sequence[str], anchor: str) -> int:
         position += len(stripped)
     if not parts:
         return 0
-    found = " ".join(parts).find(anchor)
+    flattened = " ".join(parts)
+    # Flattening drops indentation and blank lines, so an offset into the original
+    # text has to be scaled down before it means anything in this one.
+    original_length = sum(len(line) + 1 for line in lines)
+    target = expected_offset * len(flattened) / original_length if original_length else 0
+    found = -1
+    position = flattened.find(anchor)
+    while position >= 0:
+        if found < 0 or abs(position - target) < abs(found - target):
+            found = position
+        position = flattened.find(anchor, position + 1)
     if found < 0:
         return 0
     return line_indices[max(bisect_right(starts, found) - 1, 0)]
@@ -326,6 +348,7 @@ def read_chunk_content(
     *,
     max_chars: int,
     anchor: str | None = None,
+    anchor_offset: int = 0,
 ) -> ChunkContent | None:
     """Read lines ``start_line``..``end_line`` (1-based, inclusive) back out of *path*.
 
@@ -334,10 +357,11 @@ def read_chunk_content(
     when the file cannot be read or the range does not resolve to any line, so callers
     can fall back to the stored preview instead of surfacing an error.
 
-    *anchor* moves the starting line to where that text appears inside the range. A
-    chunk too long to embed in one piece is split into overlapping windows that all
-    carry their symbol's line range, so without an anchor every window of a symbol
-    reads back as the symbol's first window.
+    *anchor* moves the starting line to where that text appears inside the range,
+    and *anchor_offset* says how far into the range to expect it. A chunk too long
+    to embed in one piece is split into overlapping windows that all carry their
+    symbol's line range, so without an anchor every window of a symbol reads back
+    as the symbol's first window.
     """
 
     if start_line < 1 or end_line < start_line or max_chars <= 0:
@@ -354,7 +378,7 @@ def read_chunk_content(
     if not selected:
         return None
     if anchor:
-        offset = locate_anchor_line(selected, anchor)
+        offset = locate_anchor_line(selected, anchor, expected_offset=anchor_offset)
         if offset:
             selected = selected[offset:]
             start_line += offset

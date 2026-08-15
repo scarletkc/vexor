@@ -46,7 +46,7 @@ MIN_USEFUL_CONTENT_CHARS = 200
 
 # Marks one window of a chunk that was split to fit the embedding window; see
 # CodeStrategy in modes.py, which tags them ``display [#N] :: snippet``.
-_CHUNK_WINDOW_RE = re.compile(r"\[#\d+\]")
+_CHUNK_WINDOW_RE = re.compile(r"\[#(\d+)\]")
 
 # How much of a stored preview is compared against re-read text, and the shortest
 # probe worth comparing at all. Both are heuristics: the check exists to catch text
@@ -221,27 +221,54 @@ def _preview_probe(preview: str | None) -> str:
     return preview.rsplit(" :: ", 1)[-1].rstrip("…").strip()
 
 
-def _chunk_window_anchor(preview: str | None) -> str | None:
-    """Return the text that locates a split chunk's window inside its symbol.
+def _chunk_window_anchor(
+    result: SearchResult,
+    mode: str | None,
+) -> tuple[str, int] | None:
+    """Return where a split chunk's window starts, as ``(anchor text, offset hint)``.
 
     A ``code`` chunk too long to embed in one piece is split into overlapping
     windows tagged ``[#N]``, and every window carries its whole symbol's line
     range, so reading from the first line hands back window 1 whatever matched.
-    The preview snippet says where the window actually starts.
+    The preview says which window this is and how it opens.
 
-    Only these windows are anchored. The other modes chunk with per-chunk ranges
-    that are already right, and anchoring them would move content that is correct
-    where it is: an ``outline`` chunk's snippet starts one line below its own
-    ``start_line``, so the heading would drop out of the content.
+    Only files that ``CodeStrategy`` actually chunks are considered, because a
+    ``[#N] :: `` in any other preview is file text that merely looks like a marker.
+    The other modes chunk with per-chunk ranges that are already right, and
+    anchoring them would move content that is correct where it is: an ``outline``
+    chunk's snippet starts one line below its own ``start_line``, so the heading
+    would drop out of the content.
+
+    ``class`` chunks are the one code case this cannot help. Their text is
+    assembled rather than sliced -- class line, dedented docstring, class-level
+    statements, then a synthetic ``Methods: ...`` line -- so a window opening
+    inside the assembled seams has no counterpart in the file, the anchor is not
+    found, and the read falls back to the symbol's first lines as before.
     """
 
-    label, separator, _ = (preview or "").rpartition(" :: ")
-    if not separator or not _CHUNK_WINDOW_RE.search(label):
+    from ..modes import uses_code_chunking  # local import
+
+    if not uses_code_chunking(mode, result.path):
         return None
-    probe = _preview_probe(preview)
+    # The marker sits at the end of the display, immediately before the first
+    # separator; a later one belongs to the snippet, i.e. to the file's own text.
+    label, separator, snippet = (result.preview or "").partition(" :: ")
+    if not separator:
+        return None
+    marker = _CHUNK_WINDOW_RE.search(label)
+    if marker is None or marker.end() != len(label):
+        return None
+    probe = snippet.rstrip("…").strip()
     if len(probe) < PREVIEW_PROBE_MIN_CHARS:
         return None
-    return probe[:PREVIEW_PROBE_CHARS]
+    # Windows advance by one stride each, so window N opens about that far into
+    # the chunk. Only a hint: it disambiguates repeated code, and the strategy may
+    # have been built with a different stride.
+    from .content_extract_service import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE
+
+    stride = max(DEFAULT_CHUNK_SIZE - DEFAULT_CHUNK_OVERLAP, 1)
+    offset = (int(marker.group(1)) - 1) * stride
+    return probe[:PREVIEW_PROBE_CHARS], offset
 
 
 def _content_matches_preview(content: str, preview: str | None) -> bool:
@@ -251,6 +278,12 @@ def _content_matches_preview(content: str, preview: str | None) -> bool:
     before the full-mode line offset fix, and files edited since they were indexed.
     Deliberately lenient — a false negative only costs the caller a preview fallback,
     while a false positive hands an agent code from the wrong part of the file.
+
+    An anchored read seeks to this same text, so for those chunks the check passes
+    whenever the anchor was found at all. What it still guarantees there is the part
+    that matters: the returned text is what was indexed. A file edited since then
+    either still holds that text somewhere in the range, and the read finds it, or
+    does not, and the read falls back to the range's first lines and is caught here.
     """
 
     probe = _preview_probe(preview)
@@ -283,13 +316,15 @@ def _attach_chunk_content(
         if remaining < min(MIN_USEFUL_CONTENT_CHARS, per_result):
             result.content_unavailable = CONTENT_BUDGET_EXHAUSTED
             continue
+        anchor, anchor_offset = _chunk_window_anchor(result, request.mode) or ("", 0)
         try:
             chunk = read_chunk_content(
                 result.path,
                 result.start_line,
                 result.end_line,
                 max_chars=min(per_result, remaining),
-                anchor=_chunk_window_anchor(result.preview),
+                anchor=anchor,
+                anchor_offset=anchor_offset,
             )
         except OSError:
             chunk = None
@@ -309,8 +344,7 @@ def _attach_chunk_content(
 
 def _build_rerank_document(result: SearchResult) -> str:
     preview = result.preview or ""
-    document = f"{result.path.name} {result.path.as_posix()} {preview}".strip()
-    return document or result.path.as_posix()
+    return f"{result.path.name} {result.path.as_posix()} {preview}".strip()
 
 
 def _build_rerank_documents(results: Sequence[SearchResult]) -> list[str]:
@@ -393,6 +427,11 @@ def _rank_documents_bm25(
     caller's original order untouched.
     """
 
+    if len(documents) != len(base_scores):
+        raise ValueError(
+            "rerank documents and base scores must line up: "
+            f"got {len(documents)} documents and {len(base_scores)} scores"
+        )
     query_tokens = _bm25_tokenize(query)
     if not query_tokens:
         return None
@@ -441,6 +480,9 @@ def _rank_documents_flashrank(
     documents: Sequence[str],
     model_name: str | None,
 ) -> list[tuple[int, float | None]]:
+    if not documents:
+        # Nothing to rank, and loading a ranker model to say so would be waste.
+        return []
     try:
         from flashrank import RerankRequest
     except ImportError as exc:
@@ -589,6 +631,10 @@ def _rank_documents_remote(
     documents: Sequence[str],
     config: RemoteRerankConfig | None,
 ) -> list[tuple[int, float | None]]:
+    if not documents:
+        # Rerank endpoints reject an empty document array, so answer locally
+        # rather than turning "nothing to rank" into a provider error.
+        return []
     resolved = _resolve_remote_rerank_config(config)
     payload = _remote_rerank_request(
         config=resolved,
@@ -610,8 +656,6 @@ def _apply_remote_rerank(
         _build_rerank_documents(results),
         config,
     )
-    if not ranking:
-        return list(results)
     return _apply_ranking(results, ranking)
 
 

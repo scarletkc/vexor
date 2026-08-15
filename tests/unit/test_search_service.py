@@ -1327,7 +1327,9 @@ def test_split_chunk_windows_read_back_their_own_lines(tmp_path: Path) -> None:
         },
     ]
 
-    results, _, _ = _rank_with_content(_content_request(tmp_path), [source, source], chunks)
+    results, _, _ = _rank_with_content(
+        _content_request(tmp_path, mode="code"), [source, source], chunks
+    )
 
     first, second = results[0], results[1]
     assert [item.content_unavailable for item in results] == [None, None]
@@ -1336,6 +1338,44 @@ def test_split_chunk_windows_read_back_their_own_lines(tmp_path: Path) -> None:
     assert second.content_start_line == 22
     assert second.content.startswith('    SETTING_20 = "value number 20')
     assert first.content != second.content
+
+
+def test_split_window_anchor_prefers_the_occurrence_at_its_own_offset(
+    tmp_path: Path,
+) -> None:
+    """Repeated code must not pull a later window back to an earlier copy of itself."""
+    source = tmp_path / "handlers.py"
+    body = [
+        "        respect_gitignore=respect_gitignore,",
+        "        include_hidden=include_hidden,",
+    ]
+    lines = ["def dispatch():"]
+    for index in range(3):
+        lines.append(f"    branch_{index} = call(")
+        lines.extend(body)
+        lines.append("    )")
+        lines.extend(f"    filler_{index}_{step} = {step}" for step in range(30))
+    source.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # The anchor also occurs in branch 0 at line 2; window 3 starts in branch 2.
+    chunks = [
+        {
+            "chunk_index": 0,
+            "preview": (
+                "def dispatch(): [#3] :: respect_gitignore=respect_gitignore, "
+                "include_hidden=include_hidden,"
+            ),
+            "start_line": 1,
+            "end_line": len(lines),
+        }
+    ]
+
+    results, _, _ = _rank_with_content(
+        _content_request(tmp_path, mode="code"), [source], chunks
+    )
+
+    assert results[0].content_unavailable is None
+    assert results[0].content_start_line > 60
 
 
 def test_content_is_not_anchored_for_chunks_with_real_line_ranges(tmp_path: Path) -> None:
@@ -1358,6 +1398,38 @@ def test_content_is_not_anchored_for_chunks_with_real_line_ranges(tmp_path: Path
 
     assert results[0].content_start_line == 1
     assert results[0].content.startswith("## Providers")
+
+
+def test_file_text_that_looks_like_a_window_marker_is_not_anchored(
+    tmp_path: Path,
+) -> None:
+    """A `[#N] :: ` inside indexed text is file content, not a chunking marker.
+
+    `full` mode flattens raw file text into the preview, so a file that documents
+    the marker format would otherwise be anchored and lose its leading lines.
+    """
+    source = tmp_path / "notes.txt"
+    source.write_text(
+        "Chunk previews look like\nthis: 'class Registry: [#1] :: class Registry:'\n"
+        "and the marker is only meaningful in code mode.\n",
+        encoding="utf-8",
+    )
+    chunks = [
+        {
+            "chunk_index": 0,
+            "preview": (
+                "Chunk previews look like this: 'class Registry: [#1] :: class Registry:' "
+                "and the marker is only meaningful in code mode."
+            ),
+            "start_line": 1,
+            "end_line": 3,
+        }
+    ]
+
+    results, _, _ = _rank_with_content(_content_request(tmp_path), [source], chunks)
+
+    assert results[0].content_start_line == 1
+    assert results[0].content.startswith("Chunk previews look like")
 
 
 def test_content_absent_when_not_requested(tmp_path: Path) -> None:
