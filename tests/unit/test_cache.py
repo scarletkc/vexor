@@ -75,6 +75,7 @@ def test_store_and_load_index(tmp_path, monkeypatch):
     )
 
     assert [p.name for p in loaded_paths] == ["a.txt", "b.txt", "c.txt"]
+    assert isinstance(loaded_vectors, np.memmap)
     assert np.allclose(loaded_vectors, embeddings)
     assert meta["model"] == "test-model"
     chunk_ids = meta.get("chunk_ids", [])
@@ -83,6 +84,114 @@ def test_store_and_load_index(tmp_path, monkeypatch):
     assert chunk_meta[chunk_ids[0]]["preview"] == "preview-a.txt"
     assert meta["exclude_patterns"] == ()
     assert meta["extensions"] == ()
+    vector_path = cache.cache_db_path().parent / meta["vector_file"]
+    assert vector_path.is_file()
+    connection = cache._connect(cache.cache_db_path(), readonly=True)
+    try:
+        count = connection.execute(
+            "SELECT COUNT(*) AS total FROM chunk_embedding"
+        ).fetchone()["total"]
+    finally:
+        connection.close()
+    assert count == 0
+
+
+def test_index_vector_memory_cache_tracks_immutable_generations(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    root = tmp_path / "project"
+    root.mkdir()
+    file_path = root / "a.txt"
+    file_path.write_text("data")
+    memory_cache = cache.IndexVectorCache()
+
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        entries=_entries_for_files(
+            root,
+            [file_path],
+            np.array([[1.0, 0.0]], dtype=np.float32),
+        ),
+    )
+    first = cache.load_index_vectors(
+        root,
+        "model",
+        False,
+        MODE,
+        True,
+        memory_cache=memory_cache,
+    )
+    repeated = cache.load_index_vectors(
+        root,
+        "model",
+        False,
+        MODE,
+        True,
+        memory_cache=memory_cache,
+    )
+    assert repeated[1] is first[1]
+
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        entries=_entries_for_files(
+            root,
+            [file_path],
+            np.array([[0.0, 1.0]], dtype=np.float32),
+        ),
+    )
+    rebuilt = cache.load_index_vectors(
+        root,
+        "model",
+        False,
+        MODE,
+        True,
+        memory_cache=memory_cache,
+    )
+    assert rebuilt[1] is not first[1]
+    assert np.allclose(rebuilt[1], [[0.0, 1.0]])
+    del first
+    del repeated
+    memory_cache.prune()
+    vector_dir = cache.cache_db_path().parent / cache.VECTOR_DIRNAME
+    assert len(list(vector_dir.glob("*.npy"))) == 1
+
+
+def test_index_vector_cache_rejects_unsafe_sidecar_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    root = tmp_path / "project"
+    root.mkdir()
+    file_path = root / "a.txt"
+    file_path.write_text("data")
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode=MODE,
+        recursive=True,
+        entries=_entries_for_files(
+            root,
+            [file_path],
+            np.array([[1.0]], dtype=np.float32),
+        ),
+    )
+    connection = cache._connect(cache.cache_db_path())
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE index_metadata SET vector_file = '../outside.npy'"
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(RuntimeError, match="Invalid cached vector path"):
+        cache.load_index_vectors(root, "model", False, MODE, True)
 
 
 def test_store_and_load_bm25_statistics(tmp_path, monkeypatch):
@@ -173,6 +282,18 @@ def test_embedding_cache_memory_fallback(tmp_path, monkeypatch):
     loaded = cache.load_embedding_cache("model", [text_hash])
     assert text_hash in loaded
     assert np.allclose(loaded[text_hash], vector)
+
+
+def test_embedding_memory_cache_is_scoped_to_cache_directory(tmp_path):
+    cache._clear_embedding_memory_cache()
+    with cache.cache_dir_context(tmp_path / "one"):
+        cache._store_embedding_memory_cache(
+            model="model",
+            embeddings={"hash": np.array([1.0], dtype=np.float32)},
+        )
+        assert "hash" in cache._load_embedding_memory_cache("model", ["hash"])
+    with cache.cache_dir_context(tmp_path / "two"):
+        assert cache._load_embedding_memory_cache("model", ["hash"]) == {}
 
 
 def test_embedding_cache_prunes_by_ttl_and_capacity(tmp_path, monkeypatch):
@@ -383,6 +504,8 @@ def test_clear_index_removes_cached_entries(tmp_path, monkeypatch):
 
     removed = cache.clear_index(root=root, include_hidden=False, mode=MODE, recursive=True)
     assert removed == 2
+    vector_dir = cache.cache_db_path().parent / cache.VECTOR_DIRNAME
+    assert not list(vector_dir.glob("*.npy"))
 
     with pytest.raises(FileNotFoundError):
         cache.load_index(root=root, model="model-a", include_hidden=False, mode=MODE, recursive=True)
@@ -750,6 +873,7 @@ def test_clear_all_cache_removes_database(tmp_path, monkeypatch):
     assert removed == 2
     db_path = cache_dir / cache.DB_FILENAME
     assert not db_path.exists()
+    assert not (cache_dir / cache.VECTOR_DIRNAME).exists()
     assert cache.list_cache_entries() == []
     assert cache.clear_all_cache() == 0
 

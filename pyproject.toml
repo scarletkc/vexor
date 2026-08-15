@@ -43,6 +43,7 @@ dependencies = [
     "tree-sitter>=0.23.0",
     "tree-sitter-javascript>=0.23.0",
     "tree-sitter-typescript>=0.23.0",
+    "watchdog>=6.0.0",
 ]
 dynamic = ["version"]
 

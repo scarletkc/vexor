@@ -34,7 +34,7 @@ vexor "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--exclude-patte
 - `--format`: `rich` (default), `porcelain`/`porcelain-z` for scripts, `json` for full output with chunk content
 - `--content`: print each match's source text below the table — usually removes the need to read the files afterwards
 - `--no-cache`: in-memory only, do not read/write index cache
-- `vexor index --local`: create and use project-local `.vexor/index.db` storage
+- `vexor index --local`: create and use project-local `.vexor/` cache storage
 
 ## Project Config
 
@@ -98,7 +98,10 @@ vexor search "where JWT claims are validated" --path . --mode code --content
 
 ## Tips
 
-- First time search will index files (may take a minute). Subsequent searches are fast. Use longer timeouts if needed.
+- First time search will index files (may take a minute). Long-lived MCP or
+  Python client sessions reuse mapped vectors and monitor source changes;
+  separate CLI invocations still validate the filesystem. Use longer timeouts
+  if needed.
 - Results return similarity ranking, exact file location, line numbers, and matching snippet preview.
 - Add `--content` (or `--format json`) to get the matching source text in the same call, and skip reading those files separately. If a result shows `stale_line_range`, the file changed since indexing — re-run `vexor index`. Content is capped per response, so lower-ranked results may report `budget_exhausted`.
 - Combine `--ext` with `--exclude-pattern` to focus on a subset (exclude rules apply on top).

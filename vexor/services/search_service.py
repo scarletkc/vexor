@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 import json
@@ -27,7 +27,9 @@ from ..utils import build_exclude_spec, is_excluded_path, normalize_exclude_patt
 from .cache_service import is_cache_current
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..cache import IndexVectorCache
     from ..search import SearchResult
+    from .freshness_service import FreshnessTracker
 
 # Chunk text is returned to callers verbatim, so it has to be capped or a single
 # search could bury an agent's context window. Counted in characters rather than
@@ -84,6 +86,16 @@ class SearchRequest:
     include_content: bool = False
     content_chars_per_result: int = DEFAULT_CONTENT_CHARS_PER_RESULT
     content_chars_total: int = DEFAULT_CONTENT_CHARS_TOTAL
+    index_vector_cache: IndexVectorCache | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    freshness_tracker: FreshnessTracker | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
 
 @dataclass(slots=True)
@@ -572,6 +584,7 @@ def _resolve_query_vector(
     query_vector = None
     query_hash = None
     query_text_hash = None
+    query_cache_hit = False
     if index_id is not None and not request.no_cache:
         query_hash = query_cache_key(request.query, request.model_name)
         try:
@@ -580,6 +593,8 @@ def _resolve_query_vector(
             query_vector = None
         if query_vector is not None and query_vector.size != expected_dim:
             query_vector = None
+        elif query_vector is not None:
+            query_cache_hit = True
 
     if query_vector is None and not request.no_cache:
         query_text_hash = embedding_cache_key(
@@ -609,6 +624,7 @@ def _resolve_query_vector(
                 pass
     if (
         not request.no_cache
+        and not query_cache_hit
         and query_vector is not None
         and index_id is not None
         and query_hash is not None
@@ -777,6 +793,20 @@ class _IndexState:
     index_extensions: tuple
 
 
+def _freshness_key(request: SearchRequest, metadata: dict) -> tuple[object, ...]:
+    return (
+        str(request.directory.resolve()),
+        request.include_hidden,
+        request.respect_gitignore,
+        request.recursive,
+        request.exclude_patterns,
+        request.extensions,
+        metadata.get("index_id"),
+        metadata.get("generated_at"),
+        metadata.get("vector_file"),
+    )
+
+
 def _load_filtered_index(
     request: SearchRequest,
     exclude_spec,
@@ -824,15 +854,33 @@ def _load_filtered_index(
             exclude_spec,
         )
     file_snapshot = metadata.get("files", [])
-    stale = bool(file_snapshot) and not is_cache_current(
-        request.directory,
-        request.include_hidden,
-        request.respect_gitignore,
-        file_snapshot,
-        recursive=request.recursive,
-        exclude_patterns=request.exclude_patterns,
-        extensions=request.extensions,
-    )
+    stale = False
+    if file_snapshot:
+        freshness_tracker = request.freshness_tracker
+        freshness_key = _freshness_key(request, metadata)
+        validation_token = None
+        if freshness_tracker is not None:
+            validation_token = freshness_tracker.begin_validation(request.directory)
+            if freshness_tracker.is_fresh(request.directory, freshness_key):
+                file_snapshot = []
+        if file_snapshot:
+            current = is_cache_current(
+                request.directory,
+                request.include_hidden,
+                request.respect_gitignore,
+                file_snapshot,
+                recursive=request.recursive,
+                exclude_patterns=request.exclude_patterns,
+                extensions=request.extensions,
+            )
+            stable = True
+            if current and freshness_tracker is not None:
+                stable = freshness_tracker.finish_validation(
+                    request.directory,
+                    freshness_key,
+                    int(validation_token),
+                )
+            stale = not current or not stable
     return _IndexState(
         paths=paths,
         file_vectors=file_vectors,
@@ -915,6 +963,8 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         state = load_state()
 
     if state.stale and request.auto_index:
+        if request.index_vector_cache is not None:
+            request.index_vector_cache.clear()
         result = _build_index_for_request(
             request,
             build_index,
@@ -924,8 +974,13 @@ def perform_search(request: SearchRequest) -> SearchResponse:
             extensions=state.index_extensions,
         )
         if result.status == IndexStatus.EMPTY:
+            del state
+            if request.index_vector_cache is not None:
+                request.index_vector_cache.prune()
             return _empty_response(request.directory, is_stale=False)
         state = load_state()
+        if request.index_vector_cache is not None:
+            request.index_vector_cache.prune()
 
     if not len(state.paths):
         return _empty_response(request.directory, is_stale=state.stale)
@@ -1047,16 +1102,32 @@ def _load_index_vectors_for_request(
     bool,
     tuple[str, ...],
 ]:
-    try:
-        paths, file_vectors, metadata = load_index_vectors(
-            request.directory,
+    def load_vectors(
+        root: Path,
+        recursive: bool,
+        exclude_patterns: Sequence[str],
+        extensions: Sequence[str],
+    ):
+        kwargs = {"respect_gitignore": request.respect_gitignore}
+        if request.index_vector_cache is not None:
+            kwargs["memory_cache"] = request.index_vector_cache
+        return load_index_vectors(
+            root,
             request.model_name,
             request.include_hidden,
             request.mode,
+            recursive,
+            exclude_patterns,
+            extensions,
+            **kwargs,
+        )
+
+    try:
+        paths, file_vectors, metadata = load_vectors(
+            request.directory,
             request.recursive,
             request.exclude_patterns,
             request.extensions,
-            respect_gitignore=request.respect_gitignore,
         )
         # Check dimension compatibility when user explicitly requests a specific dimension
         cached_dimension = metadata.get("dimension")
@@ -1089,15 +1160,11 @@ def _load_index_vectors_for_request(
     superset_recursive = bool(superset_entry.get("recursive"))
     superset_extensions = tuple(superset_entry.get("extensions") or ())
     superset_excludes = tuple(superset_entry.get("exclude_patterns") or ())
-    paths, file_vectors, metadata = load_index_vectors(
+    paths, file_vectors, metadata = load_vectors(
         superset_root,
-        request.model_name,
-        request.include_hidden,
-        request.mode,
         superset_recursive,
         superset_excludes,
         superset_extensions,
-        respect_gitignore=request.respect_gitignore,
     )
     ext_filter = None
     if request.extensions and request.extensions != superset_extensions:

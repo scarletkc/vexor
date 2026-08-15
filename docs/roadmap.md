@@ -141,11 +141,10 @@ never leaving the machine.
 
 ## P1 — Performance & experience
 
-- `vexor watch`: background incremental indexing via a file watcher.
-  Also removes the per-search full-directory `stat()` staleness scan,
-  which is O(N) filesystem work on every query today.
-- Replace SQLite vector blobs with `vectors.npy` + `metadata.json`
-  (memmap) to reuse across searches.
+- Add a standalone `vexor watch` command for background incremental indexing
+  across separate CLI processes. Long-lived Python and MCP sessions already
+  track changes within their process, so this item specifically covers a
+  persistent CLI workflow.
 - Extend the MCP lazy-start path to other CLI commands; agents may invoke
   the CLI dozens of times per session so startup latency multiplies.
 - Dependency slimming: move document extractors (`pypdf`, `python-docx`,
@@ -160,8 +159,8 @@ never leaving the machine.
     concurrency to reduce thread overhead and improve connection reuse.
   - Adaptive embedding batch size for remote providers (guarded by safe
     min/max and backoff on 429/413).
-  - Batch query search API to embed multiple queries per call and reuse
-    loaded index vectors (reduce repeated I/O).
+  - Batch query search API to embed multiple queries per call. Client sessions
+    already reuse loaded index vectors; batching still reduces provider calls.
 
 ## P2 — Coverage & polish
 

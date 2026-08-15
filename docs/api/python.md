@@ -18,15 +18,15 @@ for hit in response.results:
 
 ## Client sessions (library usage)
 
-For scoped configuration and per-call data directories, use `VexorClient`:
+For scoped configuration, reusable indexes, and per-call data directories, use
+`VexorClient` as a context manager:
 
 ```python
 from vexor import VexorClient
 
-client = VexorClient(data_dir="/tmp/vexor", use_config=False)
-client.set_config_json({"provider": "openai", "api_key": "YOUR_KEY"})
-
-response = client.search("config loader", path=".", mode="name")
+with VexorClient(data_dir="/tmp/vexor", use_config=False) as client:
+    client.set_config_json({"provider": "openai", "api_key": "YOUR_KEY"})
+    response = client.search("config loader", path=".", mode="name")
 ```
 
 Scoped overrides without global mutation:
@@ -59,10 +59,12 @@ Project resolution starts at the call's resolved `path` and uses the nearest
 API and runtime payloads retain the full schema below.
 
 Index cache location is resolved separately. Vexor walks upward from `path` and
-uses the nearest project `.vexor/index.db` when a `.vexor/` directory exists.
-Explicit per-call `cache_dir` or `data_dir` arguments, client-level overrides,
-and `set_cache_dir(...)` take precedence over project detection; otherwise the
-fallback is `~/.vexor/index.db`.
+uses the nearest project `.vexor/` cache when that directory exists. Explicit
+per-call `cache_dir` or `data_dir` arguments, client-level overrides, and
+`set_cache_dir(...)` take precedence over project detection; otherwise Vexor
+uses the global `~/.vexor/` cache. See
+[Cache Behavior](../cli.md#cache-behavior) for its generated layout and cleanup
+commands.
 
 ## API reference
 
@@ -138,7 +140,7 @@ Remove cached index entries for a directory. Returns the count removed.
 Set the base directory for Vexor data:
 
 - `config.json`
-- `index.db` and embedding/query caches
+- `index.db`, `vectors/`, and embedding/query caches
 - `flashrank/` and `models/` directories
 
 Pass `None` to reset to `~/.vexor`.
@@ -189,6 +191,12 @@ over the environment.
 - `temporary_index=True`: no index cache read/write; embedding/query caches still used.
 - `no_cache=True`: disables all disk caches; forces in-memory indexing and embeddings.
 - When `no_cache=False`, a process-local LRU may reuse recent embeddings.
+- A `VexorClient` reuses loaded index state and watches searched directories
+  for mutations. After the first full snapshot validation, unchanged searches
+  skip the repeated directory scan. Call `close()` when a client is not used as
+  a context manager.
+- Module-level `search(...)` calls do not retain a watcher between calls and
+  therefore keep the full snapshot validation behavior.
 
 ## Examples
 

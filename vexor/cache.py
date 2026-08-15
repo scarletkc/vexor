@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
 from contextlib import contextmanager
@@ -27,13 +28,16 @@ _CACHE_DIR_OVERRIDE: ContextVar[Path | None] = ContextVar(
     "vexor_cache_dir_override",
     default=None,
 )
-CACHE_VERSION = 7
+CACHE_VERSION = 8
 DB_FILENAME = "index.db"
+VECTOR_DIRNAME = "vectors"
 EMBED_CACHE_TTL_DAYS = 30
 EMBED_CACHE_MAX_ENTRIES = 50_000
 EMBED_MEMORY_CACHE_MAX_ENTRIES = 2_048
 
-_EMBED_MEMORY_CACHE: "OrderedDict[tuple[str, int | None, str], np.ndarray]" = OrderedDict()
+_EMBED_MEMORY_CACHE: "OrderedDict[tuple[str, str, int | None, str], np.ndarray]" = (
+    OrderedDict()
+)
 _EMBED_MEMORY_LOCK = Lock()
 
 
@@ -51,6 +55,64 @@ class IndexedChunk:
     end_line: int | None = None
     bm25_terms: Mapping[str, int] | None = None
     bm25_doc_len: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _LoadedIndexVectors:
+    paths: tuple[Path, ...]
+    vectors: np.ndarray
+    metadata: dict
+
+
+class IndexVectorCache:
+    """Small process-local cache for immutable loaded index generations."""
+
+    def __init__(self, max_entries: int = 4) -> None:
+        self.max_entries = max(int(max_entries), 1)
+        self._entries: OrderedDict[tuple[object, ...], _LoadedIndexVectors] = OrderedDict()
+        self._database_paths: set[Path] = set()
+        self._lock = Lock()
+
+    def get(self, key: tuple[object, ...]) -> _LoadedIndexVectors | None:
+        with self._lock:
+            loaded = self._entries.pop(key, None)
+            if loaded is None:
+                return None
+            self._entries[key] = loaded
+            return loaded
+
+    def store(
+        self,
+        key: tuple[object, ...],
+        loaded: _LoadedIndexVectors,
+    ) -> None:
+        logical_key = key[:3]
+        with self._lock:
+            self._database_paths.add(Path(str(key[0])))
+            for existing_key in list(self._entries):
+                if existing_key[:3] == logical_key:
+                    self._entries.pop(existing_key, None)
+            self._entries[key] = loaded
+            while len(self._entries) > self.max_entries:
+                self._entries.popitem(last=False)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+    def prune(self) -> None:
+        """Remove unreferenced sidecars after callers release older generations."""
+
+        with self._lock:
+            database_paths = set(self._database_paths)
+        for db_path in database_paths:
+            if not db_path.is_file():
+                continue
+            connection = _connect(db_path, readonly=True)
+            try:
+                _prune_unreferenced_vector_files(connection, db_path)
+            finally:
+                connection.close()
 
 
 def _cache_key(
@@ -125,12 +187,13 @@ def _load_embedding_memory_cache(
     if EMBED_MEMORY_CACHE_MAX_ENTRIES <= 0:
         return {}
     results: dict[str, np.ndarray] = {}
+    cache_namespace = str(_resolve_cache_dir())
     with _EMBED_MEMORY_LOCK:
         for text_hash in text_hashes:
             if not text_hash:
                 continue
             # Include dimension in cache key to prevent cross-dimension pollution
-            key = (model, dimension, text_hash)
+            key = (cache_namespace, model, dimension, text_hash)
             vector = _EMBED_MEMORY_CACHE.pop(key, None)
             if vector is None:
                 continue
@@ -147,6 +210,7 @@ def _store_embedding_memory_cache(
 ) -> None:
     if EMBED_MEMORY_CACHE_MAX_ENTRIES <= 0 or not embeddings:
         return
+    cache_namespace = str(_resolve_cache_dir())
     with _EMBED_MEMORY_LOCK:
         for text_hash, vector in embeddings.items():
             if not text_hash:
@@ -155,7 +219,7 @@ def _store_embedding_memory_cache(
             if array.size == 0:
                 continue
             # Include dimension in cache key to prevent cross-dimension pollution
-            key = (model, dimension, text_hash)
+            key = (cache_namespace, model, dimension, text_hash)
             if key in _EMBED_MEMORY_CACHE:
                 _EMBED_MEMORY_CACHE.pop(key, None)
             _EMBED_MEMORY_CACHE[key] = array
@@ -354,6 +418,13 @@ def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     return row is not None
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    if not _table_exists(conn, table):
+        return False
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row[1] == column for row in rows)
+
+
 def _schema_needs_reset(conn: sqlite3.Connection) -> bool:
     if _table_exists(conn, "indexed_chunk"):
         return False
@@ -400,6 +471,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             generated_at TEXT NOT NULL,
             exclude_patterns TEXT DEFAULT '',
             extensions TEXT DEFAULT '',
+            vector_file TEXT NOT NULL DEFAULT '',
             UNIQUE(cache_key, model)
         );
 
@@ -483,6 +555,118 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             ON bm25_posting(chunk_id);
         """
     )
+    if not _column_exists(conn, "index_metadata", "vector_file"):
+        conn.execute(
+            "ALTER TABLE index_metadata ADD COLUMN vector_file TEXT NOT NULL DEFAULT ''"
+        )
+
+
+def _vector_directory(db_path: Path) -> Path:
+    return db_path.parent / VECTOR_DIRNAME
+
+
+def _resolve_vector_file(db_path: Path, stored_path: str) -> Path:
+    relative = Path(stored_path)
+    if not stored_path or relative.is_absolute() or ".." in relative.parts:
+        raise RuntimeError(f"Invalid cached vector path: {stored_path!r}")
+    vector_dir = _vector_directory(db_path).resolve()
+    candidate = (db_path.parent / relative).resolve()
+    try:
+        candidate.relative_to(vector_dir)
+    except ValueError as exc:
+        raise RuntimeError(f"Cached vector path escapes {vector_dir}: {stored_path!r}") from exc
+    if candidate.suffix.lower() != ".npy":
+        raise RuntimeError(f"Cached vector file must use the .npy format: {stored_path!r}")
+    return candidate
+
+
+def _write_vector_file(
+    db_path: Path,
+    vectors: Sequence[Sequence[float] | np.ndarray],
+    dimension: int,
+) -> str:
+    vector_dir = _vector_directory(db_path)
+    vector_dir.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex
+    final_path = vector_dir / f"{token}.npy"
+    temporary_path = vector_dir / f".{token}.tmp.npy"
+    try:
+        if len(vectors) > 0:
+            mapped = np.lib.format.open_memmap(
+                temporary_path,
+                mode="w+",
+                dtype=np.float32,
+                shape=(len(vectors), dimension),
+            )
+            for row, vector in enumerate(vectors):
+                array = np.asarray(vector, dtype=np.float32).ravel()
+                if array.size != dimension:
+                    raise ValueError(
+                        f"Embedding dimension mismatch at row {row}: "
+                        f"expected {dimension}, got {array.size}"
+                    )
+                mapped[row] = array
+            mapped.flush()
+            del mapped
+        else:
+            np.save(
+                temporary_path,
+                np.empty((0, dimension), dtype=np.float32),
+                allow_pickle=False,
+            )
+        temporary_path.replace(final_path)
+    except Exception:
+        temporary_path.unlink(missing_ok=True)
+        final_path.unlink(missing_ok=True)
+        raise
+    return final_path.relative_to(db_path.parent).as_posix()
+
+
+def _load_vector_file(
+    db_path: Path,
+    stored_path: str,
+    *,
+    rows: int,
+    dimension: int,
+) -> np.ndarray:
+    vector_path = _resolve_vector_file(db_path, stored_path)
+    if not vector_path.is_file():
+        raise FileNotFoundError(vector_path)
+    try:
+        mmap_mode = None if rows == 0 else "r"
+        vectors = np.load(vector_path, mmap_mode=mmap_mode, allow_pickle=False)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f"Invalid cached vector file: {vector_path}") from exc
+    expected_shape = (rows, dimension)
+    if vectors.dtype != np.float32 or vectors.shape != expected_shape:
+        raise RuntimeError(
+            f"Cached vector file {vector_path} has dtype {vectors.dtype} and shape "
+            f"{vectors.shape}; expected float32 {expected_shape}"
+        )
+    return vectors
+
+
+def _prune_unreferenced_vector_files(
+    conn: sqlite3.Connection,
+    db_path: Path,
+) -> None:
+    vector_dir = _vector_directory(db_path)
+    if not vector_dir.is_dir() or not _column_exists(conn, "index_metadata", "vector_file"):
+        return
+    referenced = {
+        _resolve_vector_file(db_path, str(row["vector_file"]))
+        for row in conn.execute(
+            "SELECT vector_file FROM index_metadata WHERE vector_file <> ''"
+        ).fetchall()
+    }
+    for candidate in vector_dir.glob("*.npy"):
+        resolved = candidate.resolve()
+        if resolved not in referenced:
+            try:
+                candidate.unlink()
+            except PermissionError:
+                # A live API client may still hold this generation as a read-only mmap.
+                continue
 
 
 def store_index(
@@ -499,6 +683,8 @@ def store_index(
 ) -> Path:
     db_path = cache_file(root, model, include_hidden)
     conn = _connect(db_path)
+    vector_file = ""
+    vector_committed = False
     try:
         _ensure_schema(conn)
         key = _cache_key(
@@ -511,7 +697,16 @@ def store_index(
             exclude_patterns,
         )
         generated_at = datetime.now(timezone.utc).isoformat()
-        dimension = int(len(entries[0].embedding) if entries else 0)
+        dimension = int(
+            np.asarray(entries[0].embedding, dtype=np.float32).size if entries else 0
+        )
+        if entries and dimension <= 0:
+            raise ValueError("Indexed embeddings must contain at least one value")
+        vector_file = _write_vector_file(
+            db_path,
+            [entry.embedding for entry in entries],
+            dimension,
+        )
         include_flag = 1 if include_hidden else 0
         gitignore_flag = 1 if respect_gitignore else 0
         recursive_flag = 1 if recursive else 0
@@ -538,8 +733,9 @@ def store_index(
                     version,
                     generated_at,
                     exclude_patterns,
-                    extensions
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    extensions,
+                    vector_file
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     key,
@@ -554,6 +750,7 @@ def store_index(
                     generated_at,
                     exclude_patterns_value,
                     extensions_value,
+                    vector_file,
                 ),
             )
             index_id = cursor.lastrowid
@@ -605,7 +802,6 @@ def store_index(
                     file_id_map[row["rel_path"]] = int(row["id"])
 
             chunk_rows: list[tuple] = []
-            vector_blobs: list[bytes] = []
             meta_rows: list[tuple] = []
             for position, entry in enumerate(entries):
                 file_id = file_id_map.get(entry.rel_path)
@@ -613,9 +809,6 @@ def store_index(
                     continue
                 chunk_rows.append(
                     (index_id, file_id, entry.chunk_index, position)
-                )
-                vector_blobs.append(
-                    np.asarray(entry.embedding, dtype=np.float32).tobytes()
                 )
                 meta_rows.append(
                     (
@@ -642,13 +835,6 @@ def store_index(
                 "SELECT id FROM indexed_chunk WHERE index_id = ? ORDER BY position ASC",
                 (index_id,),
             ).fetchall()
-            conn.executemany(
-                "INSERT OR REPLACE INTO chunk_embedding (chunk_id, vector_blob) VALUES (?, ?)",
-                (
-                    (row["id"], vector_blobs[idx])
-                    for idx, row in enumerate(inserted_ids)
-                ),
-            )
             bm25_doc_rows: list[tuple[int, int]] = []
             bm25_posting_rows: list[tuple[int, int, str, int]] = []
             for idx, row in enumerate(inserted_ids):
@@ -689,7 +875,13 @@ def store_index(
                 ),
             )
 
+        vector_committed = True
+        _prune_unreferenced_vector_files(conn, db_path)
         return db_path
+    except Exception:
+        if vector_file and not vector_committed:
+            _resolve_vector_file(db_path, vector_file).unlink(missing_ok=True)
+        raise
     finally:
         conn.close()
 
@@ -718,6 +910,8 @@ def apply_index_updates(
         raise FileNotFoundError(db_path)
 
     conn = _connect(db_path)
+    vector_file = ""
+    vector_committed = False
     try:
         _ensure_schema(conn)
         key = _cache_key(
@@ -737,7 +931,7 @@ def apply_index_updates(
             conn.execute("BEGIN IMMEDIATE;")
             meta = conn.execute(
                 """
-                SELECT id, dimension
+                SELECT id, dimension, vector_file
                 FROM index_metadata
                 WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
                 """,
@@ -747,6 +941,66 @@ def apply_index_updates(
                 raise FileNotFoundError(db_path)
             index_id = meta["id"]
             existing_dimension = int(meta["dimension"])
+            existing_rows = conn.execute(
+                """
+                SELECT f.rel_path, c.chunk_index
+                FROM indexed_chunk AS c
+                JOIN indexed_file AS f ON f.id = c.file_id
+                WHERE c.index_id = ?
+                ORDER BY c.position ASC
+                """,
+                (index_id,),
+            ).fetchall()
+            existing_vectors = _load_vector_file(
+                db_path,
+                str(meta["vector_file"]),
+                rows=len(existing_rows),
+                dimension=existing_dimension,
+            )
+            existing_positions = {
+                (row["rel_path"], int(row["chunk_index"])): position
+                for position, row in enumerate(existing_rows)
+            }
+            changed_vectors: dict[tuple[str, int], np.ndarray] = {}
+            vector_dimension = existing_dimension
+            for entry in changed_entries:
+                vector = np.asarray(entry.embedding, dtype=np.float32).ravel()
+                if vector_dimension == 0:
+                    vector_dimension = int(vector.size)
+                if vector.size != vector_dimension:
+                    raise ValueError(
+                        f"Embedding dimension mismatch for {entry.rel_path}: "
+                        f"expected {vector_dimension}, got {vector.size}"
+                    )
+                changed_vectors[(entry.rel_path, entry.chunk_index)] = vector
+
+            if existing_dimension and vector_dimension != existing_dimension:
+                raise ValueError(
+                    f"Embedding dimension mismatch: existing index has "
+                    f"{existing_dimension}, got {vector_dimension}"
+                )
+            if ordered_entries or removed_rel_paths or changed_entries:
+                final_keys = list(ordered_entries)
+            else:
+                final_keys = list(existing_positions)
+            final_vectors: list[np.ndarray] = []
+            for entry_key in final_keys:
+                vector = changed_vectors.get(entry_key)
+                if vector is None:
+                    position = existing_positions.get(entry_key)
+                    if position is None:
+                        raise RuntimeError(
+                            f"Missing cached vector for {entry_key[0]} chunk {entry_key[1]}"
+                        )
+                    vector = existing_vectors[position]
+                final_vectors.append(vector)
+            vector_file = _write_vector_file(
+                db_path,
+                final_vectors,
+                vector_dimension,
+            )
+            del final_vectors
+            del existing_vectors
 
             if removed_rel_paths:
                 conn.executemany(
@@ -754,7 +1008,6 @@ def apply_index_updates(
                     ((index_id, rel) for rel in removed_rel_paths),
                 )
 
-            vector_dimension = None
             if changed_entries:
                 chunk_map: dict[str, list[IndexedChunk]] = {}
                 for entry in changed_entries:
@@ -819,16 +1072,11 @@ def apply_index_updates(
                         continue
                     chunk_list.sort(key=lambda item: item.chunk_index)
                     chunk_rows: list[tuple] = []
-                    vector_blobs: list[bytes] = []
                     meta_rows: list[tuple] = []
                     for chunk in chunk_list:
-                        vector = np.asarray(chunk.embedding, dtype=np.float32)
-                        if vector_dimension is None:
-                            vector_dimension = vector.shape[0]
                         chunk_rows.append(
                             (index_id, file_id, chunk.chunk_index, 0)
                         )
-                        vector_blobs.append(vector.tobytes())
                         meta_rows.append(
                             (
                                 chunk.preview or "",
@@ -858,13 +1106,6 @@ def apply_index_updates(
                         """,
                         (index_id, file_id),
                     ).fetchall()
-                    conn.executemany(
-                        "INSERT OR REPLACE INTO chunk_embedding (chunk_id, vector_blob) VALUES (?, ?)",
-                        (
-                            (row["id"], vector_blobs[idx])
-                            for idx, row in enumerate(inserted_ids)
-                        ),
-                    )
                     bm25_doc_rows: list[tuple[int, int]] = []
                     bm25_posting_rows: list[tuple[int, int, str, int]] = []
                     for idx, row in enumerate(inserted_ids):
@@ -1000,17 +1241,28 @@ def apply_index_updates(
                     )
 
             generated_at = datetime.now(timezone.utc).isoformat()
-            new_dimension = vector_dimension or existing_dimension
             conn.execute(
                 """
                 UPDATE index_metadata
-                SET generated_at = ?, dimension = ?, version = ?
+                SET generated_at = ?, dimension = ?, version = ?, vector_file = ?
                 WHERE id = ?
                 """,
-                (generated_at, new_dimension, CACHE_VERSION, index_id),
+                (
+                    generated_at,
+                    vector_dimension,
+                    CACHE_VERSION,
+                    vector_file,
+                    index_id,
+                ),
             )
 
+        vector_committed = True
+        _prune_unreferenced_vector_files(conn, db_path)
         return db_path
+    except Exception:
+        if vector_file and not vector_committed:
+            _resolve_vector_file(db_path, vector_file).unlink(missing_ok=True)
+        raise
     finally:
         conn.close()
 
@@ -1249,6 +1501,7 @@ def load_index_vectors(
     extensions: Sequence[str] | None = None,
     *,
     respect_gitignore: bool = True,
+    memory_cache: IndexVectorCache | None = None,
 ):
     db_path = cache_file(root, model, include_hidden)
     if not db_path.exists():
@@ -1263,9 +1516,10 @@ def load_index_vectors(
                     "index_metadata",
                     "indexed_file",
                     "indexed_chunk",
-                    "chunk_embedding",
                 ),
             )
+            if not _column_exists(conn, "index_metadata", "vector_file"):
+                raise sqlite3.OperationalError("Missing column: index_metadata.vector_file")
         except sqlite3.OperationalError:
             raise FileNotFoundError(db_path)
         key = _cache_key(
@@ -1282,7 +1536,8 @@ def load_index_vectors(
         recursive_flag = 1 if recursive else 0
         meta = conn.execute(
             """
-            SELECT id, root_path, model, include_hidden, respect_gitignore, recursive, mode, dimension, version, generated_at, exclude_patterns, extensions
+            SELECT id, root_path, model, include_hidden, respect_gitignore, recursive, mode,
+                   dimension, version, generated_at, exclude_patterns, extensions, vector_file
             FROM index_metadata
             WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
             """,
@@ -1296,6 +1551,17 @@ def load_index_vectors(
 
         index_id = meta["id"]
         dimension = int(meta["dimension"])
+        memory_key = (
+            str(db_path.resolve()),
+            model,
+            key,
+            str(meta["generated_at"]),
+            str(meta["vector_file"]),
+        )
+        if memory_cache is not None:
+            cached = memory_cache.get(memory_key)
+            if cached is not None:
+                return cached.paths, cached.vectors, cached.metadata
         chunk_count = conn.execute(
             "SELECT COUNT(*) AS count FROM indexed_chunk WHERE index_id = ?",
             (index_id,),
@@ -1303,6 +1569,9 @@ def load_index_vectors(
         chunk_total = int(chunk_count or 0)
 
         if chunk_total == 0 or dimension == 0:
+            vector_path = _resolve_vector_file(db_path, str(meta["vector_file"]))
+            if not vector_path.is_file():
+                raise FileNotFoundError(vector_path)
             empty = np.empty((0, dimension), dtype=np.float32)
             metadata = {
                 "index_id": int(index_id),
@@ -1320,10 +1589,22 @@ def load_index_vectors(
                 "files": [],
                 "chunks": [],
                 "chunk_ids": [],
+                "vector_file": meta["vector_file"],
             }
+            if memory_cache is not None:
+                memory_cache.store(
+                    memory_key,
+                    _LoadedIndexVectors((), empty, metadata),
+                )
+                _prune_unreferenced_vector_files(conn, db_path)
             return [], empty, metadata
 
-        embeddings = np.empty((chunk_total, dimension), dtype=np.float32)
+        embeddings = _load_vector_file(
+            db_path,
+            str(meta["vector_file"]),
+            rows=chunk_total,
+            dimension=dimension,
+        )
         paths: list[Path] = []
         chunk_ids: list[int] = []
         file_snapshot: list[dict] = []
@@ -1348,25 +1629,18 @@ def load_index_vectors(
 
         cursor = conn.execute(
             """
-            SELECT c.id AS chunk_id, f.rel_path, e.vector_blob
+            SELECT c.id AS chunk_id, f.rel_path
             FROM indexed_chunk AS c
             JOIN indexed_file AS f ON f.id = c.file_id
-            JOIN chunk_embedding AS e ON e.chunk_id = c.id
             WHERE c.index_id = ?
             ORDER BY c.position ASC
             """,
             (index_id,),
         )
 
-        for idx, row in enumerate(cursor):
+        for row in cursor:
             rel_path = row["rel_path"]
             chunk_id = int(row["chunk_id"])
-            vector = np.frombuffer(row["vector_blob"], dtype=np.float32)
-            if vector.size != dimension:
-                raise RuntimeError(
-                    f"Cached embedding dimension {vector.size} does not match index metadata {dimension}"
-                )
-            embeddings[idx] = vector
             paths.append(root / Path(rel_path))
             chunk_ids.append(chunk_id)
             if rel_path not in seen_files:
@@ -1391,7 +1665,13 @@ def load_index_vectors(
             "files": file_snapshot,
             "chunks": [],
             "chunk_ids": chunk_ids,
+            "vector_file": meta["vector_file"],
         }
+        if memory_cache is not None:
+            loaded = _LoadedIndexVectors(tuple(paths), embeddings, metadata)
+            memory_cache.store(memory_key, loaded)
+            _prune_unreferenced_vector_files(conn, db_path)
+            return loaded.paths, loaded.vectors, loaded.metadata
         return paths, embeddings, metadata
     finally:
         conn.close()
@@ -1805,6 +2085,7 @@ def clear_index(
             params = (key, model, mode)
         with conn:
             cursor = conn.execute(query, params)
+        _prune_unreferenced_vector_files(conn, db_path)
         return cursor.rowcount
     finally:
         conn.close()
@@ -1896,6 +2177,12 @@ def clear_all_cache() -> int:
         sidecar = Path(f"{db_path}{suffix}")
         if sidecar.exists():
             sidecar.unlink()
+    vector_dir = _vector_directory(db_path)
+    if vector_dir.is_dir():
+        for vector_file in vector_dir.iterdir():
+            if vector_file.is_file():
+                vector_file.unlink()
+        vector_dir.rmdir()
 
     return total
 

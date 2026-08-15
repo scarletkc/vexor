@@ -39,7 +39,7 @@
 | `--format json` | Full response as JSON, including chunk content |
 | `--content` | Print each match's source text below the results table |
 | `--no-cache` | In-memory only; do not read/write index cache |
-| `--local` | With `index`, create and use `<path>/.vexor/index.db` |
+| `--local` | With `index`, create and use `<path>/.vexor/` cache storage |
 
 Reranking is a config setting rather than a search flag — see
 [Configuration → Rerank](configuration.md#rerank) for the available
@@ -121,7 +121,8 @@ Index cache keys derive from: `--path`, `--mode`, `--include-hidden`,
 
 Keep flags consistent to reuse cache; changing flags creates a separate index.
 
-By default, indexes are stored in `~/.vexor/index.db`. Project-local caching is
+By default, index metadata is stored in `~/.vexor/index.db`, with dense vectors
+under `~/.vexor/vectors/`. Project-local caching is
 opt-in: create a `.vexor/` directory in a project root, or run
 `vexor index --local`. Either way, Vexor writes a `.gitignore` inside
 `.vexor/` on first use so generated indexes and caches cannot be committed by
@@ -140,7 +141,7 @@ data, FlashRank assets, and local embedding models remain under `~/.vexor/`.
 vexor config --show-index-all    # list all cached indexes
 vexor config --clear-index-all   # clear all cached indexes
 vexor index --path . --clear     # clear index for specific path
-vexor index --path . --local     # create/use ./.vexor/index.db
+vexor index --path . --local     # create/use ./.vexor/ cache storage
 ```
 
 Re-running `vexor index` only re-embeds changed files; >50% changes trigger
