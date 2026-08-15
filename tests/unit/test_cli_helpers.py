@@ -50,6 +50,9 @@ def test_cli_small_helpers_and_version_callback(capsys):
 
 
 def test_cli_flashrank_prepare_success_and_errors(monkeypatch, tmp_path):
+    # See test_search_service_extra: assert the missing-extra path deterministically
+    # rather than relying on ``flashrank`` being absent from the environment.
+    monkeypatch.setitem(sys.modules, "flashrank", None)
     with pytest.raises(RuntimeError):
         cli._prepare_flashrank_model(None)
 

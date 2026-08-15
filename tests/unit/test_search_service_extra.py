@@ -62,6 +62,11 @@ def test_apply_ranking_drops_bad_indices_and_keeps_the_tail():
 
 
 def test_flashrank_rerank_import_error_and_success(monkeypatch, tmp_path):
+    # Simulate the extra being absent instead of depending on it being absent: a
+    # ``None`` entry in sys.modules makes the import raise whether or not the
+    # machine running the suite has ``flashrank`` installed.
+    monkeypatch.setitem(sys.modules, "flashrank", None)
+    search_service._get_flashranker.cache_clear()
     with pytest.raises(RuntimeError):
         search_service._apply_flashrank_rerank("q", [_result("a.txt", 0.1)], None)
 
