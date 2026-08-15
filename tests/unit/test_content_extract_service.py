@@ -310,6 +310,9 @@ def test_extract_full_chunks_with_lines_ranges_map_back_to_source(tmp_path):
     assert len(chunks) >= 2
     for chunk in chunks:
         sliced = "\n".join(source_lines[chunk.start_line - 1 : chunk.end_line])
+        # Containment, not equality: windows are cut on character offsets, so the first
+        # and last line of a chunk can be partial. Tightening this to `==` would fail on
+        # correct output.
         for line in chunk.text.splitlines():
             assert line in sliced
 
