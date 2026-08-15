@@ -32,6 +32,22 @@ The harness reports first and process-cached vector loads, full snapshot
 validation, and event-backed freshness checks. Timing is diagnostic evidence,
 not a fixed CI threshold.
 
+Ranking changes are argued with numbers, not intuition. Two scripts score the
+same 30-query set in `scripts/eval_queries.jsonl` against whatever provider the
+config resolves to, and report MRR@10, Hit@1, and Hit@5:
+
+```bash
+python scripts/eval_hybrid.py --path .            # dense vs BM25 rerank vs hybrid
+python scripts/eval_rerank_content.py --path . --rerank remote --chars 0 1000
+```
+
+`eval_rerank_content.py` compares what each reranker scores: the stored preview
+against the chunk's source text, at a per-document character cap. Both scripts
+index first, so point `--path` at the repository you want measured and expect
+provider calls when the model is remote. Record the table in the PR, and keep
+the query set fixed while comparing arms — 30 queries is small enough that one
+rank change moves MRR@10 by about 0.03.
+
 ## Releases
 
 Bump the version on a branch and land it through a PR; merging to `main`

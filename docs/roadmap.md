@@ -16,11 +16,23 @@ never leaving the machine.
   caller got a path plus a 160-character preview and had to re-read the file,
   which spent back most of what retrieval saved. Porcelain output is
   unchanged. Follow-ups this unblocks:
-  - Feed chunk content to the rerankers. `_build_rerank_document` still scores
-    against filename, path, and the truncated preview, so rerank quality is
-    capped by preview length. Changing it shifts existing result ordering, so
-    it needs its own benchmark — and the collection API work below already
-    requires extracting that seam.
+  - Feeding chunk content to the rerankers was measured and rejected. The
+    premise was that scoring filename, path, and a 160-character preview caps
+    rerank quality. It does not: replacing the preview with the chunk's source
+    text lost on every reranker and both embedding models. MRR@10 on this
+    repository (`scripts/eval_rerank_content.py`, 30 queries, top 10,
+    bge-m3 / e5-small): remote 0.686/0.634 → 0.591/0.550, FlashRank
+    0.669/0.623 → 0.611/0.563, BM25 0.605/0.509 → 0.520/0.514. No
+    per-document cap between 300 and 2000 characters recovered it, and
+    neither did keeping the preview alongside the body. A preview is not just
+    a truncated chunk: for `code` and `outline` chunks it leads with the
+    symbol signature or heading breadcrumb, which is the most discriminative
+    text available, and the body dilutes it while the reranker truncates
+    anyway (FlashRank at 256 tokens). Re-run the script before revisiting —
+    the query set is small and code-heavy, and a prose corpus, where a
+    preview really is only the first 160 characters, may not behave the same.
+    The `(query, documents) -> [(index, score)]` seam the experiment needed
+    was extracted anyway, since the collection API below depends on it.
   - The token-cost evaluation below is only worth running after this: with
     path-only results, agent+Vexor could not show much saving over grep
     because the follow-up reads dominated.
@@ -99,13 +111,12 @@ never leaving the machine.
     Resolve the query embedding through the shared `embedding_cache`; the
     per-index `query_cache` layer is index-scoped and not worth
     duplicating here.
-  - Reranker seam: extract the result-agnostic core of the three
-    `_apply_*_rerank` functions into a helper that takes
-    `(query, documents)` and returns ranked `(index, score)` pairs. The
-    file path stays inside `_build_rerank_document` and collections pass
-    record text instead. This is a behavior-preserving refactor guarded
-    by the existing `tests/unit/test_search_service.py` cases, and it is
-    the only change to a code path users already depend on.
+  - Reranker seam (done): `_rank_documents_bm25`,
+    `_rank_documents_flashrank`, and `_rank_documents_remote` take
+    `(query, documents)` and return ranked `(index, score)` pairs, and
+    `_apply_ranking` maps those back onto results. The file path stays
+    inside `_build_rerank_document`; collections build documents from
+    record text and reuse the three rankers unchanged.
   - Surface: `vexor/collection_store.py` for the SQLite layer beside
     `cache.py`, `vexor/services/collection_service.py` for orchestration,
     and a `VexorClient.collection(name)` handle exposing `upsert_many`,
@@ -117,8 +128,8 @@ never leaving the machine.
     the existing `_resolve_settings` so config precedence matches every
     other entry point. Results are a
     `RecordResult(id, text, metadata, score)`.
-  - Delivery: land the reranker refactor first as its own PR, then the
-    store, service, and Python API with tests, then
+  - Delivery: the reranker refactor has landed, so next are the store,
+    service, and Python API with tests, then
     `vexor collection list|info|search|delete|drop` plus an
     `upsert --json -` NDJSON stdin path for bulk import from a database
     dump. Tests must cover strict pre-filtering (a record ranked first
