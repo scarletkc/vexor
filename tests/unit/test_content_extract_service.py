@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from docx import Document
 from pptx import Presentation
 
@@ -279,6 +280,56 @@ def test_extract_full_chunks_with_lines_multiple_windows(tmp_path):
     assert chunks[0].start_line == 1
     assert chunks[0].end_line >= 1
     assert chunks[-1].end_line == 6
+
+
+@pytest.mark.parametrize("leading_blank_lines", [0, 1, 5])
+def test_extract_full_chunks_with_lines_compensates_leading_blanks(tmp_path, leading_blank_lines):
+    text_path = tmp_path / "leading.txt"
+    text_path.write_text(
+        "\n" * leading_blank_lines + "ALPHA\n" + "filler\n" * 5,
+        encoding="utf-8",
+    )
+    source_lines = text_path.read_text(encoding="utf-8").splitlines()
+    expected_start = source_lines.index("ALPHA") + 1
+
+    chunks = extract_full_chunks_with_lines(text_path, chunk_size=100, overlap=0)
+
+    assert chunks
+    assert chunks[0].start_line == expected_start
+    assert chunks[0].end_line == len(source_lines)
+
+
+def test_extract_full_chunks_with_lines_ranges_map_back_to_source(tmp_path):
+    """Line ranges must be usable to read the chunk back out of the file."""
+    text_path = tmp_path / "mappable.txt"
+    text_path.write_text("\n\n\nfirst\nsecond\nthird\nfourth\nfifth\nsixth\n", encoding="utf-8")
+    source_lines = text_path.read_text(encoding="utf-8").splitlines()
+
+    chunks = extract_full_chunks_with_lines(text_path, chunk_size=20, overlap=0)
+
+    assert len(chunks) >= 2
+    for chunk in chunks:
+        sliced = "\n".join(source_lines[chunk.start_line - 1 : chunk.end_line])
+        # Containment, not equality: windows are cut on character offsets, so the first
+        # and last line of a chunk can be partial. Tightening this to `==` would fail on
+        # correct output.
+        for line in chunk.text.splitlines():
+            assert line in sliced
+
+
+def test_extract_full_chunks_with_lines_text_excludes_leading_blanks(tmp_path):
+    """The offset fix must not alter chunk text, or every label hash would change."""
+    plain = tmp_path / "plain.txt"
+    plain.write_text("alpha\nbeta\n", encoding="utf-8")
+    padded = tmp_path / "padded.txt"
+    padded.write_text("\n\n\nalpha\nbeta\n", encoding="utf-8")
+
+    plain_chunks = extract_full_chunks_with_lines(plain, chunk_size=100, overlap=0)
+    padded_chunks = extract_full_chunks_with_lines(padded, chunk_size=100, overlap=0)
+
+    assert [chunk.text for chunk in plain_chunks] == [chunk.text for chunk in padded_chunks]
+    assert plain_chunks[0].start_line == 1
+    assert padded_chunks[0].start_line == 4
 
 
 def test_extract_full_chunks_with_lines_non_text_has_no_lines(tmp_path):
