@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: >-
+          Publish the version currently on main even though it did not change in
+          the last commit. Use to retry a release whose publish step failed.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -101,7 +109,9 @@ jobs:
   prepare_release:
     name: Prepare release metadata
     needs: pytest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.force_release)
     runs-on: ubuntu-latest
     outputs:
       release_changed: ${{ steps.versions.outputs.release_changed }}
@@ -117,6 +127,8 @@ jobs:
       - name: Detect version changes
         id: versions
         shell: bash
+        env:
+          FORCE_RELEASE: ${{ inputs.force_release }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -143,13 +155,18 @@ jobs:
           current_init = pathlib.Path("vexor/__init__.py").read_text(encoding="utf-8")
           current_version = read_version_from_text(current_init)
 
+          # A manual run with force_release republishes whatever is on main, so a
+          # release whose publish step failed can be retried without burning a
+          # version number on a no-op bump.
+          forced = os.environ.get("FORCE_RELEASE", "").lower() == "true"
+
           prev_init = read_file_from_ref("HEAD^", "vexor/__init__.py")
           if prev_init is None:
               release_changed = True
               prev_version = ""
           else:
               prev_version = read_version_from_text(prev_init)
-              release_changed = current_version != prev_version
+              release_changed = forced or current_version != prev_version
 
           current_tag = f"v{current_version}"
           prev_tag = ""
@@ -408,5 +425,7 @@ jobs:
         run: |
           python -m build
 
+      # v1.13.0 bundles a twine that rejects Metadata-Version 2.5, which current
+      # hatchling emits; the 0.27.0 publish failed on exactly that.
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.13.0
+        uses: pypa/gh-action-pypi-publish@v1.14.2
