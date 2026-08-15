@@ -35,7 +35,38 @@ def test_bm25_helpers_fallbacks(monkeypatch):
     ]
 
 
+def test_rank_documents_bm25_is_independent_of_search_results():
+    documents = ["alpha alpha beta", "gamma delta", "beta gamma"]
+    base_scores = [0.1, 0.9, 0.2]
+
+    assert search_service._rank_documents_bm25("", documents, base_scores) is None
+
+    ranking = search_service._rank_documents_bm25("alpha", documents, base_scores)
+
+    assert [index for index, _ in ranking] == [1, 0, 2]
+    assert all(0.0 <= score <= 1.0 for _, score in ranking)
+
+
+def test_apply_ranking_drops_bad_indices_and_keeps_the_tail():
+    results = [_result("a.txt", 0.1), _result("b.txt", 0.2), _result("c.txt", 0.3)]
+
+    ordered = search_service._apply_ranking(
+        results,
+        [(2, 0.9), (99, 1.0), (-1, 1.0), (2, 0.5), (0, None)],
+    )
+
+    assert [item.path.name for item in ordered] == ["c.txt", "a.txt", "b.txt"]
+    assert ordered[0].score == 0.9
+    # A reranker that returns no score leaves the retrieval score in place.
+    assert ordered[1].score == 0.1
+
+
 def test_flashrank_rerank_import_error_and_success(monkeypatch, tmp_path):
+    # Simulate the extra being absent instead of depending on it being absent: a
+    # ``None`` entry in sys.modules makes the import raise whether or not the
+    # machine running the suite has ``flashrank`` installed.
+    monkeypatch.setitem(sys.modules, "flashrank", None)
+    search_service._get_flashranker.cache_clear()
     with pytest.raises(RuntimeError):
         search_service._apply_flashrank_rerank("q", [_result("a.txt", 0.1)], None)
 

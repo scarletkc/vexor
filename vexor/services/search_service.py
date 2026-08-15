@@ -309,7 +309,40 @@ def _attach_chunk_content(
 
 def _build_rerank_document(result: SearchResult) -> str:
     preview = result.preview or ""
-    return f"{result.path.name} {result.path.as_posix()} {preview}".strip()
+    document = f"{result.path.name} {result.path.as_posix()} {preview}".strip()
+    return document or result.path.as_posix()
+
+
+def _build_rerank_documents(results: Sequence[SearchResult]) -> list[str]:
+    return [_build_rerank_document(result) for result in results]
+
+
+def _apply_ranking(
+    results: Sequence[SearchResult],
+    ranking: Sequence[tuple[int, float | None]],
+) -> list[SearchResult]:
+    """Reorder *results* by a reranker's ``(index, score)`` pairs.
+
+    Unknown, duplicate, and out-of-range indices are dropped, and anything the
+    reranker left out keeps its original relative order at the tail, so a partial
+    response degrades to "reranked head, dense tail" instead of losing results.
+    """
+
+    ordered: list[SearchResult] = []
+    seen: set[int] = set()
+    for index, score in ranking:
+        if index < 0 or index >= len(results) or index in seen:
+            continue
+        result = results[index]
+        if score is not None:
+            result.score = float(score)
+        ordered.append(result)
+        seen.add(index)
+    if len(ordered) < len(results):
+        for index, result in enumerate(results):
+            if index not in seen:
+                ordered.append(result)
+    return ordered
 
 
 def _normalize_by_max(scores: Sequence[float]) -> list[float]:
@@ -349,26 +382,46 @@ def _bm25_scores(
     return [float(score) for score in scores]
 
 
+def _rank_documents_bm25(
+    query: str,
+    documents: Sequence[str],
+    base_scores: Sequence[float],
+) -> list[tuple[int, float]] | None:
+    """Fuse lexical scores over *documents* with the retrieval scores behind them.
+
+    Returns ``None`` when the query carries no usable tokens, which leaves the
+    caller's original order untouched.
+    """
+
+    query_tokens = _bm25_tokenize(query)
+    if not query_tokens:
+        return None
+    tokenized = [_bm25_tokenize(document) for document in documents]
+    lexical_norm = _normalize_by_max(_bm25_scores(query_tokens, tokenized))
+    base_norm = _normalize_by_max([max(score, 0.0) for score in base_scores])
+    fused = [
+        (
+            index,
+            _FUSION_SEMANTIC_WEIGHT * base
+            + (1.0 - _FUSION_SEMANTIC_WEIGHT) * lexical,
+        )
+        for index, (base, lexical) in enumerate(zip(base_norm, lexical_norm))
+    ]
+    fused.sort(key=lambda item: item[1], reverse=True)
+    return fused
+
+
 def _apply_bm25_rerank(query: str, results: Sequence[SearchResult]) -> list[SearchResult]:
     if not results:
         return []
-    query_tokens = _bm25_tokenize(query)
-    if not query_tokens:
+    ranking = _rank_documents_bm25(
+        query,
+        _build_rerank_documents(results),
+        [result.score for result in results],
+    )
+    if ranking is None:
         return list(results)
-    documents = [_bm25_tokenize(_build_rerank_document(result)) for result in results]
-    bm25_scores = _bm25_scores(query_tokens, documents)
-    semantic_scores = [max(result.score, 0.0) for result in results]
-    semantic_norm = _normalize_by_max(semantic_scores)
-    bm25_norm = _normalize_by_max(bm25_scores)
-    fused: list[SearchResult] = []
-    for result, sem_score, bm25_score in zip(results, semantic_norm, bm25_norm):
-        fused_score = _FUSION_SEMANTIC_WEIGHT * sem_score + (
-            (1.0 - _FUSION_SEMANTIC_WEIGHT) * bm25_score
-        )
-        result.score = float(fused_score)
-        fused.append(result)
-    fused.sort(key=lambda item: item.score, reverse=True)
-    return fused
+    return _apply_ranking(results, ranking)
 
 
 @lru_cache(maxsize=4)
@@ -383,13 +436,11 @@ def _get_flashranker(model_name: str | None, max_length: int):
     return Ranker(**kwargs)
 
 
-def _apply_flashrank_rerank(
+def _rank_documents_flashrank(
     query: str,
-    results: Sequence[SearchResult],
+    documents: Sequence[str],
     model_name: str | None,
-) -> list[SearchResult]:
-    if not results:
-        return []
+) -> list[tuple[int, float | None]]:
     try:
         from flashrank import RerankRequest
     except ImportError as exc:
@@ -403,32 +454,37 @@ def _apply_flashrank_rerank(
         from ..text import Messages
 
         raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
-    passages = []
-    for idx, result in enumerate(results):
-        text = _build_rerank_document(result) or result.path.as_posix()
-        passages.append({"id": idx, "text": text})
-    rerank_request = RerankRequest(query=query, passages=passages)
-    reranked = ranker.rerank(rerank_request)
-    id_to_result = {idx: result for idx, result in enumerate(results)}
-    ordered: list[SearchResult] = []
-    seen: set[int] = set()
+    passages = [
+        {"id": index, "text": document} for index, document in enumerate(documents)
+    ]
+    reranked = ranker.rerank(RerankRequest(query=query, passages=passages))
+    ranking: list[tuple[int, float | None]] = []
     for item in reranked:
-        idx = item.get("id")
-        if idx is None:
+        index = item.get("id")
+        if index is None:
             continue
-        result = id_to_result.get(idx)
-        if result is None:
+        try:
+            position = int(index)
+        except (TypeError, ValueError):
             continue
         score = item.get("score")
-        if score is not None:
-            result.score = float(score)
-        ordered.append(result)
-        seen.add(idx)
-    if len(ordered) < len(results):
-        for idx, result in enumerate(results):
-            if idx not in seen:
-                ordered.append(result)
-    return ordered
+        ranking.append((position, float(score) if score is not None else None))
+    return ranking
+
+
+def _apply_flashrank_rerank(
+    query: str,
+    results: Sequence[SearchResult],
+    model_name: str | None,
+) -> list[SearchResult]:
+    if not results:
+        return []
+    ranking = _rank_documents_flashrank(
+        query,
+        _build_rerank_documents(results),
+        model_name,
+    )
+    return _apply_ranking(results, ranking)
 
 
 def _resolve_remote_rerank_config(
@@ -528,6 +584,20 @@ def _extract_remote_rerank_items(payload: object) -> list[tuple[int, float | Non
     return parsed
 
 
+def _rank_documents_remote(
+    query: str,
+    documents: Sequence[str],
+    config: RemoteRerankConfig | None,
+) -> list[tuple[int, float | None]]:
+    resolved = _resolve_remote_rerank_config(config)
+    payload = _remote_rerank_request(
+        config=resolved,
+        query=query,
+        documents=documents,
+    )
+    return _extract_remote_rerank_items(payload)
+
+
 def _apply_remote_rerank(
     query: str,
     results: Sequence[SearchResult],
@@ -535,32 +605,14 @@ def _apply_remote_rerank(
 ) -> list[SearchResult]:
     if not results:
         return []
-    resolved = _resolve_remote_rerank_config(config)
-    documents = [
-        _build_rerank_document(result) or result.path.as_posix() for result in results
-    ]
-    payload = _remote_rerank_request(
-        config=resolved,
-        query=query,
-        documents=documents,
+    ranking = _rank_documents_remote(
+        query,
+        _build_rerank_documents(results),
+        config,
     )
-    items = _extract_remote_rerank_items(payload)
-    if not items:
+    if not ranking:
         return list(results)
-    ordered: list[SearchResult] = []
-    seen: set[int] = set()
-    for idx, score in items:
-        if idx < 0 or idx >= len(results) or idx in seen:
-            continue
-        result = results[idx]
-        if score is not None:
-            result.score = score
-        ordered.append(result)
-        seen.add(idx)
-    for idx, result in enumerate(results):
-        if idx not in seen:
-            ordered.append(result)
-    return ordered
+    return _apply_ranking(results, ranking)
 
 
 def _empty_response(directory: Path, *, is_stale: bool) -> SearchResponse:
