@@ -225,6 +225,9 @@ The tool returns `{path, mode, status, files_indexed}` where `status` is `stored
   database. With `no_cache=true`,
   `vexor_search` instead builds a temporary in-memory index and writes no
   index, embedding, or query caches.
+- The server keeps one `VexorClient` for the MCP session, so tool calls share
+  the process-local index state and watcher behavior described by the Python
+  API's [cache contract](api/python.md#cache-behavior).
 - Execution failures (missing directory, provider errors, missing API key)
   are returned as tool results with `isError: true` so the agent can
   self-correct; malformed arguments (wrong types, out-of-range `top`,

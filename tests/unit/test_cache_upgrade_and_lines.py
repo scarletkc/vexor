@@ -124,3 +124,59 @@ def test_backfill_chunk_lines_missing_db_raises(tmp_path, monkeypatch):
             recursive=True,
             updates=[],
         )
+
+
+def test_old_blob_cache_version_requires_rebuild(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    root = tmp_path / "project"
+    root.mkdir()
+    file_path = root / "a.txt"
+    file_path.write_text("data", encoding="utf-8")
+    cache.store_index(
+        root=root,
+        model="model",
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        entries=[
+            cache.IndexedChunk(
+                path=file_path,
+                rel_path="a.txt",
+                chunk_index=0,
+                preview="a",
+                embedding=np.array([1.0], dtype=np.float32),
+            )
+        ],
+    )
+    connection = cache._connect(cache.cache_db_path())
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE index_metadata SET version = ?",
+                (cache.CACHE_VERSION - 1,),
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(FileNotFoundError):
+        cache.load_index_vectors(root, "model", False, "name", True)
+
+
+def test_legacy_schema_without_vector_file_requires_rebuild(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "CACHE_DIR", tmp_path / "cache")
+    root = tmp_path / "project"
+    root.mkdir()
+    connection = sqlite3.connect(cache.cache_db_path())
+    try:
+        connection.executescript(
+            """
+            CREATE TABLE index_metadata (id INTEGER PRIMARY KEY);
+            CREATE TABLE indexed_file (id INTEGER PRIMARY KEY);
+            CREATE TABLE indexed_chunk (id INTEGER PRIMARY KEY);
+            """
+        )
+    finally:
+        connection.close()
+
+    with pytest.raises(FileNotFoundError):
+        cache.load_index_vectors(root, "model", False, "name", True)

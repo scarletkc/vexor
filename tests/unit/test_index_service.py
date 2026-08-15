@@ -123,6 +123,54 @@ def test_embed_labels_with_cache_reuses_embeddings(tmp_path, monkeypatch):
     assert np.allclose(first, second)
 
 
+def test_legacy_index_rebuild_reuses_embedding_cache(tmp_path, monkeypatch):
+    _patch_cache_dir(tmp_path, monkeypatch)
+    _patch_searcher(monkeypatch)
+    DummySearcher.calls = []
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "a.txt").write_text("a", encoding="utf-8")
+    kwargs = dict(provider="gemini", base_url=None, api_key=None)
+
+    first = build_index(
+        root,
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        model_name="model",
+        batch_size=0,
+        **kwargs,
+    )
+    assert first.status == IndexStatus.STORED
+    assert len(DummySearcher.calls) == 1
+
+    connection = cache._connect(cache.cache_db_path())
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE index_metadata SET version = ?",
+                (cache.CACHE_VERSION - 1,),
+            )
+    finally:
+        connection.close()
+
+    DummySearcher.calls = []
+    rebuilt = build_index(
+        root,
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        model_name="model",
+        batch_size=0,
+        **kwargs,
+    )
+
+    assert rebuilt.status == IndexStatus.STORED
+    assert DummySearcher.calls == []
+    metadata = cache.load_index(root, "model", False, "name", True)
+    assert metadata["version"] == cache.CACHE_VERSION
+
+
 def test_build_index_falls_back_to_full_rebuild(tmp_path, monkeypatch):
     _patch_cache_dir(tmp_path, monkeypatch)
     _patch_searcher(monkeypatch)

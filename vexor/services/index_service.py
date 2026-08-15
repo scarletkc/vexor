@@ -206,7 +206,6 @@ def build_index(
             cached_files = []
             force_no_cache = True
     if cached_files:
-        cached_version = int(existing_meta.get("version", 0) or 0) if existing_meta else 0
         full_max_bytes = (
             getattr(strategy, "full_max_bytes", 10_000) if mode == "auto" else None
         )
@@ -233,23 +232,6 @@ def build_index(
                     mode=mode,
                     recursive=recursive,
                     updates=updates,
-                    exclude_patterns=exclude_patterns,
-                    extensions=extensions,
-                )
-                return IndexResult(
-                    status=IndexStatus.STORED,
-                    cache_path=cache_path,
-                    files_indexed=len(files),
-                )
-            if cached_version < CACHE_VERSION:
-                cache_path = backfill_chunk_lines(
-                    root=directory,
-                    model=model_name,
-                    include_hidden=include_hidden,
-                    respect_gitignore=respect_gitignore,
-                    mode=mode,
-                    recursive=recursive,
-                    updates=[],
                     exclude_patterns=exclude_patterns,
                     extensions=extensions,
                 )

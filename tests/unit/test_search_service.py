@@ -382,7 +382,21 @@ def test_perform_search_missing_index_raises_when_auto_index_disabled(monkeypatc
 
 
 def test_perform_search_auto_indexes_when_stale(monkeypatch, tmp_path: Path) -> None:
-    calls: dict[str, int] = {"load": 0, "indexed": 0, "cache_checks": 0}
+    calls: dict[str, int] = {
+        "load": 0,
+        "indexed": 0,
+        "cache_checks": 0,
+        "vector_cache_clears": 0,
+    }
+
+    class TrackingVectorCache:
+        def clear(self) -> None:
+            calls["vector_cache_clears"] += 1
+
+        def prune(self) -> None:
+            return None
+
+    vector_cache = TrackingVectorCache()
 
     def fake_load_index_vectors(*_args, **_kwargs):
         calls["load"] += 1
@@ -430,12 +444,14 @@ def test_perform_search_auto_indexes_when_stale(monkeypatch, tmp_path: Path) -> 
         exclude_patterns=(),
         extensions=(),
         auto_index=True,
+        index_vector_cache=vector_cache,
     )
     response = perform_search(request)
 
     assert response.index_empty is False
     assert response.is_stale is False
     assert calls["indexed"] == 1
+    assert calls["vector_cache_clears"] == 1
     assert calls["load"] == 2
     assert response.results[0].path.name == "b.txt"
 
@@ -559,7 +575,7 @@ def test_perform_search_uses_cached_query_vector(monkeypatch, tmp_path: Path) ->
         entries=entries,
     )
 
-    calls = {"embeds": 0}
+    calls = {"embeds": 0, "query_cache_stores": 0}
 
     class CountingSearcher:
         device = "dummy-backend"
@@ -573,6 +589,13 @@ def test_perform_search_uses_cached_query_vector(monkeypatch, tmp_path: Path) ->
 
     monkeypatch.setattr(search_module, "VexorSearcher", CountingSearcher)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
+    original_store_query_vector = cache.store_query_vector
+
+    def count_store_query_vector(*args, **kwargs):
+        calls["query_cache_stores"] += 1
+        return original_store_query_vector(*args, **kwargs)
+
+    monkeypatch.setattr(cache, "store_query_vector", count_store_query_vector)
 
     request = SearchRequest(
         query="alpha",
@@ -599,6 +622,7 @@ def test_perform_search_uses_cached_query_vector(monkeypatch, tmp_path: Path) ->
     assert response1.index_empty is False
     assert response2.index_empty is False
     assert calls["embeds"] == 1
+    assert calls["query_cache_stores"] == 1
 
 
 def test_perform_search_reuses_superset_index_for_extension_filter(

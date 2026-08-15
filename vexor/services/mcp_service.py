@@ -364,6 +364,14 @@ class VexorMcpServer:
             self._client = VexorClient()
         return self._client
 
+    def close(self) -> None:
+        """Release resources owned by the session client."""
+
+        close = getattr(self._client, "close", None)
+        if callable(close):
+            close()
+        self._client = None
+
     # -- JSON-RPC plumbing -------------------------------------------------
 
     def handle_message(self, message: Any) -> dict[str, Any] | None:
@@ -708,4 +716,7 @@ def serve_stdio(default_path: Path | str | None = None) -> None:
         flush=True,
     )
     _start_update_notice_thread()
-    serve(server, stdin, stdout)
+    try:
+        serve(server, stdin, stdout)
+    finally:
+        server.close()

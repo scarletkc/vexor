@@ -25,6 +25,7 @@ from .config import (
     set_config_dir,
 )
 from .cache import (
+    IndexVectorCache,
     cache_dir_context,
     create_project_cache_dir,
     project_cache_context,
@@ -42,6 +43,7 @@ from .services.index_service import (
     build_index_in_memory,
     clear_index_entries,
 )
+from .services.freshness_service import FreshnessTracker
 from .services.search_service import (
     DEFAULT_CONTENT_CHARS_PER_RESULT,
     DEFAULT_CONTENT_CHARS_TOTAL,
@@ -270,6 +272,20 @@ class VexorClient:
         self.cache_dir = cache_dir
         self.use_config = use_config
         self._runtime_config: _RuntimeConfigOverride | None = None
+        self._index_vector_cache = IndexVectorCache()
+        self._freshness_tracker = FreshnessTracker()
+
+    def close(self) -> None:
+        """Release background resources owned by this client."""
+
+        self._freshness_tracker.close()
+        self._index_vector_cache.clear()
+
+    def __enter__(self) -> VexorClient:
+        return self
+
+    def __exit__(self, *_exc_info) -> None:
+        self.close()
 
     def set_config_json(
         self,
@@ -385,6 +401,8 @@ class VexorClient:
             data_dir=resolved_data_dir,
             config_dir=resolved_config_dir,
             cache_dir=resolved_cache_dir,
+            index_vector_cache=self._index_vector_cache,
+            freshness_tracker=self._freshness_tracker,
         )
 
     def index(
@@ -420,6 +438,7 @@ class VexorClient:
         resolved_data_dir, resolved_config_dir, resolved_cache_dir = (
             self._resolve_dir_overrides(data_dir, config_dir, cache_dir)
         )
+        self._index_vector_cache.clear()
         return _index_with_settings(
             path=path,
             include_hidden=include_hidden,
@@ -526,6 +545,7 @@ class VexorClient:
         resolved_data_dir, resolved_config_dir, resolved_cache_dir = (
             self._resolve_dir_overrides(data_dir, config_dir, cache_dir)
         )
+        self._index_vector_cache.clear()
         return _clear_index_with_settings(
             path=path,
             include_hidden=include_hidden,
@@ -562,6 +582,7 @@ def config_context(
         yield client
     finally:
         client.set_config_json(None)
+        client.close()
 
 
 def search(
@@ -804,6 +825,8 @@ def _search_with_settings(
     data_dir: Path | str | None,
     config_dir: Path | str | None,
     cache_dir: Path | str | None,
+    index_vector_cache: IndexVectorCache | None = None,
+    freshness_tracker: FreshnessTracker | None = None,
 ) -> SearchResponse:
     with (
         _data_dir_context(data_dir, config_dir=config_dir, cache_dir=cache_dir),
@@ -870,6 +893,8 @@ def _search_with_settings(
             include_content=include_content,
             content_chars_per_result=content_chars_per_result,
             content_chars_total=content_chars_total,
+            index_vector_cache=index_vector_cache,
+            freshness_tracker=freshness_tracker,
         )
         return perform_search(request)
 
