@@ -61,5 +61,8 @@
 - PRs explain motivation and verification, link relevant issues, and include terminal output when
   CLI output changes. Call out compatibility-sensitive config, cache, Python API, provider,
   reranker, or bundled-skill changes.
+- A release may carry a hand-written section in `docs/release-notes/<version>.md`, published above
+  the generated changelog. It is optional, but a heading-only file fails the publish job; see
+  `docs/development.md`.
 - Update the documentation affected by a behavior or workflow change. The bundled skill is the
   easiest copy site to forget.

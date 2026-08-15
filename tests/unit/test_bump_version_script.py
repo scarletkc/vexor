@@ -42,6 +42,98 @@ def test_bump_version_rejects_unknown_options():
         raise AssertionError("expected SystemExit for unknown option")
 
 
+def test_bump_version_parses_note_title():
+    bump = _load_bump_version_module()
+
+    assert bump._parse_args(["bump_version.py", "1.2.3"]) == ("1.2.3", None)
+    assert bump._parse_args(["bump_version.py", "1.2.3", "--note", "New title"]) == (
+        "1.2.3",
+        "New title",
+    )
+    assert bump._parse_args(["bump_version.py", "--note=New title", "v1.2.3"]) == (
+        "1.2.3",
+        "New title",
+    )
+
+
+def test_bump_version_rejects_empty_note_title():
+    bump = _load_bump_version_module()
+
+    for argv in (
+        ["bump_version.py", "1.2.3", "--note"],
+        ["bump_version.py", "1.2.3", "--note", "   "],
+        ["bump_version.py", "1.2.3", "--note="],
+    ):
+        try:
+            bump._parse_args(argv)
+        except SystemExit as exc:
+            assert "--note" in str(exc)
+        else:
+            raise AssertionError(f"expected SystemExit for {argv}")
+
+
+def test_bump_version_rejects_multiline_note_title():
+    bump = _load_bump_version_module()
+
+    try:
+        bump._parse_args(["bump_version.py", "1.2.3", "--note", "first\nsecond"])
+    except SystemExit as exc:
+        assert "single-line" in str(exc)
+    else:
+        raise AssertionError("expected SystemExit for multi-line note title")
+
+
+def _write_minimal_repo(tmp_path: Path) -> None:
+    (tmp_path / "vexor").mkdir(parents=True)
+    (tmp_path / "plugins" / "vexor" / ".claude-plugin").mkdir(parents=True)
+    (tmp_path / "vexor" / "__init__.py").write_text('__version__ = "0.1.0"\n', encoding="utf-8")
+    (tmp_path / "plugins" / "vexor" / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"version": "0.1.0"}, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def test_bump_version_starts_release_note(tmp_path: Path):
+    bump = _load_bump_version_module()
+    _write_minimal_repo(tmp_path)
+
+    bump._run(version="1.2.3", repo_root=tmp_path, note_title="Chunk-aware reranking")
+
+    note = tmp_path / "docs" / "release-notes" / "1.2.3.md"
+    assert note.read_text(encoding="utf-8") == "## Chunk-aware reranking\n\n"
+
+
+def test_bump_version_skips_release_note_by_default(tmp_path: Path):
+    bump = _load_bump_version_module()
+    _write_minimal_repo(tmp_path)
+
+    bump._run(version="1.2.3", repo_root=tmp_path)
+
+    assert not (tmp_path / "docs" / "release-notes").exists()
+
+
+def test_bump_version_refuses_to_overwrite_release_note(tmp_path: Path):
+    bump = _load_bump_version_module()
+    _write_minimal_repo(tmp_path)
+
+    note = tmp_path / "docs" / "release-notes" / "1.2.3.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("## Existing\n\nHand-written body.\n", encoding="utf-8")
+
+    try:
+        bump._run(version="1.2.3", repo_root=tmp_path, note_title="Replacement")
+    except SystemExit as exc:
+        assert "already exists" in str(exc)
+    else:
+        raise AssertionError("expected SystemExit for existing release note")
+
+    assert note.read_text(encoding="utf-8") == "## Existing\n\nHand-written body.\n"
+    # The refusal lands before any manifest is touched, so no half-bumped state.
+    package_init = tmp_path / "vexor" / "__init__.py"
+    plugin_manifest = tmp_path / "plugins" / "vexor" / ".claude-plugin" / "plugin.json"
+    assert package_init.read_text(encoding="utf-8") == '__version__ = "0.1.0"\n'
+    assert json.loads(plugin_manifest.read_text(encoding="utf-8"))["version"] == "0.1.0"
+
+
 def test_bump_version_syncs_mcp_server_manifest(tmp_path: Path):
     bump = _load_bump_version_module()
 

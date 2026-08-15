@@ -6,6 +6,11 @@ Updates the Python package, plugin manifest, and MCP server manifest.
 Usage:
     python scripts/bump_version.py 0.6.4
     python scripts/bump_version.py v0.6.4
+    python scripts/bump_version.py 0.6.4 --note "Reranker now reads chunk text"
+
+--note starts docs/release-notes/<version>.md, an optional hand-written section
+the release workflow publishes above the generated changelog. Fill in the body
+before opening the bump PR; a file with only a heading fails the release.
 """
 
 from __future__ import annotations
@@ -24,22 +29,46 @@ def main(argv: list[str]) -> int:
         print(__doc__.strip())
         return 2
 
-    version = _parse_args(argv)
-    return _run(version=version, repo_root=Path(__file__).resolve().parents[1])
+    version, note_title = _parse_args(argv)
+    return _run(
+        version=version,
+        repo_root=Path(__file__).resolve().parents[1],
+        note_title=note_title,
+    )
 
 
-def _parse_args(argv: list[str]) -> str:
+def _parse_args(argv: list[str]) -> tuple[str, str | None]:
     """Parse CLI args.
 
     Accepted forms:
       bump_version.py 0.1.2
       bump_version.py v0.1.2
+      bump_version.py 0.1.2 --note "Release note title"
+      bump_version.py 0.1.2 --note="Release note title"
     """
     positional: list[str] = []
+    note_title: str | None = None
+    pending_note = False
     for arg in argv[1:]:
-        if arg.startswith("-"):
+        if pending_note:
+            note_title = arg
+            pending_note = False
+            continue
+        if arg == "--note":
+            pending_note = True
+        elif arg.startswith("--note="):
+            note_title = arg[len("--note=") :]
+        elif arg.startswith("-"):
             raise SystemExit(f"Unknown option '{arg}'. Use --help for usage.")
-        positional.append(arg)
+        else:
+            positional.append(arg)
+
+    if pending_note:
+        raise SystemExit("Option '--note' requires a title. Use --help for usage.")
+    if note_title is not None and not note_title.strip():
+        raise SystemExit("Option '--note' requires a non-empty title.")
+    if note_title is not None and len(note_title.strip().splitlines()) > 1:
+        raise SystemExit("Option '--note' requires a single-line title.")
 
     if len(positional) != 1:
         print(__doc__.strip())
@@ -51,13 +80,19 @@ def _parse_args(argv: list[str]) -> str:
         raw = raw[1:]
     if not raw or not _VERSION_PATTERN.fullmatch(raw):
         raise SystemExit(f"Invalid version '{raw_input}'. Expected like 0.6.4")
-    return raw
+    return raw, note_title.strip() if note_title is not None else None
 
 
-def _run(*, version: str, repo_root: Path) -> int:
+def _run(*, version: str, repo_root: Path, note_title: str | None = None) -> int:
     package_init = repo_root / "vexor" / "__init__.py"
     plugin_manifest = repo_root / "plugins" / "vexor" / ".claude-plugin" / "plugin.json"
     mcp_server_manifest = repo_root / "server.json"
+
+    # Refuse before writing anything: a bailout here must not leave the version
+    # half-bumped across the manifests.
+    note_path = _release_note_path(repo_root, version) if note_title is not None else None
+    if note_path is not None and note_path.exists():
+        raise SystemExit(f"{note_path} already exists; edit it instead of re-running --note.")
 
     _set_python_version(package_init, version)
     _set_plugin_version(plugin_manifest, version)
@@ -70,7 +105,17 @@ def _run(*, version: str, repo_root: Path) -> int:
         _set_mcp_server_version(mcp_server_manifest, version)
         print(f"- {mcp_server_manifest}")
 
+    if note_path is not None:
+        note_path.parent.mkdir(parents=True, exist_ok=True)
+        note_path.write_text(f"## {note_title}\n\n", encoding="utf-8")
+        print(f"- {note_path} (write the body before opening the bump PR)")
+
     return 0
+
+
+def _release_note_path(repo_root: Path, version: str) -> Path:
+    """Where the publish workflow looks for this version's hand-written note."""
+    return repo_root / "docs" / "release-notes" / f"{version}.md"
 
 
 def _set_python_version(path: Path, version: str) -> None:

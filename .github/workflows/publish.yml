@@ -284,10 +284,34 @@ jobs:
           set -euo pipefail
 
           CURRENT_TAG="v${VERSION}"
+          NOTE_FILE="docs/release-notes/${VERSION}.md"
+
+          # The hand-written note is optional, but a malformed one is an error:
+          # it has to open with its own level-2 heading so it reads as a section
+          # beside "## Changelog" rather than as untitled prose.
+          if [ -f "${NOTE_FILE}" ]; then
+            first_line="$(head -n 1 "${NOTE_FILE}")"
+            case "${first_line}" in
+              '## '[![:space:]]*) ;;
+              *)
+                echo "${NOTE_FILE} must start with a '## <title>' heading, got: ${first_line}" >&2
+                exit 1
+                ;;
+            esac
+            if [ -z "$(tail -n +2 "${NOTE_FILE}" | tr -d '[:space:]')" ]; then
+              echo "${NOTE_FILE} has a heading but no body; write the note or delete the file." >&2
+              exit 1
+            fi
+          fi
 
           {
             echo "Automated release for Vexor ${CURRENT_TAG}."
             echo
+            if [ -f "${NOTE_FILE}" ]; then
+              # Command substitution strips trailing newlines, so the spacing
+              # around the note stays the same whatever the file ends with.
+              printf '%s\n\n' "$(cat "${NOTE_FILE}")"
+            fi
             echo "## Changelog"
             echo
             if [ -n "${PREV_TAG}" ]; then
