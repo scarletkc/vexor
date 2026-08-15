@@ -10,6 +10,21 @@ never leaving the machine.
 
 ## P0 — Agent-first distribution
 
+- Chunk content in search results (shipped): `vexor_search`, the Python API,
+  and `vexor search --content` / `--format json` return the matching source
+  text, read back from the file by line range at search time. Previously a
+  caller got a path plus a 160-character preview and had to re-read the file,
+  which spent back most of what retrieval saved. Porcelain output is
+  unchanged. Follow-ups this unblocks:
+  - Feed chunk content to the rerankers. `_build_rerank_document` still scores
+    against filename, path, and the truncated preview, so rerank quality is
+    capped by preview length. Changing it shifts existing result ordering, so
+    it needs its own benchmark — and the collection API work below already
+    requires extracting that seam.
+  - The token-cost evaluation below is only worth running after this: with
+    path-only results, agent+Vexor could not show much saving over grep
+    because the follow-up reads dominated.
+
 - Add a filesystem-independent, general-purpose text collection API for
   callers to submit records from databases directly, with operations such
   as `upsert(id, text, metadata)`, `delete(id)`, and

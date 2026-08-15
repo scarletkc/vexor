@@ -91,11 +91,30 @@ Cache control:
 - `temporary_index`: build index in memory (no index cache read/write)
 - `no_cache`: disable all disk caches (index + embedding + query)
 
+Chunk content:
+
+- `include_content`: also return each match's source text (default `False`)
+- `content_chars_per_result`: per-result character cap (default `2000`)
+- `content_chars_total`: per-response character cap (default `8000`)
+
 Returns a `SearchResponse` with:
 
 - `results`: list of `SearchResult` items (`path`, `score`, `preview`, `chunk_index`, `start_line`, `end_line`)
 - `backend`: backend description string
 - `is_stale`, `index_empty`, `reranker`
+- `content_budget`: `ContentBudget(limit, used)` when `include_content=True`, else `None`
+
+With `include_content=True`, each `SearchResult` also carries `content`,
+`content_start_line`, `content_end_line`, `content_truncated`, and
+`content_unavailable`. The text is read from the file at search time using
+the indexed line range, preserving the original indentation.
+
+`content` is `None` whenever `content_unavailable` is set — `no_line_range`
+(modes without line ranges, and PDF/docx/pptx), `stale_line_range` (the file
+changed since indexing), `budget_exhausted`, or `unreadable`. The `preview`
+is still populated in all of these cases and the search still succeeds.
+Check `content_truncated` before assuming a chunk is complete;
+`content_end_line` reports the last line actually returned.
 
 ### index(...)
 

@@ -80,14 +80,14 @@ def test_hybrid_retrieves_lexical_match_outside_dense_candidate_clamp(
     metadata = {"chunks": chunks}
     meta_getter = service._chunk_meta_from_entries(chunks)
 
-    legacy, legacy_label = service._rank_results(
+    legacy, legacy_label, _ = service._rank_results(
         _hybrid_request(tmp_path, "needle", "bm25"),
         paths=paths,
         file_vectors=vectors,
         query_vector=np.array([1.0, 0.0], dtype=np.float32),
         chunk_meta_getter=meta_getter,
     )
-    hybrid, hybrid_label = service._rank_results(
+    hybrid, hybrid_label, _ = service._rank_results(
         _hybrid_request(tmp_path, "needle", "hybrid"),
         paths=paths,
         file_vectors=vectors,
@@ -126,7 +126,7 @@ def test_hybrid_ranks_exact_identifier_above_sub_token_matches(tmp_path: Path) -
             }
         )
 
-    results, reranker = service._rank_results(
+    results, reranker, _ = service._rank_results(
         _hybrid_request(tmp_path, "alpha_beta_gamma", "hybrid"),
         paths=paths,
         file_vectors=vectors,
@@ -149,7 +149,7 @@ def test_hybrid_empty_tokens_fall_back_to_dense(tmp_path: Path) -> None:
             "bm25_doc_len": 1,
         }
     ]
-    results, reranker = service._rank_results(
+    results, reranker, _ = service._rank_results(
         _hybrid_request(tmp_path, "!!!", "hybrid"),
         paths=[tmp_path / "a.txt"],
         file_vectors=np.array([[1.0, 0.0]], dtype=np.float32),
@@ -1199,3 +1199,232 @@ def test_perform_search_raises_on_dimension_mismatch(monkeypatch, tmp_path: Path
 
     with pytest.raises(ValueError, match="Embedding dimension mismatch"):
         perform_search(request)
+
+
+# --- chunk content ----------------------------------------------------------
+
+
+def _content_request(tmp_path: Path, **overrides) -> SearchRequest:
+    params = dict(
+        query="needle",
+        directory=tmp_path,
+        include_hidden=False,
+        respect_gitignore=True,
+        mode="full",
+        recursive=True,
+        top_k=5,
+        model_name="model",
+        batch_size=0,
+        provider="local",
+        base_url=None,
+        api_key=None,
+        local_cuda=False,
+        exclude_patterns=(),
+        extensions=(),
+        auto_index=False,
+        rerank="off",
+        include_content=True,
+    )
+    params.update(overrides)
+    return SearchRequest(**params)
+
+
+def _rank_with_content(request: SearchRequest, paths, chunks):
+    from vexor.services import search_service as service
+
+    vectors = np.array([[1.0, 0.0] for _ in paths], dtype=np.float32)
+    return service._rank_results(
+        request,
+        paths=paths,
+        file_vectors=vectors,
+        query_vector=np.array([1.0, 0.0], dtype=np.float32),
+        chunk_meta_getter=service._chunk_meta_from_entries(chunks),
+    )
+
+
+def test_content_is_read_back_with_original_indentation(tmp_path: Path) -> None:
+    source = tmp_path / "mod.py"
+    source.write_text(
+        "\n\n\ndef verify(token):\n    if not token:\n        raise ValueError\n",
+        encoding="utf-8",
+    )
+    chunks = [
+        {
+            "chunk_index": 0,
+            "preview": "def verify(token): if not token: raise ValueError",
+            "start_line": 4,
+            "end_line": 6,
+        }
+    ]
+
+    results, _, budget = _rank_with_content(_content_request(tmp_path), [source], chunks)
+
+    assert results[0].content == (
+        "def verify(token):\n    if not token:\n        raise ValueError"
+    )
+    assert results[0].content_start_line == 4
+    assert results[0].content_end_line == 6
+    assert results[0].content_unavailable is None
+    assert budget.used == len(results[0].content)
+
+
+def test_content_absent_when_not_requested(tmp_path: Path) -> None:
+    source = tmp_path / "a.txt"
+    source.write_text("alpha beta gamma\n", encoding="utf-8")
+    chunks = [
+        {"chunk_index": 0, "preview": "alpha beta gamma", "start_line": 1, "end_line": 1}
+    ]
+
+    results, _, budget = _rank_with_content(
+        _content_request(tmp_path, include_content=False), [source], chunks
+    )
+
+    assert results[0].content is None
+    assert results[0].content_unavailable is None
+    assert budget is None
+
+
+def test_content_unavailable_without_line_range(tmp_path: Path) -> None:
+    from vexor.services import search_service as service
+
+    source = tmp_path / "doc.pdf"
+    source.write_text("irrelevant", encoding="utf-8")
+    chunks = [{"chunk_index": 0, "preview": "some preview text here"}]
+
+    results, _, _ = _rank_with_content(_content_request(tmp_path), [source], chunks)
+
+    assert results[0].content is None
+    assert results[0].content_unavailable == service.CONTENT_NO_LINE_RANGE
+
+
+def test_content_rejected_when_file_changed_since_indexing(tmp_path: Path) -> None:
+    """A stale line range must degrade to preview, never hand back the wrong lines."""
+    from vexor.services import search_service as service
+
+    source = tmp_path / "moved.py"
+    source.write_text(
+        "def unrelated_helper():\n    return 'completely different text'\n",
+        encoding="utf-8",
+    )
+    chunks = [
+        {
+            "chunk_index": 0,
+            "preview": "def verify_token(token): return decode(token, algorithms=['HS256'])",
+            "start_line": 1,
+            "end_line": 2,
+        }
+    ]
+
+    results, _, _ = _rank_with_content(_content_request(tmp_path), [source], chunks)
+
+    assert results[0].content is None
+    assert results[0].content_unavailable == service.CONTENT_STALE_LINE_RANGE
+    assert results[0].preview is not None
+
+
+def test_content_unavailable_when_file_is_gone(tmp_path: Path) -> None:
+    from vexor.services import search_service as service
+
+    missing = tmp_path / "deleted.txt"
+    chunks = [
+        {
+            "chunk_index": 0,
+            "preview": "text that was indexed before deletion",
+            "start_line": 1,
+            "end_line": 3,
+        }
+    ]
+
+    results, _, _ = _rank_with_content(_content_request(tmp_path), [missing], chunks)
+
+    assert results[0].content is None
+    assert results[0].content_unavailable == service.CONTENT_UNREADABLE
+
+
+def test_content_budget_stops_at_the_limit(tmp_path: Path) -> None:
+    from vexor.services import search_service as service
+
+    paths = []
+    chunks = []
+    body = "unique padding line for budget test\n" * 20
+    for idx in range(4):
+        path = tmp_path / f"file-{idx}.txt"
+        path.write_text(body, encoding="utf-8")
+        paths.append(path)
+        chunks.append(
+            {
+                "chunk_index": 0,
+                "preview": "unique padding line for budget test",
+                "start_line": 1,
+                "end_line": 20,
+            }
+        )
+
+    results, _, budget = _rank_with_content(
+        _content_request(tmp_path, content_chars_total=900), paths, chunks
+    )
+
+    assert budget.limit == 900
+    assert budget.used <= 900
+    assert results[0].content is not None
+    exhausted = [
+        r for r in results if r.content_unavailable == service.CONTENT_BUDGET_EXHAUSTED
+    ]
+    assert exhausted, "later results should report the budget running out"
+
+
+def test_tiny_leftover_budget_is_not_reported_as_stale(tmp_path: Path) -> None:
+    """A sliver of remaining budget must not masquerade as a changed file.
+
+    Reading two characters can never match the stored preview, so without a floor the
+    result would claim the index is stale and invite a pointless rebuild.
+    """
+    from vexor.services import search_service as service
+
+    paths = []
+    chunks = []
+    for idx in range(2):
+        path = tmp_path / f"file-{idx}.txt"
+        path.write_text("alpha beta gamma delta epsilon zeta\n" * 4, encoding="utf-8")
+        paths.append(path)
+        chunks.append(
+            {
+                "chunk_index": 0,
+                "preview": "alpha beta gamma delta epsilon zeta",
+                "start_line": 1,
+                "end_line": 4,
+            }
+        )
+
+    # Each chunk is 143 characters, so the first result is served in full and the
+    # second is left with a sliver.
+    results, _, _ = _rank_with_content(
+        _content_request(tmp_path, content_chars_total=250), paths, chunks
+    )
+
+    assert results[0].content is not None
+    assert results[1].content_unavailable == service.CONTENT_BUDGET_EXHAUSTED
+
+
+def test_truncated_content_reports_the_lines_it_actually_returned(tmp_path: Path) -> None:
+    source = tmp_path / "long.txt"
+    source.write_text(
+        "".join(f"line {idx} padding text\n" for idx in range(40)), encoding="utf-8"
+    )
+    chunks = [
+        {
+            "chunk_index": 0,
+            "preview": "line 0 padding text",
+            "start_line": 1,
+            "end_line": 40,
+        }
+    ]
+
+    results, _, _ = _rank_with_content(
+        _content_request(tmp_path, content_chars_per_result=100), [source], chunks
+    )
+
+    result = results[0]
+    assert result.content_truncated is True
+    assert result.content_end_line < 40
+    assert len(result.content) <= 100

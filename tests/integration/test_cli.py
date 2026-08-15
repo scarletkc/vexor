@@ -11,7 +11,7 @@ from vexor.config import DEFAULT_MODEL
 import vexor.cache as cache
 from vexor.search import SearchResult
 from vexor.services.index_service import IndexResult, IndexStatus
-from vexor.services.search_service import SearchResponse
+from vexor.services.search_service import ContentBudget, SearchResponse
 from vexor.text import Messages
 
 
@@ -429,6 +429,204 @@ def test_search_outputs_porcelain(tmp_path, monkeypatch):
     assert "1\t0.990\t./alpha.txt\t0\t5\t6\talpha\\tbeta\\ncharlie\n" in result.stdout
     assert "Similarity" not in result.stdout
     assert captured["recursive"] is True
+
+
+def test_porcelain_column_contract_is_unchanged(tmp_path, monkeypatch):
+    """Porcelain output is parsed by scripts and agents; its shape is a contract.
+
+    Locks the field count and order so adding result fields (such as chunk content)
+    cannot silently shift the columns that existing parsers depend on.
+    """
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.txt"
+    sample_file.write_text("data")
+
+    def fake_perform_search(request):
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[
+                SearchResult(
+                    path=sample_file,
+                    score=0.5,
+                    preview="preview text",
+                    start_line=5,
+                    end_line=6,
+                    content="def verify():\n    return True",
+                    content_start_line=5,
+                    content_end_line=6,
+                )
+            ],
+            is_stale=False,
+            index_empty=False,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "alpha",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+            "--format",
+            "porcelain",
+        ],
+    )
+
+    assert result.exit_code == 0
+    row = result.stdout.strip().splitlines()[-1]
+    fields = row.split("\t")
+    assert fields == ["1", "0.500", "./alpha.txt", "0", "5", "6", "preview text"]
+    # Content must never leak into the tab-separated stream.
+    assert "def verify" not in result.stdout
+
+
+def test_search_json_format_includes_content(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.py"
+    sample_file.write_text("data")
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["include_content"] = request.include_content
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[
+                SearchResult(
+                    path=sample_file,
+                    score=0.75,
+                    preview="verify token",
+                    start_line=5,
+                    end_line=6,
+                    content="def verify():\n    return True",
+                    content_start_line=5,
+                    content_end_line=6,
+                    content_truncated=True,
+                )
+            ],
+            is_stale=False,
+            index_empty=False,
+            content_budget=ContentBudget(limit=8000, used=29),
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "verify",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["include_content"] is True
+    payload = json.loads(result.stdout)
+    hit = payload["results"][0]
+    assert hit["content"] == "def verify():\n    return True"
+    assert hit["content_truncated"] is True
+    assert hit["content_start_line"] == 5
+    assert payload["content_budget"] == {"limit": 8000, "used": 29}
+
+
+def test_search_content_flag_prints_source_text(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.py"
+    sample_file.write_text("data")
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["include_content"] = request.include_content
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[
+                SearchResult(
+                    path=sample_file,
+                    score=0.75,
+                    preview="verify token",
+                    start_line=5,
+                    end_line=6,
+                    content="def verify():\n    return True",
+                    content_start_line=5,
+                    content_end_line=6,
+                )
+            ],
+            is_stale=False,
+            index_empty=False,
+            content_budget=ContentBudget(limit=8000, used=29),
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "verify",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+            "--content",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["include_content"] is True
+    assert "def verify():" in result.stdout
+
+
+def test_search_reports_missing_content_reason(tmp_path, monkeypatch):
+    runner = CliRunner()
+    sample_file = tmp_path / "alpha.pdf"
+    sample_file.write_text("data")
+
+    def fake_perform_search(request):
+        return SearchResponse(
+            base_path=tmp_path,
+            backend="fake-backend",
+            results=[
+                SearchResult(
+                    path=sample_file,
+                    score=0.75,
+                    preview="some preview",
+                    content_unavailable="no_line_range",
+                )
+            ],
+            is_stale=False,
+            index_empty=False,
+            content_budget=ContentBudget(limit=8000, used=0),
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "verify",
+            "--path",
+            str(tmp_path),
+            "--mode",
+            "name",
+            "--content",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "no_line_range" in result.stdout
 
 
 def test_default_search_invokes_search(tmp_path, monkeypatch):

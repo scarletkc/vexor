@@ -36,6 +36,8 @@
 | `--no-respect-gitignore` | Include files ignored by Git (does not disable `.vexorignore`) |
 | `--format porcelain` | Script-friendly TSV output |
 | `--format porcelain-z` | NUL-delimited output |
+| `--format json` | Full response as JSON, including chunk content |
+| `--content` | Print each match's source text below the results table |
 | `--no-cache` | In-memory only; do not read/write index cache |
 | `--local` | With `index`, create and use `<path>/.vexor/index.db` |
 
@@ -45,6 +47,29 @@ strategies (`off`, `bm25`, `flashrank`, `remote`, `hybrid`).
 
 Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`,
 `start_line`, `end_line`, `preview` (line fields are `-` when unavailable).
+This column set is a compatibility contract and does not carry chunk content —
+use `--format json` when you need the source text.
+
+## Chunk Content
+
+`--content` and `--format json` return each match's source text, not just its
+path and a truncated preview. The text is read from the file at search time
+using the indexed line range, so it always reflects what is on disk now.
+
+A result carries `content_unavailable` instead of `content` when:
+
+| Reason | Meaning |
+|--------|---------|
+| `no_line_range` | The mode records no line range (`name`, `head`, `brief`) or the format has no stable lines (PDF, docx, pptx) |
+| `stale_line_range` | The file changed since indexing, so the stored range no longer matches; re-run `vexor index` |
+| `budget_exhausted` | The response's character budget was spent on higher-ranked results |
+| `unreadable` | The file was deleted, is not readable, or failed to decode |
+
+Content is capped at 2000 characters per result and 8000 characters per
+response, spent on the highest-ranked matches first. When a result is cut
+short, `content_truncated` is `true` and `content_end_line` reports the last
+line actually returned. The `content_budget` object reports the limit and how
+much was used.
 
 ## Project Configuration
 

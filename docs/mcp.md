@@ -120,9 +120,9 @@ being silently ignored.
 ### `vexor_search`
 
 Find files or code from a natural-language description and return ranked
-paths, scores, line ranges, and previews. Missing or stale indexes are built
-automatically when `auto_index` is enabled; otherwise call `vexor_index`
-first.
+paths, scores, line ranges, and the matching source text. Missing or stale
+indexes are built automatically when `auto_index` is enabled; otherwise call
+`vexor_index` first.
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
@@ -130,6 +130,8 @@ first.
 | `path` | string | server default path | Directory to search; absolute, or relative to the server's default path |
 | `top` | integer | 5 | Number of results (1–50; out-of-range values are rejected) |
 | `no_cache` | boolean | false | Use a temporary in-memory index and disable disk caches; slower and may regenerate embeddings |
+| `include_content` | boolean | **true** | Return each match's source text so most results need no follow-up file read |
+| `content_budget` | integer | 8000 | Total characters of source text one response may return (500–40000), spent on the highest-ranked matches first |
 | `mode` | string | `auto` | Index mode (`auto`/`name`/`head`/`brief`/`full`/`code`/`outline`) |
 | `include_hidden` | boolean | false | Include dot-prefixed files and directories such as `.github` |
 | `respect_gitignore` | boolean | true | Honor `.gitignore` rules; set false to scan ignored files |
@@ -155,9 +157,15 @@ Returns JSON text:
       "absolute_path": "C:/projects/demo/src/config.py",
       "start_line": 1,
       "end_line": 20,
-      "preview": "config loader entrypoint"
+      "preview": "config loader entrypoint",
+      "content": "def load_config(path):\n    ...",
+      "content_start_line": 1,
+      "content_end_line": 20,
+      "content_truncated": false,
+      "content_unavailable": null
     }
-  ]
+  ],
+  "content_budget": { "limit": 8000, "used": 174 }
 }
 ```
 
@@ -165,11 +173,33 @@ When the configured rerank strategy is `hybrid`, the `reranker` field is
 `"hybrid"` and each result's `score` is a normalized reciprocal-rank-fusion
 score in `[0, 1]` rather than a cosine similarity.
 
+#### Chunk content
+
+`content` holds the source text for the result's line range, read from the
+file at search time rather than stored in the index, so it always reflects
+what is on disk now. It preserves the original indentation and line breaks.
+
+When content cannot be returned, `content` is `null` and
+`content_unavailable` explains why:
+
+| Reason | Meaning |
+|--------|---------|
+| `no_line_range` | The mode records no line range (`name`, `head`, `brief`) or the format has no stable lines (PDF, docx, pptx) |
+| `stale_line_range` | The file changed since indexing, so the stored range no longer matches; call `vexor_index` to refresh |
+| `budget_exhausted` | `content_budget` was spent on higher-ranked results |
+| `unreadable` | The file was deleted, is not readable, or failed to decode |
+
+The result's `preview` is still present in every one of these cases, and the
+search itself still succeeds. When a result is cut short,
+`content_truncated` is `true` and `content_end_line` reports the last line
+actually returned — always check it before assuming you have the whole chunk.
+
 ### `vexor_index`
 
 Build or refresh the index for a directory. Use it to warm the cache or when
 `auto_index` is disabled. It accepts the same scan arguments as
-`vexor_search`, but not `query`, `top`, or `no_cache`. Its optional `local`
+`vexor_search`, but not `query`, `top`, `no_cache`, `include_content`, or
+`content_budget`. Its optional `local`
 boolean argument creates `<path>/.vexor` and stores the project's index there.
 The tool returns `{path, mode, status, files_indexed}` where `status` is `stored`,
 `up_to_date`, or `empty`.

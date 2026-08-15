@@ -59,6 +59,16 @@ class FullChunk:
     end_line: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class ChunkContent:
+    """A chunk's source text read back out of the file it was indexed from."""
+
+    text: str
+    start_line: int
+    end_line: int
+    truncated: bool
+
+
 _registry: Dict[str, HeadExtractor] = {}
 
 TEXT_EXTENSIONS = (
@@ -236,6 +246,62 @@ def extract_full_chunks_with_lines(
             break
         start += stride
     return chunks
+
+
+def read_chunk_content(
+    path: Path,
+    start_line: int,
+    end_line: int,
+    *,
+    max_chars: int,
+) -> ChunkContent | None:
+    """Read lines ``start_line``..``end_line`` (1-based, inclusive) back out of *path*.
+
+    Unlike the indexing extractors this preserves the original indentation and line
+    breaks: the text is meant to be read by a caller, not embedded. Returns ``None``
+    when the file cannot be read or the range does not resolve to any line, so callers
+    can fall back to the stored preview instead of surfacing an error.
+    """
+
+    if start_line < 1 or end_line < start_line or max_chars <= 0:
+        return None
+    text = _read_text_full(path, FULL_CHAR_LIMIT)
+    if text is None:
+        return None
+    lines = text.replace("\r\n", "\n").split("\n")
+    selected = lines[start_line - 1 : end_line]
+    if not selected:
+        return None
+
+    kept: list[str] = []
+    used = 0
+    truncated = False
+    last_line = start_line
+    for offset, line in enumerate(selected):
+        # Every line after the first also costs the newline that joins it.
+        projected = used + len(line) + (1 if kept else 0)
+        if kept and projected > max_chars:
+            truncated = True
+            break
+        kept.append(line)
+        used = projected
+        last_line = start_line + offset
+
+    body = "\n".join(kept)
+    if len(body) > max_chars:
+        # A single line longer than the whole budget still has to be cut somewhere.
+        body = body[:max_chars]
+        truncated = True
+    if not body.strip():
+        return None
+    if last_line < end_line:
+        truncated = True
+    return ChunkContent(
+        text=body,
+        start_line=start_line,
+        end_line=last_line,
+        truncated=truncated,
+    )
 
 
 def extract_code_chunks(

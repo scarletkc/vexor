@@ -29,6 +29,14 @@ class SearchResult:
     chunk_index: int = 0
     start_line: int | None = None
     end_line: int | None = None
+    # Chunk source text, read back from the file at search time rather than stored in
+    # the index. ``content_unavailable`` carries the reason whenever ``content`` is
+    # ``None`` despite the caller asking for it.
+    content: str | None = None
+    content_start_line: int | None = None
+    content_end_line: int | None = None
+    content_truncated: bool = False
+    content_unavailable: str | None = None
 
 
 class EmbeddingBackend(Protocol):
