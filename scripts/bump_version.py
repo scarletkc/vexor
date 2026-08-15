@@ -67,6 +67,8 @@ def _parse_args(argv: list[str]) -> tuple[str, str | None]:
         raise SystemExit("Option '--note' requires a title. Use --help for usage.")
     if note_title is not None and not note_title.strip():
         raise SystemExit("Option '--note' requires a non-empty title.")
+    if note_title is not None and len(note_title.strip().splitlines()) > 1:
+        raise SystemExit("Option '--note' requires a single-line title.")
 
     if len(positional) != 1:
         print(__doc__.strip())
@@ -86,6 +88,12 @@ def _run(*, version: str, repo_root: Path, note_title: str | None = None) -> int
     plugin_manifest = repo_root / "plugins" / "vexor" / ".claude-plugin" / "plugin.json"
     mcp_server_manifest = repo_root / "server.json"
 
+    # Refuse before writing anything: a bailout here must not leave the version
+    # half-bumped across the manifests.
+    note_path = _release_note_path(repo_root, version) if note_title is not None else None
+    if note_path is not None and note_path.exists():
+        raise SystemExit(f"{note_path} already exists; edit it instead of re-running --note.")
+
     _set_python_version(package_init, version)
     _set_plugin_version(plugin_manifest, version)
 
@@ -97,21 +105,17 @@ def _run(*, version: str, repo_root: Path, note_title: str | None = None) -> int
         _set_mcp_server_version(mcp_server_manifest, version)
         print(f"- {mcp_server_manifest}")
 
-    if note_title is not None:
-        note_path = _start_release_note(repo_root, version=version, title=note_title)
+    if note_path is not None:
+        note_path.parent.mkdir(parents=True, exist_ok=True)
+        note_path.write_text(f"## {note_title}\n\n", encoding="utf-8")
         print(f"- {note_path} (write the body before opening the bump PR)")
 
     return 0
 
 
-def _start_release_note(repo_root: Path, *, version: str, title: str) -> Path:
-    """Create the hand-written release note stub the publish workflow reads."""
-    path = repo_root / "docs" / "release-notes" / f"{version}.md"
-    if path.exists():
-        raise SystemExit(f"{path} already exists; edit it instead of re-running --note.")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"## {title}\n\n", encoding="utf-8")
-    return path
+def _release_note_path(repo_root: Path, version: str) -> Path:
+    """Where the publish workflow looks for this version's hand-written note."""
+    return repo_root / "docs" / "release-notes" / f"{version}.md"
 
 
 def _set_python_version(path: Path, version: str) -> None:

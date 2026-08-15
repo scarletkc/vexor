@@ -72,6 +72,17 @@ def test_bump_version_rejects_empty_note_title():
             raise AssertionError(f"expected SystemExit for {argv}")
 
 
+def test_bump_version_rejects_multiline_note_title():
+    bump = _load_bump_version_module()
+
+    try:
+        bump._parse_args(["bump_version.py", "1.2.3", "--note", "first\nsecond"])
+    except SystemExit as exc:
+        assert "single-line" in str(exc)
+    else:
+        raise AssertionError("expected SystemExit for multi-line note title")
+
+
 def _write_minimal_repo(tmp_path: Path) -> None:
     (tmp_path / "vexor").mkdir(parents=True)
     (tmp_path / "plugins" / "vexor" / ".claude-plugin").mkdir(parents=True)
@@ -116,6 +127,11 @@ def test_bump_version_refuses_to_overwrite_release_note(tmp_path: Path):
         raise AssertionError("expected SystemExit for existing release note")
 
     assert note.read_text(encoding="utf-8") == "## Existing\n\nHand-written body.\n"
+    # The refusal lands before any manifest is touched, so no half-bumped state.
+    package_init = tmp_path / "vexor" / "__init__.py"
+    plugin_manifest = tmp_path / "plugins" / "vexor" / ".claude-plugin" / "plugin.json"
+    assert package_init.read_text(encoding="utf-8") == '__version__ = "0.1.0"\n'
+    assert json.loads(plugin_manifest.read_text(encoding="utf-8"))["version"] == "0.1.0"
 
 
 def test_bump_version_syncs_mcp_server_manifest(tmp_path: Path):
