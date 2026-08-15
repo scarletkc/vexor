@@ -160,3 +160,6 @@ models/
 test_data/
 temp/
 tmp/
+
+# claude
+.claude
