@@ -17,7 +17,8 @@ class Messages:
     HELP_SEARCH_PATH = "Root directory whose search will be performed."
     HELP_SEARCH_TOP = "Number of results to display."
     HELP_SEARCH_FORMAT = (
-        "Output format (rich=table, porcelain=tab-separated for scripts, porcelain-z=NUL-delimited)."
+        "Output format (rich=table, porcelain=tab-separated for scripts, "
+        "porcelain-z=NUL-delimited, json=full response including chunk content)."
     )
     HELP_NO_CACHE = "Disable all disk caches (index + embedding/query)."
     HELP_INCLUDE_HIDDEN = "Use the index built with hidden files included."
@@ -81,7 +82,8 @@ class Messages:
     MCP_TOOL_FAILED = "{tool} failed: {reason}"
     MCP_TOOL_SEARCH_DESCRIPTION = (
         "Find files or code from a natural-language description. Returns "
-        "ranked matches with paths, relevance scores, line ranges, and previews."
+        "ranked matches with paths, relevance scores, line ranges, and the "
+        "matching source text, so most results need no follow-up file read."
     )
     MCP_TOOL_INDEX_DESCRIPTION = (
         "Build or refresh the semantic index for a directory. Use it to warm "
@@ -95,6 +97,22 @@ class Messages:
     MCP_ARG_NO_CACHE = (
         "Build a temporary in-memory index and disable all disk caches for "
         "this search. Slower and may regenerate embeddings."
+    )
+    MCP_ARG_INCLUDE_CONTENT = (
+        "Return each match's source text alongside its path. Text is read "
+        "from the file at search time. A result carries "
+        "content_unavailable instead when the mode records no line range, "
+        "the file changed since indexing, or the budget ran out."
+    )
+    MCP_ARG_CONTENT_BUDGET = (
+        "Total characters of source text one response may return, spent on "
+        "the highest-ranked matches first."
+    )
+    CONTENT_HEADER = "Lines {start}-{end}"
+    CONTENT_TRUNCATED = "(truncated)"
+    CONTENT_UNAVAILABLE = "No content: {reason}"
+    HELP_SEARCH_CONTENT = (
+        "Show each match's source text below the results table."
     )
     MCP_ARG_PATH = (
         "Directory to operate on. Absolute, or relative to the server's "

@@ -563,3 +563,75 @@ def test_index_tool_rejects_non_boolean_local(tmp_path):
     assert response["error"]["code"] == JSONRPC_INVALID_PARAMS
     assert "'local' must be a boolean" in response["error"]["message"]
     assert client.index_calls == []
+
+
+def test_default_content_budget_matches_the_service(tmp_path):
+    """The schema default is duplicated to keep numpy off the MCP startup path."""
+    from vexor.services import mcp_service
+    from vexor.services.search_service import DEFAULT_CONTENT_CHARS_TOTAL
+
+    assert mcp_service.DEFAULT_CONTENT_BUDGET == DEFAULT_CONTENT_CHARS_TOTAL
+
+
+def test_advertised_search_arguments_match_the_validator(tmp_path):
+    """Every argument in inputSchema must survive validation, and vice versa."""
+    from vexor.services.mcp_service import _TOOL_ARGUMENTS
+
+    definitions = {tool["name"]: tool for tool in build_tool_definitions(tmp_path)}
+    advertised = set(definitions[SEARCH_TOOL]["inputSchema"]["properties"])
+
+    assert advertised == _TOOL_ARGUMENTS[SEARCH_TOOL]
+
+
+def test_search_tool_requests_content_by_default(tmp_path):
+    server, client = make_server(tmp_path)
+
+    server.handle_message(tool_call(SEARCH_TOOL, {"query": "config loader"}))
+
+    assert client.search_calls[0]["include_content"] is True
+    assert client.search_calls[0]["content_chars_total"] == 8000
+
+
+def test_search_tool_honors_explicit_content_arguments(tmp_path):
+    server, client = make_server(tmp_path)
+
+    server.handle_message(
+        tool_call(
+            SEARCH_TOOL,
+            {"query": "q", "include_content": False, "content_budget": 1500},
+        )
+    )
+
+    assert client.search_calls[0]["include_content"] is False
+    assert client.search_calls[0]["content_chars_total"] == 1500
+
+
+@pytest.mark.parametrize("budget", [0, 100, 999_999, "8000", True])
+def test_search_tool_rejects_out_of_range_content_budget(tmp_path, budget):
+    server, client = make_server(tmp_path)
+
+    response = server.handle_message(
+        tool_call(SEARCH_TOOL, {"query": "q", "content_budget": budget})
+    )
+
+    assert response["error"]["code"] == JSONRPC_INVALID_PARAMS
+    assert "'content_budget' must be an integer" in response["error"]["message"]
+    assert client.search_calls == []
+
+
+def test_search_result_carries_content_fields(tmp_path):
+    server, _ = make_server(tmp_path)
+
+    response = server.handle_message(tool_call(SEARCH_TOOL, {"query": "q"}))
+    payload = response["result"]["structuredContent"]
+
+    assert "content_budget" in payload
+    result = payload["results"][0]
+    for field in (
+        "content",
+        "content_start_line",
+        "content_end_line",
+        "content_truncated",
+        "content_unavailable",
+    ):
+        assert field in result

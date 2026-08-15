@@ -29,6 +29,30 @@ from .cache_service import is_cache_current
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..search import SearchResult
 
+# Chunk text is returned to callers verbatim, so it has to be capped or a single
+# search could bury an agent's context window. Counted in characters rather than
+# tokens on purpose: a tokenizer dependency would not earn its weight here.
+DEFAULT_CONTENT_CHARS_PER_RESULT = 2000
+DEFAULT_CONTENT_CHARS_TOTAL = 8000
+
+# Below this much remaining budget a read would return a sliver too small to be worth
+# anything — and too small to survive the preview check, which would then misreport the
+# result as stale rather than as out of budget.
+MIN_USEFUL_CONTENT_CHARS = 200
+
+# How much of a stored preview is compared against re-read text, and the shortest
+# probe worth comparing at all. Both are heuristics: the check exists to catch text
+# read from the wrong place, and it errs toward accepting, since a false negative
+# costs a preview fallback while a false positive hands back the wrong lines.
+PREVIEW_PROBE_CHARS = 40
+PREVIEW_PROBE_MIN_CHARS = 12
+
+# Reasons a result carries no content despite the caller asking for it.
+CONTENT_NO_LINE_RANGE = "no_line_range"
+CONTENT_STALE_LINE_RANGE = "stale_line_range"
+CONTENT_BUDGET_EXHAUSTED = "budget_exhausted"
+CONTENT_UNREADABLE = "unreadable"
+
 
 @dataclass(slots=True)
 class SearchRequest:
@@ -57,6 +81,17 @@ class SearchRequest:
     flashrank_model: str | None = None
     remote_rerank: RemoteRerankConfig | None = None
     embedding_dimensions: int | None = None
+    include_content: bool = False
+    content_chars_per_result: int = DEFAULT_CONTENT_CHARS_PER_RESULT
+    content_chars_total: int = DEFAULT_CONTENT_CHARS_TOTAL
+
+
+@dataclass(slots=True)
+class ContentBudget:
+    """How much chunk text a single response was allowed to carry, and how much it used."""
+
+    limit: int
+    used: int
 
 
 @dataclass(slots=True)
@@ -67,6 +102,7 @@ class SearchResponse:
     is_stale: bool
     index_empty: bool
     reranker: str | None = None
+    content_budget: ContentBudget | None = None
 
 
 _TOKEN_RE = bm25._TOKEN_RE
@@ -152,6 +188,81 @@ def _hybrid_scorer_from_entries(
 
     score.has_data = True
     return score
+
+
+def _preview_probe(preview: str | None) -> str:
+    """Return the part of a stored preview that should also appear in the chunk text.
+
+    ``code`` and ``outline`` previews are prefixed with a symbol path or heading
+    breadcrumb (``display :: snippet``); only the trailing snippet came from the file.
+    ``_trim_preview`` may also have appended an ellipsis.
+    """
+
+    if not preview:
+        return ""
+    return preview.rsplit(" :: ", 1)[-1].rstrip("…").strip()
+
+
+def _content_matches_preview(content: str, preview: str | None) -> bool:
+    """Check that re-read text still looks like what was indexed at that line range.
+
+    Guards two cases that both produce plausible-looking but wrong text: indexes built
+    before the full-mode line offset fix, and files edited since they were indexed.
+    Deliberately lenient — a false negative only costs the caller a preview fallback,
+    while a false positive hands an agent code from the wrong part of the file.
+    """
+
+    probe = _preview_probe(preview)
+    if len(probe) < PREVIEW_PROBE_MIN_CHARS:
+        # Too short to identify a location; nothing useful to verify against.
+        return True
+    from ..modes import normalize_preview_chunk
+
+    normalized = normalize_preview_chunk(content) or ""
+    return probe[:PREVIEW_PROBE_CHARS] in normalized
+
+
+def _attach_chunk_content(
+    request: SearchRequest, results: Sequence[SearchResult]
+) -> ContentBudget | None:
+    """Fill in ``content`` for each result, in rank order, until the budget runs out."""
+
+    if not request.include_content:
+        return None
+    from .content_extract_service import read_chunk_content  # local import
+
+    per_result = max(int(request.content_chars_per_result), 0)
+    total = max(int(request.content_chars_total), 0)
+    used = 0
+    for result in results:
+        if result.start_line is None or result.end_line is None:
+            result.content_unavailable = CONTENT_NO_LINE_RANGE
+            continue
+        remaining = total - used
+        if remaining < min(MIN_USEFUL_CONTENT_CHARS, per_result):
+            result.content_unavailable = CONTENT_BUDGET_EXHAUSTED
+            continue
+        try:
+            chunk = read_chunk_content(
+                result.path,
+                result.start_line,
+                result.end_line,
+                max_chars=min(per_result, remaining),
+            )
+        except OSError:
+            chunk = None
+        if chunk is None:
+            result.content_unavailable = CONTENT_UNREADABLE
+            continue
+        if not _content_matches_preview(chunk.text, result.preview):
+            result.content_unavailable = CONTENT_STALE_LINE_RANGE
+            continue
+        result.content = chunk.text
+        result.content_start_line = chunk.start_line
+        result.content_end_line = chunk.end_line
+        result.content_truncated = chunk.truncated
+        used += len(chunk.text)
+    return ContentBudget(limit=total, used=used)
 
 
 def _build_rerank_document(result: SearchResult) -> str:
@@ -558,8 +669,12 @@ def _rank_results(
     query_vector: np.ndarray,
     chunk_meta_getter,
     lexical_scorer: Callable[[Sequence[str]], dict[int, float]] | None = None,
-) -> tuple[list, str | None]:
-    """Score the index against the query, then rank and optionally rerank."""
+) -> tuple[list, str | None, ContentBudget | None]:
+    """Score the index against the query, then rank and optionally rerank.
+
+    Chunk content is attached last, after reranking has settled the final order, so the
+    shared budget is spent on the results the caller actually sees first.
+    """
     from ..search import SearchResult  # local import
 
     reranker = None
@@ -614,7 +729,7 @@ def _rank_results(
                             end_line=int(end_line) if end_line is not None else None,
                         )
                     )
-                return scored, "hybrid"
+                return scored, "hybrid", _attach_chunk_content(request, scored)
     top_indices = _top_indices(similarities, candidate_count)
     chunk_meta_for = chunk_meta_getter(top_indices)
     scored: list[SearchResult] = []
@@ -644,7 +759,8 @@ def _rank_results(
         else:
             scored = _apply_remote_rerank(request.query, scored, request.remote_rerank)
             reranker = "remote"
-    return scored[: request.top_k], reranker
+    final = scored[: request.top_k]
+    return final, reranker, _attach_chunk_content(request, final)
 
 
 @dataclass(slots=True)
@@ -821,7 +937,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         state.file_vectors,
         index_id=state.metadata.get("index_id"),
     )
-    results, reranker = _rank_results(
+    results, reranker, content_budget = _rank_results(
         request,
         paths=state.paths,
         file_vectors=state.file_vectors,
@@ -842,6 +958,7 @@ def perform_search(request: SearchRequest) -> SearchResponse:
         is_stale=state.stale,
         index_empty=False,
         reranker=reranker,
+        content_budget=content_budget,
     )
 
 
@@ -860,7 +977,7 @@ def search_from_vectors(
 
     searcher = _build_searcher(request)
     query_vector = _resolve_query_vector(request, searcher, file_vectors)
-    results, reranker = _rank_results(
+    results, reranker, content_budget = _rank_results(
         request,
         paths=paths,
         file_vectors=file_vectors,
@@ -879,6 +996,7 @@ def search_from_vectors(
         is_stale=is_stale,
         index_empty=False,
         reranker=reranker,
+        content_budget=content_budget,
     )
 
 

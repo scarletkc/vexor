@@ -179,6 +179,7 @@ class SearchOutputFormat(str, Enum):
     rich = "rich"
     porcelain = "porcelain"
     porcelain_z = "porcelain-z"
+    json = "json"
 
 
 
@@ -430,6 +431,11 @@ def search(
         "--no-cache",
         help=Messages.HELP_NO_CACHE,
     ),
+    show_content: bool = typer.Option(
+        False,
+        "--content",
+        help=Messages.HELP_SEARCH_CONTENT,
+    ),
 ) -> None:
     """Run the semantic search."""
     directory = resolve_directory(path)
@@ -490,6 +496,7 @@ def search(
         flashrank_model=flashrank_model,
         remote_rerank=remote_rerank,
         embedding_dimensions=config.embedding_dimensions,
+        include_content=show_content or output_format == SearchOutputFormat.json,
     )
     if output_format == SearchOutputFormat.rich:
         if no_cache:
@@ -558,7 +565,16 @@ def search(
     if output_format == SearchOutputFormat.porcelain_z:
         _render_results_porcelain_z(response.results, response.base_path)
         return
-    _render_results(response.results, response.base_path, response.backend, response.reranker)
+    if output_format == SearchOutputFormat.json:
+        _render_results_json(response, response.base_path)
+        return
+    _render_results(
+        response.results,
+        response.base_path,
+        response.backend,
+        response.reranker,
+        show_content=show_content,
+    )
 
 
 @app.command()
@@ -1959,11 +1975,73 @@ def feedback() -> None:
         raise typer.Exit(code=1) from exc
 
 
+def _render_results_json(response, base: Path) -> None:
+    """Emit the full response, including chunk content, as one JSON object."""
+    payload = {
+        "path": str(base),
+        "backend": response.backend,
+        "reranker": response.reranker,
+        "stale": response.is_stale,
+        "index_empty": response.index_empty,
+        "results": [
+            {
+                "rank": idx,
+                "score": round(float(result.score), 4),
+                "path": format_path(result.path, base),
+                "absolute_path": str(result.path),
+                "chunk_index": result.chunk_index,
+                "start_line": result.start_line,
+                "end_line": result.end_line,
+                "preview": result.preview,
+                "content": result.content,
+                "content_start_line": result.content_start_line,
+                "content_end_line": result.content_end_line,
+                "content_truncated": result.content_truncated,
+                "content_unavailable": result.content_unavailable,
+            }
+            for idx, result in enumerate(response.results, start=1)
+        ],
+        "content_budget": (
+            {
+                "limit": response.content_budget.limit,
+                "used": response.content_budget.used,
+            }
+            if response.content_budget is not None
+            else None
+        ),
+    }
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def _render_result_content(result: "SearchResult") -> None:
+    """Print one result's source text under its table row."""
+    if result.content is None:
+        if result.content_unavailable:
+            console.print(
+                _styled(
+                    Messages.CONTENT_UNAVAILABLE.format(
+                        reason=result.content_unavailable
+                    ),
+                    Styles.INFO,
+                )
+            )
+        return
+    header = Messages.CONTENT_HEADER.format(
+        start=result.content_start_line,
+        end=result.content_end_line,
+    )
+    if result.content_truncated:
+        header = f"{header} {Messages.CONTENT_TRUNCATED}"
+    console.print(_styled(header, Styles.INFO))
+    console.print(result.content, markup=False, highlight=False)
+
+
 def _render_results(
     results: Sequence["SearchResult"],
     base: Path,
     backend: str | None,
     reranker: str | None,
+    show_content: bool = False,
 ) -> None:
     console.print(_styled(Messages.TABLE_TITLE, Styles.TITLE))
     if backend:
@@ -1986,6 +2064,16 @@ def _render_results(
             _format_preview(result.preview),
         )
     console.print(table)
+    if not show_content:
+        return
+    # Content goes below the table rather than inside a cell: chunk text is multi-line
+    # and would destroy the column layout.
+    for idx, result in enumerate(results, start=1):
+        console.print()
+        console.print(
+            _styled(f"[{idx}] {format_path(result.path, base)}", Styles.TABLE_HEADER)
+        )
+        _render_result_content(result)
 
 
 def _escape_porcelain_field(value: str) -> str:

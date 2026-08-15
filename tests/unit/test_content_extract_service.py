@@ -12,8 +12,121 @@ from vexor.services.content_extract_service import (
     extract_full_chunks,
     extract_full_chunks_with_lines,
     extract_head,
+    read_chunk_content,
     HEAD_CHAR_LIMIT,
 )
+
+
+def test_read_chunk_content_preserves_indentation(tmp_path):
+    source = tmp_path / "mod.py"
+    source.write_text(
+        "import os\n\n\ndef verify(token):\n    if not token:\n        raise ValueError\n",
+        encoding="utf-8",
+    )
+
+    chunk = read_chunk_content(source, 4, 6, max_chars=1000)
+
+    assert chunk.text == (
+        "def verify(token):\n    if not token:\n        raise ValueError"
+    )
+    assert (chunk.start_line, chunk.end_line) == (4, 6)
+    assert chunk.truncated is False
+
+
+def test_read_chunk_content_truncates_on_line_boundary(tmp_path):
+    source = tmp_path / "long.txt"
+    source.write_text("".join(f"line-{idx}\n" for idx in range(30)), encoding="utf-8")
+
+    chunk = read_chunk_content(source, 1, 30, max_chars=25)
+
+    assert chunk.truncated is True
+    assert chunk.end_line < 30
+    # Cutting on a line boundary means no partial trailing line.
+    assert not chunk.text.endswith("line-")
+    assert len(chunk.text) <= 25
+
+
+def test_read_chunk_content_handles_single_oversized_line(tmp_path):
+    source = tmp_path / "one.txt"
+    source.write_text("x" * 500 + "\n", encoding="utf-8")
+
+    chunk = read_chunk_content(source, 1, 1, max_chars=50)
+
+    assert len(chunk.text) == 50
+    assert chunk.truncated is True
+
+
+def test_read_chunk_content_stops_reading_at_the_requested_lines(tmp_path):
+    """Reading a small chunk must not pull the whole file into memory."""
+    source = tmp_path / "big.txt"
+    # ~2 MB, with the wanted lines right at the top.
+    source.write_text("".join(f"line-{idx} {'x' * 200}\n" for idx in range(10_000)), encoding="utf-8")
+
+    read_sizes = []
+    real_open = Path.open
+
+    def counting_open(self, *args, **kwargs):
+        handle = real_open(self, *args, **kwargs)
+        if "b" not in (args[0] if args else kwargs.get("mode", "r")):
+            return handle
+        real_read = handle.read
+
+        def tracked_read(size=-1):
+            data = real_read(size)
+            read_sizes.append(len(data))
+            return data
+
+        handle.read = tracked_read
+        return handle
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Path, "open", counting_open)
+        chunk = read_chunk_content(source, 1, 3, max_chars=2000)
+
+    assert chunk is not None
+    assert chunk.text.startswith("line-0 ")
+    total_read = sum(read_sizes)
+    assert total_read < 200_000, f"read {total_read} bytes from a ~2MB file for 3 lines"
+
+
+def test_read_chunk_content_falls_back_for_non_utf8(tmp_path):
+    source = tmp_path / "latin.txt"
+    source.write_bytes("alpha\ncaf\xe9 beta\ngamma\n".encode("latin-1"))
+
+    chunk = read_chunk_content(source, 1, 3, max_chars=1000)
+
+    # charset detection may or may not recover this; it must never raise.
+    assert chunk is None or "alpha" in chunk.text
+
+
+def test_chunk_reader_and_indexers_share_the_same_bound():
+    """The reader must reach every line the indexers could have chunked.
+
+    If indexing is allowed to run past what reading covers, chunks near the end of a
+    large file start reporting as unreadable instead of returning their text.
+    """
+    import inspect
+
+    source = inspect.getsource(ces._read_text_through_line)
+    assert "FULL_CHAR_LIMIT" in source
+    assert inspect.signature(ces.extract_full_chunks_with_lines).parameters[
+        "char_limit"
+    ].default == ces.FULL_CHAR_LIMIT
+    assert inspect.signature(ces.extract_code_chunks).parameters[
+        "char_limit"
+    ].default == ces.FULL_CHAR_LIMIT
+
+
+def test_read_chunk_content_returns_none_for_bad_input(tmp_path):
+    source = tmp_path / "a.txt"
+    source.write_text("alpha\nbeta\n", encoding="utf-8")
+
+    assert read_chunk_content(tmp_path / "missing.txt", 1, 2, max_chars=100) is None
+    assert read_chunk_content(source, 0, 2, max_chars=100) is None
+    assert read_chunk_content(source, 3, 1, max_chars=100) is None
+    assert read_chunk_content(source, 1, 2, max_chars=0) is None
+    # A range past the end of the file resolves to nothing.
+    assert read_chunk_content(source, 50, 60, max_chars=100) is None
 
 
 def test_extract_head_from_text(tmp_path):

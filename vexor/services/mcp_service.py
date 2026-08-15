@@ -34,6 +34,11 @@ JSONRPC_INTERNAL_ERROR = -32603
 MAX_TOP = 50
 DEFAULT_TOP = 5
 
+# Mirrors search_service.DEFAULT_CONTENT_CHARS_TOTAL. Duplicated rather than imported so
+# building the tool schema does not pull numpy into MCP server startup; the consistency
+# test in tests/unit/test_mcp_service.py keeps the two from drifting.
+DEFAULT_CONTENT_BUDGET = 8000
+
 SEARCH_TOOL = "vexor_search"
 INDEX_TOOL = "vexor_index"
 
@@ -49,9 +54,13 @@ _COMMON_TOOL_ARGUMENTS = frozenset(
     }
 )
 _TOOL_ARGUMENTS = {
-    SEARCH_TOOL: _COMMON_TOOL_ARGUMENTS | {"query", "top", "no_cache"},
+    SEARCH_TOOL: _COMMON_TOOL_ARGUMENTS
+    | {"query", "top", "no_cache", "include_content", "content_budget"},
     INDEX_TOOL: _COMMON_TOOL_ARGUMENTS | {"local"},
 }
+
+MIN_CONTENT_BUDGET = 500
+MAX_CONTENT_BUDGET = 40_000
 
 
 class InvalidToolArguments(ValueError):
@@ -106,6 +115,25 @@ def _top_argument(value: Any) -> int:
         raise InvalidToolArguments(
             Messages.MCP_INVALID_ARGUMENTS.format(
                 reason=f"'top' must be an integer between 1 and {MAX_TOP}"
+            )
+        )
+    return value
+
+
+def _content_budget_argument(value: Any) -> int:
+    if value is None:
+        return DEFAULT_CONTENT_BUDGET
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not MIN_CONTENT_BUDGET <= value <= MAX_CONTENT_BUDGET
+    ):
+        raise InvalidToolArguments(
+            Messages.MCP_INVALID_ARGUMENTS.format(
+                reason=(
+                    "'content_budget' must be an integer between "
+                    f"{MIN_CONTENT_BUDGET} and {MAX_CONTENT_BUDGET}"
+                )
             )
         )
     return value
@@ -174,6 +202,11 @@ _RESULT_ITEM_SCHEMA: dict[str, Any] = {
         "start_line": {"type": ["integer", "null"]},
         "end_line": {"type": ["integer", "null"]},
         "preview": {"type": ["string", "null"]},
+        "content": {"type": ["string", "null"]},
+        "content_start_line": {"type": ["integer", "null"]},
+        "content_end_line": {"type": ["integer", "null"]},
+        "content_truncated": {"type": "boolean"},
+        "content_unavailable": {"type": ["string", "null"]},
     },
     "required": ["rank", "score", "path", "absolute_path"],
 }
@@ -188,6 +221,14 @@ SEARCH_OUTPUT_SCHEMA: dict[str, Any] = {
         "stale": {"type": "boolean"},
         "index_empty": {"type": "boolean"},
         "results": {"type": "array", "items": _RESULT_ITEM_SCHEMA},
+        "content_budget": {
+            "type": ["object", "null"],
+            "properties": {
+                "limit": {"type": "integer"},
+                "used": {"type": "integer"},
+            },
+            "required": ["limit", "used"],
+        },
     },
     "required": [
         "query",
@@ -232,6 +273,18 @@ def build_tool_definitions(default_path: Path) -> list[dict[str, Any]]:
             "type": "boolean",
             "default": False,
             "description": Messages.MCP_ARG_NO_CACHE,
+        },
+        "include_content": {
+            "type": "boolean",
+            "default": True,
+            "description": Messages.MCP_ARG_INCLUDE_CONTENT,
+        },
+        "content_budget": {
+            "type": "integer",
+            "minimum": MIN_CONTENT_BUDGET,
+            "maximum": MAX_CONTENT_BUDGET,
+            "default": DEFAULT_CONTENT_BUDGET,
+            "description": Messages.MCP_ARG_CONTENT_BUDGET,
         },
     }
     search_properties.update(scan_properties)
@@ -464,6 +517,12 @@ class VexorMcpServer:
             )
         top = _top_argument(arguments.get("top"))
         no_cache = _bool_argument(arguments.get("no_cache"), "no_cache")
+        # Defaults to on: the consumer here is an agent, and returning only a path plus a
+        # truncated preview forces it to spend another read on every hit.
+        include_content = _bool_argument(
+            arguments.get("include_content"), "include_content", default=True
+        )
+        content_budget = _content_budget_argument(arguments.get("content_budget"))
         scan = self._resolve_scan_arguments(arguments)
         try:
             directory = resolve_directory(scan["path"])
@@ -478,6 +537,8 @@ class VexorMcpServer:
                 extensions=scan["extensions"],
                 exclude_patterns=scan["exclude_patterns"],
                 no_cache=no_cache,
+                include_content=include_content,
+                content_chars_total=content_budget,
             )
         except Exception as exc:
             return _tool_error(SEARCH_TOOL, str(exc))
@@ -498,9 +559,22 @@ class VexorMcpServer:
                         "start_line": result.start_line,
                         "end_line": result.end_line,
                         "preview": result.preview,
+                        "content": result.content,
+                        "content_start_line": result.content_start_line,
+                        "content_end_line": result.content_end_line,
+                        "content_truncated": result.content_truncated,
+                        "content_unavailable": result.content_unavailable,
                     }
                     for rank, result in enumerate(response.results, start=1)
                 ],
+                "content_budget": (
+                    {
+                        "limit": response.content_budget.limit,
+                        "used": response.content_budget.used,
+                    }
+                    if response.content_budget is not None
+                    else None
+                ),
             }
         )
 

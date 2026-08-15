@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Dict, Protocol
 
 HEAD_CHAR_LIMIT = 1000
+# Also bounds how far ``read_chunk_content`` will read back: no indexer chunks past
+# this point, so no chunk can carry a line range beyond it either. Raising the limit
+# for indexing without raising it for reading would make late chunks report as
+# unreadable. ``test_chunk_reader_and_indexers_share_the_same_bound`` pins the pair.
 FULL_CHAR_LIMIT = 200_000
+# Read granularity when pulling a chunk's lines back out of a file.
+LINE_READ_BLOCK_BYTES = 64 * 1024
 DEFAULT_CHUNK_SIZE = 1000
 DEFAULT_CHUNK_OVERLAP = 100
 UTF8_BYTE_MULTIPLIER = 4
@@ -57,6 +63,16 @@ class FullChunk:
     text: str
     start_line: int | None
     end_line: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkContent:
+    """A chunk's source text read back out of the file it was indexed from."""
+
+    text: str
+    start_line: int
+    end_line: int
+    truncated: bool
 
 
 _registry: Dict[str, HeadExtractor] = {}
@@ -236,6 +252,98 @@ def extract_full_chunks_with_lines(
             break
         start += stride
     return chunks
+
+
+def _read_text_through_line(path: Path, last_line: int) -> str | None:
+    """Return UTF-8 text covering the file's first *last_line* lines, and no more.
+
+    Reading the whole file to slice a few lines out of it is pure waste: a chunk is at
+    most a couple of kilobytes, while the file behind it can be far larger. Stops as
+    soon as enough newlines have been seen. Returns ``None`` when the file is not
+    readable as UTF-8, leaving the caller to fall back to charset detection.
+    """
+
+    if last_line < 1:
+        return None
+    try:
+        decoder = codecs.getincrementaldecoder("utf-8")()
+        parts: list[str] = []
+        newlines = 0
+        total_chars = 0
+        with path.open("rb") as handle:
+            while newlines < last_line and total_chars < FULL_CHAR_LIMIT:
+                data = handle.read(LINE_READ_BLOCK_BYTES)
+                if not data:
+                    parts.append(decoder.decode(b"", final=True))
+                    break
+                chunk = decoder.decode(data)
+                newlines += chunk.count("\n")
+                total_chars += len(chunk)
+                parts.append(chunk)
+    except (OSError, UnicodeDecodeError):
+        return None
+    text = "".join(parts)
+    return text or None
+
+
+def read_chunk_content(
+    path: Path,
+    start_line: int,
+    end_line: int,
+    *,
+    max_chars: int,
+) -> ChunkContent | None:
+    """Read lines ``start_line``..``end_line`` (1-based, inclusive) back out of *path*.
+
+    Unlike the indexing extractors this preserves the original indentation and line
+    breaks: the text is meant to be read by a caller, not embedded. Returns ``None``
+    when the file cannot be read or the range does not resolve to any line, so callers
+    can fall back to the stored preview instead of surfacing an error.
+    """
+
+    if start_line < 1 or end_line < start_line or max_chars <= 0:
+        return None
+    text = _read_text_through_line(path, end_line)
+    if text is None:
+        # Not valid UTF-8 (or unreadable); fall back to the full read, which also
+        # carries the charset-detection path.
+        text = _read_text_full(path, FULL_CHAR_LIMIT)
+    if text is None:
+        return None
+    lines = text.replace("\r\n", "\n").split("\n")
+    selected = lines[start_line - 1 : end_line]
+    if not selected:
+        return None
+
+    kept: list[str] = []
+    used = 0
+    truncated = False
+    last_line = start_line
+    for offset, line in enumerate(selected):
+        # Every line after the first also costs the newline that joins it.
+        projected = used + len(line) + (1 if kept else 0)
+        if kept and projected > max_chars:
+            truncated = True
+            break
+        kept.append(line)
+        used = projected
+        last_line = start_line + offset
+
+    body = "\n".join(kept)
+    if len(body) > max_chars:
+        # A single line longer than the whole budget still has to be cut somewhere.
+        body = body[:max_chars]
+        truncated = True
+    if not body.strip():
+        return None
+    if last_line < end_line:
+        truncated = True
+    return ChunkContent(
+        text=body,
+        start_line=start_line,
+        end_line=last_line,
+        truncated=truncated,
+    )
 
 
 def extract_code_chunks(

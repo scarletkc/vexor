@@ -104,7 +104,7 @@ class FullStrategy(IndexModeStrategy):
             return [self.fallback.payload_for_file(file)]
         payloads: list[ModePayload] = []
         for index, chunk in enumerate(chunks):
-            normalized = _normalize_preview_chunk(chunk.text)
+            normalized = normalize_preview_chunk(chunk.text)
             if not normalized:
                 continue
             preview = _trim_preview(normalized)
@@ -156,7 +156,7 @@ class CodeStrategy(IndexModeStrategy):
                 continue
             local_total = len(windows)
             for local_idx, window in enumerate(windows, start=1):
-                normalized = _normalize_preview_chunk(window)
+                normalized = normalize_preview_chunk(window)
                 if not normalized:
                     continue
                 preview_snippet = _trim_preview(normalized)
@@ -322,12 +322,22 @@ def _trim_preview(text: str, limit: int = PREVIEW_CHAR_LIMIT) -> str:
     return stripped[: limit - 1].rstrip() + "…"
 
 
-def _normalize_preview_chunk(text: str) -> str | None:
+def normalize_preview_chunk(text: str) -> str | None:
+    """Flatten chunk text the way previews are stored: one line, no blank runs.
+
+    Public because the search path re-derives it to compare a stored preview against
+    text read back from disk. The two must normalize identically or that comparison
+    reports false mismatches.
+    """
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if lines:
         return " ".join(lines)
     stripped = text.strip()
     return stripped or None
+
+
+# Retained for callers pinned to the pre-0.27 private name.
+_normalize_preview_chunk = normalize_preview_chunk
 
 
 def _chunk_text(text: str, *, chunk_size: int, overlap: int) -> list[str]:

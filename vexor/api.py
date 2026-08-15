@@ -43,6 +43,8 @@ from .services.index_service import (
     clear_index_entries,
 )
 from .services.search_service import (
+    DEFAULT_CONTENT_CHARS_PER_RESULT,
+    DEFAULT_CONTENT_CHARS_TOTAL,
     SearchRequest,
     SearchResponse,
     perform_search,
@@ -106,6 +108,9 @@ class InMemoryIndex:
         flashrank_model: str | None = None,
         remote_rerank: RemoteRerankConfig | None = None,
         no_cache: bool = True,
+        include_content: bool = False,
+        content_chars_per_result: int = DEFAULT_CONTENT_CHARS_PER_RESULT,
+        content_chars_total: int = DEFAULT_CONTENT_CHARS_TOTAL,
     ) -> SearchResponse:
         """Search against the in-memory index without touching disk."""
 
@@ -160,6 +165,9 @@ class InMemoryIndex:
             remote_rerank=(
                 remote_rerank if remote_rerank is not None else self.remote_rerank
             ),
+            include_content=include_content,
+            content_chars_per_result=content_chars_per_result,
+            content_chars_total=content_chars_total,
         )
         return search_from_vectors(
             request,
@@ -332,6 +340,9 @@ class VexorClient:
         config: Config | Mapping[str, object] | str | None = None,
         temporary_index: bool = False,
         no_cache: bool = False,
+        include_content: bool = False,
+        content_chars_per_result: int = DEFAULT_CONTENT_CHARS_PER_RESULT,
+        content_chars_total: int = DEFAULT_CONTENT_CHARS_TOTAL,
         data_dir: Path | str | None = None,
         config_dir: Path | str | None = None,
         cache_dir: Path | str | None = None,
@@ -367,6 +378,9 @@ class VexorClient:
             config=config,
             temporary_index=temporary_index,
             no_cache=no_cache,
+            include_content=include_content,
+            content_chars_per_result=content_chars_per_result,
+            content_chars_total=content_chars_total,
             runtime_config=self._runtime_config,
             data_dir=resolved_data_dir,
             config_dir=resolved_config_dir,
@@ -576,6 +590,9 @@ def search(
     config: Config | Mapping[str, object] | str | None = None,
     temporary_index: bool = False,
     no_cache: bool = False,
+    include_content: bool = False,
+    content_chars_per_result: int = DEFAULT_CONTENT_CHARS_PER_RESULT,
+    content_chars_total: int = DEFAULT_CONTENT_CHARS_TOTAL,
     data_dir: Path | str | None = None,
     config_dir: Path | str | None = None,
     cache_dir: Path | str | None = None,
@@ -606,6 +623,9 @@ def search(
         config=config,
         temporary_index=temporary_index,
         no_cache=no_cache,
+        include_content=include_content,
+        content_chars_per_result=content_chars_per_result,
+        content_chars_total=content_chars_total,
         runtime_config=_RUNTIME_CONFIG,
         data_dir=data_dir,
         config_dir=config_dir,
@@ -777,6 +797,9 @@ def _search_with_settings(
     config: Config | Mapping[str, object] | str | None,
     temporary_index: bool,
     no_cache: bool,
+    include_content: bool = False,
+    content_chars_per_result: int = DEFAULT_CONTENT_CHARS_PER_RESULT,
+    content_chars_total: int = DEFAULT_CONTENT_CHARS_TOTAL,
     runtime_config: _RuntimeConfigOverride | None,
     data_dir: Path | str | None,
     config_dir: Path | str | None,
@@ -844,6 +867,9 @@ def _search_with_settings(
             embedding_dimensions=settings.embedding_dimensions,
             flashrank_model=settings.flashrank_model,
             remote_rerank=settings.remote_rerank,
+            include_content=include_content,
+            content_chars_per_result=content_chars_per_result,
+            content_chars_total=content_chars_total,
         )
         return perform_search(request)
 
