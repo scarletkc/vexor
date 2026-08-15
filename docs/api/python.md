@@ -116,7 +116,10 @@ the indexed line range, preserving the original indentation.
 changed since indexing), `budget_exhausted`, or `unreadable`. The `preview`
 is still populated in all of these cases and the search still succeeds.
 Check `content_truncated` before assuming a chunk is complete;
-`content_end_line` reports the last line actually returned.
+`content_start_line` and `content_end_line` report the lines the returned text
+actually covers. A symbol too long to embed in one piece is indexed as several
+chunks that all carry its line range, so `content_start_line` can be later than
+the result's `start_line`.
 
 ### index(...)
 

@@ -71,6 +71,10 @@ short, `content_truncated` is `true` and `content_end_line` reports the last
 line actually returned. The `content_budget` object reports the limit and how
 much was used.
 
+A symbol too long to embed in one piece is indexed as several chunks that all
+carry its line range, so `content_start_line` can be later than the result's
+`start_line`: it reports where the returned text actually begins.
+
 ## Project Configuration
 
 Search and index commands walk upward from their resolved `--path` and apply

@@ -24,6 +24,22 @@ from .services.keyword_service import (
 PREVIEW_CHAR_LIMIT = 160
 BRIEF_PREVIEW_LIMIT = 10
 
+# Extensions `CodeStrategy` can chunk by syntax; anything else falls back to
+# `FullStrategy` even under `--mode code`. The search path reads this to tell a
+# `display [#N] :: snippet` preview apart from file text that merely looks like one.
+# ``test_code_chunk_extensions_match_the_parsers`` pins it to the parsers.
+CODE_CHUNK_EXTENSIONS = frozenset(
+    {".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
+)
+
+
+def uses_code_chunking(mode: str | None, file: Path) -> bool:
+    """Report whether *file* was chunked by :class:`CodeStrategy` under *mode*."""
+
+    if (mode or "").strip().lower() not in {"auto", "code"}:
+        return False
+    return file.suffix.lower() in CODE_CHUNK_EXTENSIONS
+
 
 @dataclass(slots=True)
 class ModePayload:
@@ -251,9 +267,7 @@ class AutoStrategy(IndexModeStrategy):
 
     def _payloads_for_file(self, file: Path) -> list[ModePayload]:
         suffix = file.suffix.lower()
-        if suffix == ".py":
-            return self.code.payloads_for_files([file])
-        if suffix in {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}:
+        if suffix in CODE_CHUNK_EXTENSIONS:
             return self.code.payloads_for_files([file])
         if suffix in {".md", ".markdown", ".mdx"}:
             return self.outline.payloads_for_files([file])
