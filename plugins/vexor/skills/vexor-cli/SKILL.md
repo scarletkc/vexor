@@ -103,5 +103,5 @@ vexor search "where JWT claims are validated" --path . --mode code --content
   some snapshot scans. Watcher setup failures fall back to scanning. Separate
   CLI invocations still validate the filesystem. Use longer timeouts if needed.
 - Results return similarity ranking, exact file location, line numbers, and matching snippet preview.
-- Add `--content` (or `--format json`) to get the matching source text in the same call, and skip reading those files separately. If a result shows `stale_line_range`, the file changed since indexing — re-run `vexor index`. Content is capped per response, so lower-ranked results may report `budget_exhausted`.
+- Add `--content` (or `--format json`) to get the matching source text in the same call, and skip reading those files separately. The text sits at `content_start_line`..`content_end_line`, which can begin later than the result's `start_line` when a long symbol was indexed as several chunks. If a result shows `stale_line_range`, the file changed since indexing — re-run `vexor index`. Content is capped per response, so lower-ranked results may report `budget_exhausted`.
 - Combine `--ext` with `--exclude-pattern` to focus on a subset (exclude rules apply on top).

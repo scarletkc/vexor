@@ -194,6 +194,11 @@ search itself still succeeds. When a result is cut short,
 `content_truncated` is `true` and `content_end_line` reports the last line
 actually returned — always check it before assuming you have the whole chunk.
 
+Read the returned text at `content_start_line`..`content_end_line`, not at the
+result's `start_line`: a symbol too long to embed in one piece is indexed as
+several chunks that all carry its line range, so the text of a later chunk
+begins further down.
+
 ### `vexor_index`
 
 Build or refresh the index for a directory. Use it to warm the cache or when

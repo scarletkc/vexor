@@ -33,6 +33,41 @@ def test_read_chunk_content_preserves_indentation(tmp_path):
     assert chunk.truncated is False
 
 
+def test_read_chunk_content_starts_at_the_anchor(tmp_path):
+    source = tmp_path / "mod.py"
+    source.write_text(
+        "def outer():\n\n    first = compute()\n    second = refine(first)\n",
+        encoding="utf-8",
+    )
+
+    chunk = read_chunk_content(source, 1, 4, max_chars=1000, anchor="second = refine")
+
+    assert chunk.text == "    second = refine(first)"
+    assert (chunk.start_line, chunk.end_line) == (4, 4)
+
+
+def test_read_chunk_content_ignores_an_anchor_it_cannot_find(tmp_path):
+    source = tmp_path / "mod.py"
+    source.write_text("alpha\nbeta\n", encoding="utf-8")
+
+    chunk = read_chunk_content(source, 1, 2, max_chars=1000, anchor="gamma")
+
+    assert chunk.start_line == 1
+    assert chunk.text == "alpha\nbeta"
+
+
+def test_locate_anchor_line_matches_across_the_flattened_lines():
+    lines = ["def outer():", "", "    value = compute(", "        argument,", "    )"]
+
+    # Blank lines drop out and the rest join with single spaces, so an anchor can
+    # span what were two lines in the file.
+    assert ces.locate_anchor_line(lines, "compute( argument,") == 2
+    assert ces.locate_anchor_line(lines, "def outer():") == 0
+    assert ces.locate_anchor_line(lines, "missing") == 0
+    assert ces.locate_anchor_line(lines, "") == 0
+    assert ces.locate_anchor_line([], "anything") == 0
+
+
 def test_read_chunk_content_truncates_on_line_boundary(tmp_path):
     source = tmp_path / "long.txt"
     source.write_text("".join(f"line-{idx}\n" for idx in range(30)), encoding="utf-8")

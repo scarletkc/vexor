@@ -13,6 +13,26 @@ def test_get_strategy_rejects_invalid_mode():
         modes.get_strategy("nope")
 
 
+def test_code_chunk_extensions_match_the_parsers():
+    """The search path reads this set to know which previews carry chunk markers.
+
+    Teaching a new language to the AST chunkers without adding it here would leave
+    those files' split windows reading back as their symbol's first window.
+    """
+    from vexor.services.js_parser import JSTS_EXTENSIONS
+
+    assert modes.CODE_CHUNK_EXTENSIONS == JSTS_EXTENSIONS | {".py"}
+
+
+def test_uses_code_chunking_follows_the_strategy_that_ran():
+    assert modes.uses_code_chunking("auto", Path("a.py")) is True
+    assert modes.uses_code_chunking("code", Path("a.tsx")) is True
+    # `code` mode falls back to full chunking for anything the parsers refuse.
+    assert modes.uses_code_chunking("code", Path("notes.txt")) is False
+    assert modes.uses_code_chunking("full", Path("a.py")) is False
+    assert modes.uses_code_chunking(None, Path("a.py")) is False
+
+
 def test_available_modes_contains_auto_and_is_sorted():
     available = modes.available_modes()
     assert "auto" in available
