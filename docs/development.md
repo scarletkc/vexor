@@ -31,3 +31,22 @@ python scripts/benchmark_search_cache.py --vector-count 30000 --file-count 10000
 The harness reports first and process-cached vector loads, full snapshot
 validation, and event-backed freshness checks. Timing is diagnostic evidence,
 not a fixed CI threshold.
+
+## Releases
+
+Bump the version on a branch and land it through a PR; merging to `main`
+publishes the release. `.github/workflows/publish.yml` builds the release body
+from the commit subjects between the previous tag and the new one.
+
+To put a hand-written section above that generated changelog, add
+`docs/release-notes/<version>.md`. `--note` starts the file for you:
+
+```bash
+python scripts/bump_version.py 0.28.0 --note "Reranker now reads chunk text"
+```
+
+The file must open with its own `## <title>` line so the section sits beside
+`## Changelog`, and it must have a body — the publish job fails on a missing
+heading or an empty note rather than shipping a malformed release. Leave the
+file out entirely when a release needs no note. Because the note is committed
+with the bump, a `force_release` re-run publishes the same text.
