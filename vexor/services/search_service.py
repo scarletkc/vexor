@@ -238,6 +238,12 @@ def _chunk_window_anchor(
     anchoring them would move content that is correct where it is: an ``outline``
     chunk's snippet starts one line below its own ``start_line``, so the heading
     would drop out of the content.
+
+    ``class`` chunks are the one code case this cannot help. Their text is
+    assembled rather than sliced -- class line, dedented docstring, class-level
+    statements, then a synthetic ``Methods: ...`` line -- so a window opening
+    inside the assembled seams has no counterpart in the file, the anchor is not
+    found, and the read falls back to the symbol's first lines as before.
     """
 
     from ..modes import uses_code_chunking  # local import
@@ -272,6 +278,12 @@ def _content_matches_preview(content: str, preview: str | None) -> bool:
     before the full-mode line offset fix, and files edited since they were indexed.
     Deliberately lenient — a false negative only costs the caller a preview fallback,
     while a false positive hands an agent code from the wrong part of the file.
+
+    An anchored read seeks to this same text, so for those chunks the check passes
+    whenever the anchor was found at all. What it still guarantees there is the part
+    that matters: the returned text is what was indexed. A file edited since then
+    either still holds that text somewhere in the range, and the read finds it, or
+    does not, and the read falls back to the range's first lines and is caught here.
     """
 
     probe = _preview_probe(preview)
