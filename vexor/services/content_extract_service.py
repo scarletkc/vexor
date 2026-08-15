@@ -177,7 +177,8 @@ def extract_full_chunks_with_lines(
     """Return sliding-window chunks and approximate line ranges for text-like files.
 
     Line ranges are computed only for plain text inputs (TEXT_EXTENSIONS). Other extractors
-    return chunks with line metadata set to None.
+    return chunks with line metadata set to None. Ranges are 1-based and refer to the
+    original file, so leading blank lines dropped by normalization are compensated for.
     """
 
     suffix = path.suffix.lower()
@@ -197,7 +198,8 @@ def extract_full_chunks_with_lines(
     if text is None:
         return []
 
-    normalized = text.replace("\r\n", "\n").strip()
+    converted = text.replace("\r\n", "\n")
+    normalized = converted.strip()
     if not normalized:
         return []
 
@@ -205,8 +207,13 @@ def extract_full_chunks_with_lines(
     stride = max(size - max(int(overlap), 0), 1)
     chunks: list[FullChunk] = []
     newline_positions: list[int] = []
+    # Line numbers are computed over the stripped text, so every line dropped from the
+    # front has to be added back or the whole file reports a constant negative offset.
+    line_offset = 0
     if include_lines:
         newline_positions = [idx for idx, ch in enumerate(normalized) if ch == "\n"]
+        stripped_head = converted[: len(converted) - len(converted.lstrip())]
+        line_offset = stripped_head.count("\n")
     start = 0
     length = len(normalized)
     while start < length:
@@ -221,9 +228,9 @@ def extract_full_chunks_with_lines(
                 trailing = len(window) - len(window.rstrip())
                 span_start = min(start + leading, length)
                 span_end = max(span_start, end - trailing)
-                start_line = bisect_left(newline_positions, span_start) + 1
+                start_line = bisect_left(newline_positions, span_start) + 1 + line_offset
                 last_index = max(span_start, span_end - 1)
-                end_line = bisect_left(newline_positions, last_index) + 1
+                end_line = bisect_left(newline_positions, last_index) + 1 + line_offset
             chunks.append(FullChunk(text=cleaned, start_line=start_line, end_line=end_line))
         if end >= length:
             break
