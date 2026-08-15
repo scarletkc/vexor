@@ -1292,6 +1292,74 @@ def test_content_is_read_back_with_original_indentation(tmp_path: Path) -> None:
     assert budget.used == len(results[0].content)
 
 
+def _split_chunk_source(tmp_path: Path) -> Path:
+    source = tmp_path / "registry.py"
+    lines = ["class Registry:"]
+    lines += [
+        f'    SETTING_{index} = "value number {index} for the registry entry"'
+        for index in range(40)
+    ]
+    source.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return source
+
+
+def test_split_chunk_windows_read_back_their_own_lines(tmp_path: Path) -> None:
+    """Each window of a split chunk must return its own text, not the first window's.
+
+    A chunk too long to embed in one piece is split into overlapping windows that
+    all store their symbol's line range, so reading from the range's first line
+    returns window 1 for every one of them -- identical content on several results,
+    and a preview check that then reports the index as stale.
+    """
+    source = _split_chunk_source(tmp_path)
+    chunks = [
+        {
+            "chunk_index": 0,
+            "preview": 'class Registry: [#1] :: class Registry: SETTING_0 = "value number 0 for the registry entry"',
+            "start_line": 1,
+            "end_line": 41,
+        },
+        {
+            "chunk_index": 1,
+            "preview": 'class Registry: [#2] :: SETTING_20 = "value number 20 for the registry entry" SETTING_21 =',
+            "start_line": 1,
+            "end_line": 41,
+        },
+    ]
+
+    results, _, _ = _rank_with_content(_content_request(tmp_path), [source, source], chunks)
+
+    first, second = results[0], results[1]
+    assert [item.content_unavailable for item in results] == [None, None]
+    assert first.content_start_line == 1
+    assert first.content.startswith("class Registry:")
+    assert second.content_start_line == 22
+    assert second.content.startswith('    SETTING_20 = "value number 20')
+    assert first.content != second.content
+
+
+def test_content_is_not_anchored_for_chunks_with_real_line_ranges(tmp_path: Path) -> None:
+    """Only split windows are anchored; an outline chunk keeps its heading."""
+    source = tmp_path / "guide.md"
+    source.write_text(
+        "## Providers\n\nThe provider table lists every supported backend.\n",
+        encoding="utf-8",
+    )
+    chunks = [
+        {
+            "chunk_index": 0,
+            "preview": "Providers :: The provider table lists every supported backend.",
+            "start_line": 1,
+            "end_line": 3,
+        }
+    ]
+
+    results, _, _ = _rank_with_content(_content_request(tmp_path), [source], chunks)
+
+    assert results[0].content_start_line == 1
+    assert results[0].content.startswith("## Providers")
+
+
 def test_content_absent_when_not_requested(tmp_path: Path) -> None:
     source = tmp_path / "a.txt"
     source.write_text("alpha beta gamma\n", encoding="utf-8")

@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 import json
+import re
+
 import numpy as np
 from typing import Callable, Sequence, TYPE_CHECKING
 from urllib import error as urlerror
@@ -41,6 +43,10 @@ DEFAULT_CONTENT_CHARS_TOTAL = 8000
 # anything — and too small to survive the preview check, which would then misreport the
 # result as stale rather than as out of budget.
 MIN_USEFUL_CONTENT_CHARS = 200
+
+# Marks one window of a chunk that was split to fit the embedding window; see
+# CodeStrategy in modes.py, which tags them ``display [#N] :: snippet``.
+_CHUNK_WINDOW_RE = re.compile(r"\[#\d+\]")
 
 # How much of a stored preview is compared against re-read text, and the shortest
 # probe worth comparing at all. Both are heuristics: the check exists to catch text
@@ -215,6 +221,29 @@ def _preview_probe(preview: str | None) -> str:
     return preview.rsplit(" :: ", 1)[-1].rstrip("…").strip()
 
 
+def _chunk_window_anchor(preview: str | None) -> str | None:
+    """Return the text that locates a split chunk's window inside its symbol.
+
+    A ``code`` chunk too long to embed in one piece is split into overlapping
+    windows tagged ``[#N]``, and every window carries its whole symbol's line
+    range, so reading from the first line hands back window 1 whatever matched.
+    The preview snippet says where the window actually starts.
+
+    Only these windows are anchored. The other modes chunk with per-chunk ranges
+    that are already right, and anchoring them would move content that is correct
+    where it is: an ``outline`` chunk's snippet starts one line below its own
+    ``start_line``, so the heading would drop out of the content.
+    """
+
+    label, separator, _ = (preview or "").rpartition(" :: ")
+    if not separator or not _CHUNK_WINDOW_RE.search(label):
+        return None
+    probe = _preview_probe(preview)
+    if len(probe) < PREVIEW_PROBE_MIN_CHARS:
+        return None
+    return probe[:PREVIEW_PROBE_CHARS]
+
+
 def _content_matches_preview(content: str, preview: str | None) -> bool:
     """Check that re-read text still looks like what was indexed at that line range.
 
@@ -260,6 +289,7 @@ def _attach_chunk_content(
                 result.start_line,
                 result.end_line,
                 max_chars=min(per_result, remaining),
+                anchor=_chunk_window_anchor(result.preview),
             )
         except OSError:
             chunk = None
