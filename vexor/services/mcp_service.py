@@ -10,14 +10,13 @@ that a tools-only stdio server does not need.
 from __future__ import annotations
 
 import json
-
 import sys
 import threading
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, IO, Iterable, Mapping, Sequence, TextIO
+from typing import IO, Any, TextIO
 
 from .. import __version__
-from ..config import ENV_NO_UPDATE_CHECK
 from ..modes import available_modes
 from ..text import Messages
 from ..utils import format_path, resolve_directory

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import ast
 import codecs
-from bisect import bisect_left, bisect_right
 import re
+from bisect import bisect_left, bisect_right
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Protocol, Sequence
+from typing import Protocol
 
 HEAD_CHAR_LIMIT = 1000
 # Also bounds how far ``read_chunk_content`` will read back: no indexer chunks past
@@ -75,7 +76,7 @@ class ChunkContent:
     truncated: bool
 
 
-_registry: Dict[str, HeadExtractor] = {}
+_registry: dict[str, HeadExtractor] = {}
 
 TEXT_EXTENSIONS = (
     ".txt",
@@ -472,7 +473,9 @@ def _extract_python_chunks(
             if not stripped.startswith("#"):
                 break
             lowered = stripped.lower()
-            if stripped.startswith("#!") or lowered.startswith("# coding") or lowered.startswith("# -*- coding"):
+            if stripped.startswith("#!") or lowered.startswith(
+                ("# coding", "# -*- coding")
+            ):
                 break
             comment_lines.append(line)
             total_chars += len(line) + 1
@@ -822,7 +825,9 @@ def extract_outline_chunks(
         preamble_start = front_matter_end + 2
     first_heading_line = headings[0].line
     if preamble_start <= first_heading_line - 1:
-        preamble_text = _cleanup_snippet("\n".join(lines[preamble_start - 1 : first_heading_line - 1]))
+        preamble_text = _cleanup_snippet(
+            "\n".join(lines[preamble_start - 1 : first_heading_line - 1])
+        )
         if preamble_text:
             headings.insert(
                 0,

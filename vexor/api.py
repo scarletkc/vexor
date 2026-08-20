@@ -2,28 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
 from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Mapping
-from typing import Sequence
 
 import numpy as np
 
-from .config import (
-    DEFAULT_BATCH_SIZE,
-    DEFAULT_EXTRACT_BACKEND,
-    DEFAULT_EXTRACT_CONCURRENCY,
-    DEFAULT_RERANK,
-    Config,
-    RemoteRerankConfig,
-    SUPPORTED_RERANKERS,
-    _coerce_config_payload,
-    config_from_json,
-    config_dir_context,
-    load_config,
-    set_config_dir,
-)
 from .cache import (
     IndexVectorCache,
     cache_dir_context,
@@ -31,19 +16,33 @@ from .cache import (
     project_cache_context,
     set_cache_dir,
 )
+from .config import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_EXTRACT_BACKEND,
+    DEFAULT_EXTRACT_CONCURRENCY,
+    DEFAULT_RERANK,
+    SUPPORTED_RERANKERS,
+    Config,
+    RemoteRerankConfig,
+    _coerce_config_payload,
+    config_dir_context,
+    config_from_json,
+    load_config,
+    set_config_dir,
+)
 from .modes import available_modes, get_strategy
 from .providers.capabilities import (
     DEFAULT_PROVIDER,
     resolve_default_model,
     validate_embedding_dimensions_for_model,
 )
+from .services.freshness_service import FreshnessTracker
 from .services.index_service import (
     IndexResult,
     build_index,
     build_index_in_memory,
     clear_index_entries,
 )
-from .services.freshness_service import FreshnessTracker
 from .services.search_service import (
     DEFAULT_CONTENT_CHARS_PER_RESULT,
     DEFAULT_CONTENT_CHARS_TOTAL,

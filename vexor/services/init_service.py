@@ -8,15 +8,16 @@ import os
 import shlex
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Mapping, Sequence
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from .. import __version__, config as config_module
+from .. import __version__
+from .. import config as config_module
 from ..config import (
     DEFAULT_FLASHRANK_MAX_LENGTH,
     DEFAULT_FLASHRANK_MODEL,
@@ -25,6 +26,7 @@ from ..config import (
     normalize_remote_rerank_url,
     resolve_remote_rerank_api_key,
 )
+from ..output import format_status_icon, supports_unicode_output
 from ..providers.capabilities import (
     DEFAULT_LOCAL_MODEL,
     DEFAULT_PROVIDER,
@@ -45,7 +47,6 @@ from ..services.system_service import (
     detect_install_method,
     run_all_doctor_checks,
 )
-from ..output import format_status_icon, supports_unicode_output
 from ..text import Messages, Styles
 
 console = Console()
@@ -75,9 +76,7 @@ def should_auto_run_init(
         "--install-completion",
         "--show-completion",
     }
-    if any(token in skip_flags for token in tokens):
-        return False
-    return True
+    return not any(token in skip_flags for token in tokens)
 
 
 def run_init_wizard(*, dry_run: bool = False) -> None:

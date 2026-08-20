@@ -1,4 +1,5 @@
 import importlib
+import sqlite3
 from pathlib import Path
 
 import numpy as np
@@ -7,8 +8,6 @@ import vexor.cache as cache
 import vexor.modes as modes
 from vexor.services import index_service
 from vexor.services.index_service import IndexStatus, build_index, build_index_in_memory
-
-import sqlite3
 
 
 class DummySearcher:

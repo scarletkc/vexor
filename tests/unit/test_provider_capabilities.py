@@ -4,7 +4,6 @@ import vexor.config as config_module
 import vexor.providers.capabilities as caps
 from vexor.providers.capabilities import (
     DEFAULT_GEMINI_MODEL,
-    DEFAULT_MODEL,
     VOYAGE_BASE_URL,
     get_supported_dimensions,
     resolve_api_key,

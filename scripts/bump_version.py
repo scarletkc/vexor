@@ -20,7 +20,6 @@ import re
 import sys
 from pathlib import Path
 
-
 _VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[0-9A-Za-z.+-]+)?$")
 
 

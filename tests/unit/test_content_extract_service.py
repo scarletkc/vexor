@@ -7,13 +7,13 @@ from pptx import Presentation
 
 import vexor.services.content_extract_service as ces
 from vexor.services.content_extract_service import (
+    HEAD_CHAR_LIMIT,
     extract_code_chunks,
-    extract_outline_chunks,
     extract_full_chunks,
     extract_full_chunks_with_lines,
     extract_head,
+    extract_outline_chunks,
     read_chunk_content,
-    HEAD_CHAR_LIMIT,
 )
 
 

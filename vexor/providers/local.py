@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from pathlib import Path
-from typing import Iterator, Sequence
 
 import numpy as np
 
@@ -53,7 +53,9 @@ def _register_custom_model(text_embedding_cls, model_name: str) -> bool:
     try:
         from fastembed.common.model_description import ModelSource, PoolingType
     except Exception as exc:
-        raise RuntimeError(Messages.ERROR_LOCAL_MODEL_LOAD.format(model=model_name, reason=str(exc))) from exc
+        raise RuntimeError(
+            Messages.ERROR_LOCAL_MODEL_LOAD.format(model=model_name, reason=str(exc))
+        ) from exc
     try:
         text_embedding_cls.add_custom_model(
             model=spec["model"],

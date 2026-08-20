@@ -5,15 +5,14 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
+import vexor.cache as cache
 from vexor import __version__
 from vexor.cli import app
 from vexor.config import DEFAULT_MODEL
-import vexor.cache as cache
 from vexor.search import SearchResult
 from vexor.services.index_service import IndexResult, IndexStatus
 from vexor.services.search_service import ContentBudget, SearchResponse
 from vexor.text import Messages
-
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 

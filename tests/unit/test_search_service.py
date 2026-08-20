@@ -5,10 +5,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from vexor.services.index_service import IndexResult, IndexStatus
-from vexor.config import RemoteRerankConfig
-from vexor.services.search_service import SearchRequest, perform_search
 import vexor.search as search_module
+from vexor.config import RemoteRerankConfig
+from vexor.services.index_service import IndexResult, IndexStatus
+from vexor.services.search_service import SearchRequest, perform_search
 
 
 class DummySearcher:

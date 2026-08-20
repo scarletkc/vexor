@@ -33,9 +33,9 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Sequence
 
 from _eval_common import DEFAULT_QUERIES, load_queries, metrics, relative_result_paths
 

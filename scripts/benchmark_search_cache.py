@@ -19,8 +19,8 @@ from vexor.cache import (
     load_index_vectors,
     store_index,
 )
-from vexor.services.index_service import _snapshot_current_files
 from vexor.services.freshness_service import FreshnessTracker
+from vexor.services.index_service import _snapshot_current_files
 from vexor.utils import collect_files
 
 

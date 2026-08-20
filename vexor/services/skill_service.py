@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from enum import Enum
 from importlib import resources
 from pathlib import Path
-import shutil
 
 
 class SkillInstallStatus(str, Enum):

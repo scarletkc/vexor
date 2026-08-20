@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from vexor.services import system_service
 from vexor.config import RemoteRerankConfig
+from vexor.services import system_service
 
 
 class DummyResponse:
@@ -237,7 +236,7 @@ def test_check_config_exists_reports_override_summary(tmp_path):
     project_file = tmp_path / "project" / ".vexor" / "config.json"
     project_file.parent.mkdir(parents=True)
     project_file.write_text("{}", encoding="utf-8")
-    origins = {field: ConfigOrigin.DEFAULT for field in CONFIG_FIELD_NAMES}
+    origins = dict.fromkeys(CONFIG_FIELD_NAMES, ConfigOrigin.DEFAULT)
     origins["provider"] = ConfigOrigin.GLOBAL
     origins["rerank"] = ConfigOrigin.PROJECT
     origins["model"] = ConfigOrigin.PROJECT
@@ -278,7 +277,7 @@ def test_check_config_exists_omits_override_lines_without_overrides(tmp_path):
     global_file = tmp_path / "global" / "config.json"
     global_file.parent.mkdir()
     global_file.write_text("{}", encoding="utf-8")
-    origins = {field: ConfigOrigin.GLOBAL for field in CONFIG_FIELD_NAMES}
+    origins = dict.fromkeys(CONFIG_FIELD_NAMES, ConfigOrigin.GLOBAL)
     resolution = ConfigResolution(
         config=Config(),
         origins=origins,
@@ -758,7 +757,7 @@ def test_check_for_update_cache_only_mode(tmp_path, monkeypatch):
 
 
 def test_update_check_enabled_env_and_config(monkeypatch):
-    from vexor.config import Config, ENV_NO_UPDATE_CHECK
+    from vexor.config import ENV_NO_UPDATE_CHECK, Config
     from vexor.services import system_service
 
     monkeypatch.delenv(ENV_NO_UPDATE_CHECK, raising=False)

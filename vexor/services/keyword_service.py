@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections import Counter
 import re
+from collections import Counter
 from pathlib import Path
-from typing import List, Sequence
 
 from .content_extract_service import extract_head
 

@@ -21,7 +21,7 @@ def test_code_chunk_extensions_match_the_parsers():
     """
     from vexor.services.js_parser import JSTS_EXTENSIONS
 
-    assert modes.CODE_CHUNK_EXTENSIONS == JSTS_EXTENSIONS | {".py"}
+    assert JSTS_EXTENSIONS | {".py"} == modes.CODE_CHUNK_EXTENSIONS
 
 
 def test_uses_code_chunking_follows_the_strategy_that_ran():

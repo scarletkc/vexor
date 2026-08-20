@@ -1,6 +1,6 @@
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 import pytest
@@ -251,7 +251,7 @@ def test_cache_dir_context_overrides_cache_db_path(tmp_path):
     with cache.cache_dir_context(tmp_path):
         db_path = cache.cache_db_path()
         assert db_path.parent == tmp_path
-    assert cache.CACHE_DIR == original_cache_dir
+    assert original_cache_dir == cache.CACHE_DIR
 
 
 def test_embedding_cache_round_trip(tmp_path, monkeypatch):
@@ -906,17 +906,16 @@ def test_cache_key_serialization_context_and_memory_cache(tmp_path, monkeypatch)
     with cache.cache_dir_context(override_dir):
         assert cache.ensure_cache_dir() == override_dir.resolve()
         assert cache.cache_db_path() == override_dir.resolve() / cache.DB_FILENAME
-    assert cache.CACHE_DIR == original_dir
+    assert original_dir == cache.CACHE_DIR
 
     marker = tmp_path / "not-a-dir"
     marker.write_text("x", encoding="utf-8")
-    with pytest.raises(NotADirectoryError):
-        with cache.cache_dir_context(marker):
-            pass
+    with pytest.raises(NotADirectoryError), cache.cache_dir_context(marker):
+        pass
     with pytest.raises(NotADirectoryError):
         cache.set_cache_dir(marker)
     cache.set_cache_dir(tmp_path / "explicit")
-    assert cache.CACHE_DIR == (tmp_path / "explicit").resolve()
+    assert (tmp_path / "explicit").resolve() == cache.CACHE_DIR
     cache.set_cache_dir(None)
     assert cache.CACHE_DIR == cache.DEFAULT_CACHE_DIR
 
@@ -1019,9 +1018,8 @@ def test_project_cache_context_respects_active_override(tmp_path, monkeypatch):
     (project / ".vexor").mkdir(parents=True)
     explicit = tmp_path / "explicit"
 
-    with cache.cache_dir_context(explicit):
-        with cache.project_cache_context(project):
-            assert cache.cache_db_path() == explicit.resolve() / cache.DB_FILENAME
+    with cache.cache_dir_context(explicit), cache.project_cache_context(project):
+        assert cache.cache_db_path() == explicit.resolve() / cache.DB_FILENAME
 
 
 def test_project_cache_context_respects_relocated_global_cache(tmp_path, monkeypatch):

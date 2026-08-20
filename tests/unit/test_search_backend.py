@@ -3,10 +3,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from vexor.search import VexorSearcher
 from vexor.providers import gemini as gemini_backend
 from vexor.providers import local as local_backend
 from vexor.providers import openai as openai_backend
+from vexor.search import VexorSearcher
 
 
 class FakeModels:

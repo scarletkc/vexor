@@ -1,4 +1,5 @@
 import json
+
 import pytest
 
 from vexor import config as config_module
@@ -379,7 +380,7 @@ def test_config_dir_context_overrides_config_file(tmp_path):
         loaded = config_module.load_config()
         assert loaded.provider == "gemini"
         assert (tmp_path / "config.json").exists()
-    assert config_module.CONFIG_DIR == original_config_dir
+    assert original_config_dir == config_module.CONFIG_DIR
 
 
 def test_explicit_config_dir_is_not_reloaded_as_untrusted_project_config(tmp_path):

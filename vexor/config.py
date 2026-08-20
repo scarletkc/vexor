@@ -4,35 +4,69 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
-from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 # Permanent public re-exports preserve existing imports from vexor.config.
 from .providers.capabilities import (
-    DEFAULT_GEMINI_MODEL,
-    DEFAULT_LOCAL_MODEL,
-    DEFAULT_MODEL,
-    DEFAULT_PROVIDER,
-    DEFAULT_VOYAGE_MODEL,
-    DIMENSION_SUPPORTED_MODELS,
-    ENV_API_KEY,
-    LEGACY_GEMINI_ENV,
-    OPENAI_ENV,
-    SUPPORTED_PROVIDERS,
-    VOYAGE_BASE_URL,
-    VOYAGE_ENV,
-    get_supported_dimensions,
-    resolve_api_key,
-    resolve_base_url,
-    resolve_default_model,
-    supports_dimensions,
-    validate_embedding_dimensions_for_model,
+    DEFAULT_GEMINI_MODEL as DEFAULT_GEMINI_MODEL,
+)
+from .providers.capabilities import (
+    DEFAULT_LOCAL_MODEL as DEFAULT_LOCAL_MODEL,
+)
+from .providers.capabilities import (
+    DEFAULT_MODEL as DEFAULT_MODEL,
+)
+from .providers.capabilities import (
+    DEFAULT_PROVIDER as DEFAULT_PROVIDER,
+)
+from .providers.capabilities import (
+    DEFAULT_VOYAGE_MODEL as DEFAULT_VOYAGE_MODEL,
+)
+from .providers.capabilities import (
+    DIMENSION_SUPPORTED_MODELS as DIMENSION_SUPPORTED_MODELS,
+)
+from .providers.capabilities import (
+    ENV_API_KEY as ENV_API_KEY,
+)
+from .providers.capabilities import (
+    LEGACY_GEMINI_ENV as LEGACY_GEMINI_ENV,
+)
+from .providers.capabilities import (
+    OPENAI_ENV as OPENAI_ENV,
+)
+from .providers.capabilities import (
+    SUPPORTED_PROVIDERS as SUPPORTED_PROVIDERS,
+)
+from .providers.capabilities import (
+    VOYAGE_BASE_URL as VOYAGE_BASE_URL,
+)
+from .providers.capabilities import (
+    VOYAGE_ENV as VOYAGE_ENV,
+)
+from .providers.capabilities import (
+    get_supported_dimensions as get_supported_dimensions,
+)
+from .providers.capabilities import (
+    resolve_api_key as resolve_api_key,
+)
+from .providers.capabilities import (
+    resolve_base_url as resolve_base_url,
+)
+from .providers.capabilities import (
+    resolve_default_model as resolve_default_model,
+)
+from .providers.capabilities import (
+    supports_dimensions as supports_dimensions,
+)
+from .providers.capabilities import (
+    validate_embedding_dimensions_for_model as validate_embedding_dimensions_for_model,
 )
 from .text import Messages
 
@@ -405,7 +439,7 @@ def resolve_config(
     global_file = _resolve_config_file()
     stored = _load_stored_config_payload()
     config = _config_from_stored_payload(stored)
-    origins = {field: ConfigOrigin.DEFAULT for field in CONFIG_FIELD_NAMES}
+    origins = dict.fromkeys(CONFIG_FIELD_NAMES, ConfigOrigin.DEFAULT)
     for field in stored:
         if field in origins:
             origins[field] = ConfigOrigin.GLOBAL
@@ -432,7 +466,7 @@ def load_config(directory: Path | str | None = None) -> Config:
 def save_config(config: Config) -> None:
     config_dir = _resolve_config_dir()
     config_dir.mkdir(parents=True, exist_ok=True)
-    data: Dict[str, Any] = {}
+    data: dict[str, Any] = {}
     if config.api_key:
         data["api_key"] = config.api_key
     if config.model:
@@ -454,7 +488,7 @@ def save_config(config: Config) -> None:
     if config.embedding_dimensions is not None:
         data["embedding_dimensions"] = config.embedding_dimensions
     if config.remote_rerank is not None:
-        remote_data: Dict[str, Any] = {}
+        remote_data: dict[str, Any] = {}
         if config.remote_rerank.base_url:
             remote_data["base_url"] = config.remote_rerank.base_url
         if config.remote_rerank.api_key:
@@ -614,7 +648,8 @@ def set_embedding_dimensions(
     Args:
         value: The dimension to set, or None/0 to clear
         model: Optional model to validate against. If not provided, uses config model.
-        provider: Optional provider to resolve effective model. If not provided, uses config provider.
+        provider: Optional provider to resolve effective model. If not provided,
+            uses config provider.
 
     Raises:
         ValueError: If value is negative, model doesn't support dimensions,

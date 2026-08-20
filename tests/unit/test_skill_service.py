@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
+import vexor.services.skill_service as skill_service
 from vexor.services.skill_service import (
     SkillInstallStatus,
+    _trees_equal,
     install_bundled_skill,
     resolve_skill_roots,
-    _trees_equal,
 )
-import vexor.services.skill_service as skill_service
 
 
 def test_resolve_skill_roots_variants(tmp_path):

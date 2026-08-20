@@ -8,10 +8,10 @@ if TYPE_CHECKING:
     from .api import InMemoryIndex, VexorClient, VexorError
 
 __all__ = [
-    "__version__",
     "InMemoryIndex",
     "VexorClient",
     "VexorError",
+    "__version__",
     "clear_index",
     "config_context",
     "get_version",

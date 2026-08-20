@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
-
-from vexor.services.js_parser import extract_js_chunks, JSTS_EXTENSIONS
+from vexor.services.js_parser import JSTS_EXTENSIONS, extract_js_chunks
 
 
 class TestJsParserExtensions:

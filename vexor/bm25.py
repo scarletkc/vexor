@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from functools import lru_cache
 import math
 import re
-from typing import Mapping, Sequence
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from functools import lru_cache
 
 import numpy as np
 

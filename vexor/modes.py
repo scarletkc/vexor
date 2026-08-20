@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Protocol, Sequence
+from typing import Protocol
 
 from .services.content_extract_service import (
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
     extract_code_chunks,
-    extract_outline_chunks,
-    extract_full_chunks,
     extract_full_chunks_with_lines,
     extract_head,
+    extract_outline_chunks,
 )
 from .services.keyword_service import (
     BRIEF_CHAR_LIMIT,
@@ -307,7 +307,7 @@ class BriefStrategy(IndexModeStrategy):
         return self.fallback.payload_for_file(file)
 
 
-_STRATEGIES: Dict[str, IndexModeStrategy] = {
+_STRATEGIES: dict[str, IndexModeStrategy] = {
     "auto": AutoStrategy(),
     "name": NameStrategy(),
     "head": HeadStrategy(),

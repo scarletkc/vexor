@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections import OrderedDict
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event, Lock
 from time import monotonic
-from typing import Callable, Hashable
-
 
 _MUTATION_EVENTS = {"created", "deleted", "modified", "moved"}
 DEFAULT_MAX_REUSES = 32
@@ -174,10 +174,8 @@ class FreshnessTracker:
                         self._watching_unavailable.set()
                         unschedule = getattr(self._observer, "unschedule", None)
                         if watch is not None and callable(unschedule):
-                            try:
+                            with contextlib.suppress(OSError):
                                 unschedule(watch)
-                            except OSError:
-                                pass
                         raise
                     self._started = True
         except _WatchingUnavailable:
