@@ -7,7 +7,7 @@ import os
 import sqlite3
 import uuid
 from collections import OrderedDict
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -17,6 +17,7 @@ from threading import Lock
 
 import numpy as np
 
+from .sqlite_util import chunk_values, connect
 from .utils import collect_files
 
 DEFAULT_CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
@@ -250,9 +251,8 @@ def _deserialize_exclude_patterns(value: str | None) -> tuple[str, ...]:
     return tuple(parts)
 
 
-def _chunk_values(values: Sequence[object], size: int) -> Iterable[Sequence[object]]:
-    for idx in range(0, len(values), size):
-        yield values[idx : idx + size]
+# Shared with the collection store so both databases batch identically.
+_chunk_values = chunk_values
 
 
 def _resolve_cache_dir() -> Path:
@@ -371,30 +371,8 @@ def cache_file(  # pragma: no cover - kept for API parity
     return cache_db_path()
 
 
-def _connect(
-    db_path: Path,
-    *,
-    readonly: bool = False,
-    query_only: bool = False,
-) -> sqlite3.Connection:
-    if readonly:
-        db_uri = f"file:{db_path.as_posix()}?mode=ro"
-        conn = sqlite3.connect(db_uri, uri=True)
-    else:
-        conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        conn.execute("PRAGMA journal_mode = WAL;")
-    except sqlite3.OperationalError as exc:
-        if "readonly" not in str(exc).lower():
-            raise
-    conn.execute("PRAGMA synchronous = NORMAL;")
-    conn.execute("PRAGMA temp_store = MEMORY;")
-    conn.execute("PRAGMA busy_timeout = 5000;")
-    conn.execute("PRAGMA foreign_keys = ON;")
-    if readonly or query_only:
-        conn.execute("PRAGMA query_only = ON;")
-    return conn
+# Shared with the collection store so both databases open under the same pragmas.
+_connect = connect
 
 
 def _ensure_schema_readonly(

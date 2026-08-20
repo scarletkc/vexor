@@ -593,3 +593,57 @@ class Messages:
 
     INFO_STAR_SUCCESS = "Thank you for starring the Vexor repository!"
     INFO_STAR_BROWSER = "Opening {url} in your browser to star the repository..."
+
+    # --- Collections (filesystem-independent record store) -------------------
+    ERROR_COLLECTION_NAME_REQUIRED = "Collection name must not be empty."
+    ERROR_COLLECTION_DIMENSION_INVALID = (
+        "Collection embedding dimension must be a positive integer."
+    )
+    ERROR_COLLECTION_CONTRACT_MISMATCH = (
+        "Collection '{name}' is pinned to {stored} (provider/model/dimension) but the "
+        "call requested {requested}. Vectors of different widths or models must not be "
+        "mixed; recreate the collection instead."
+    )
+    ERROR_COLLECTION_NOT_FOUND = "Collection '{name}' does not exist."
+    ERROR_COLLECTION_RECORD_KEY_REQUIRED = "Every record needs a non-empty 'id'."
+    ERROR_COLLECTION_RECORD_NOT_MAPPING = (
+        "Each record must be a mapping with 'id' and 'text' keys."
+    )
+    ERROR_COLLECTION_TEXT_EMPTY = (
+        "Record '{key}' has empty text. Embedding an empty string is undefined across "
+        "providers, so it is rejected rather than stored."
+    )
+    ERROR_COLLECTION_DUPLICATE_KEY = (
+        "Record id '{key}' appears more than once in the same call."
+    )
+    ERROR_COLLECTION_METADATA_NOT_MAPPING = "Record metadata must be a mapping."
+    ERROR_COLLECTION_METADATA_KEY_INVALID = "Metadata keys must be non-empty strings."
+    ERROR_COLLECTION_METADATA_VALUE_INVALID = (
+        "Metadata field '{key}' holds an unsupported {type}. Only str, int, float, "
+        "bool, datetime, and None can be filtered on."
+    )
+    ERROR_COLLECTION_FILTER_KEY_INVALID = "Filter keys must be non-empty strings."
+    ERROR_COLLECTION_FILTER_EMPTY = "Filter conditions must not be empty."
+    ERROR_COLLECTION_FILTER_OPERATOR_INVALID = (
+        "Unsupported filter operator '{operator}'. Use one of: {allowed}."
+    )
+    ERROR_COLLECTION_FILTER_VALUE_INVALID = (
+        "Filter values must be str, int, float, bool, or datetime, not {type}."
+    )
+    ERROR_COLLECTION_FILTER_EXISTS_INVALID = "The 'exists' operator takes a boolean."
+    ERROR_COLLECTION_FILTER_SET_INVALID = (
+        "The '{operator}' operator takes a list, tuple, or set of values."
+    )
+    ERROR_COLLECTION_FILTER_SET_EMPTY = (
+        "The '{operator}' operator needs at least one value."
+    )
+    ERROR_COLLECTION_FILTER_RANGE_INVALID = (
+        "The '{operator}' operator only compares numbers, booleans, and datetimes."
+    )
+    ERROR_COLLECTION_RERANK_UNSUPPORTED = (
+        "Collection search does not support rerank '{value}' yet. Use one of: {allowed}."
+    )
+    ERROR_COLLECTION_QUERY_EMPTY = "Search query must not be empty."
+    ERROR_COLLECTION_EMBED_FAILED = (
+        "The embedding provider returned no vectors for this batch."
+    )
