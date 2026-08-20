@@ -403,12 +403,21 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
 
 
 def _schema_needs_reset(conn: sqlite3.Connection) -> bool:
-    if _table_exists(conn, "indexed_chunk"):
-        return False
-    return any(
-        _table_exists(conn, table)
-        for table in ("index_metadata", "indexed_file", "file_embedding", "query_cache")
-    )
+    """True when the database still holds the pre-chunk layout.
+
+    Keyed on ``file_embedding``, which only ever existed before chunked indexing
+    and is never created again, so its presence is unambiguous.
+
+    The previous test — ``indexed_chunk`` missing while some other index table is
+    present — also fired against a schema that another connection was partway
+    through creating: ``executescript`` builds ``index_metadata`` and
+    ``indexed_file`` before ``indexed_chunk``, so a second connection arriving in
+    that window concluded the layout was stale and dropped the tables the first
+    one was still building. That surfaced as ``no such table: main.indexed_file``
+    under concurrent writers.
+    """
+
+    return _table_exists(conn, "file_embedding")
 
 
 def _reset_index_schema(conn: sqlite3.Connection) -> None:

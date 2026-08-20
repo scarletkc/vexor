@@ -1155,3 +1155,58 @@ def test_compare_snapshot_current_for_nested_paths(tmp_path, monkeypatch):
         meta["files"],
         recursive=True,
     ) is True
+
+
+def test_schema_reset_ignores_a_half_built_schema(tmp_path):
+    """A schema another connection is still creating must not look stale.
+
+    ``executescript`` builds ``index_metadata`` and ``indexed_file`` before
+    ``indexed_chunk``. A second connection arriving in that window used to
+    conclude the layout was the pre-chunk one and drop the tables the first was
+    still building, surfacing as ``no such table: main.indexed_file`` under
+    concurrent writers.
+    """
+
+    import sqlite3
+
+    conn = sqlite3.connect(tmp_path / "half.db")
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE index_metadata (id INTEGER PRIMARY KEY);
+            CREATE TABLE indexed_file (id INTEGER PRIMARY KEY);
+            """
+        )
+        conn.commit()
+        assert cache._schema_needs_reset(conn) is False
+    finally:
+        conn.close()
+
+
+def test_schema_reset_still_detects_the_pre_chunk_layout(tmp_path):
+    """``file_embedding`` only ever existed before chunked indexing."""
+
+    import sqlite3
+
+    conn = sqlite3.connect(tmp_path / "legacy.db")
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE index_metadata (id INTEGER PRIMARY KEY);
+            CREATE TABLE file_embedding (id INTEGER PRIMARY KEY);
+            """
+        )
+        conn.commit()
+        assert cache._schema_needs_reset(conn) is True
+    finally:
+        conn.close()
+
+
+def test_schema_reset_leaves_an_empty_database_alone(tmp_path):
+    import sqlite3
+
+    conn = sqlite3.connect(tmp_path / "empty.db")
+    try:
+        assert cache._schema_needs_reset(conn) is False
+    finally:
+        conn.close()
