@@ -73,7 +73,8 @@ commands.
 Core parameters:
 
 - `query`: text to search for (required)
-- `path`: root directory to search
+- `path`: root directory to search, resolved when the call runs; defaults to
+  the process's current working directory
 - `mode`: indexing strategy (`auto`, `name`, `head`, `brief`, `code`, `outline`, `full`)
 - `top`: number of results
 - `include_hidden`, `respect_gitignore`, `recursive`

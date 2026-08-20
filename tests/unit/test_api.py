@@ -766,3 +766,105 @@ def test_index_local_creates_project_cache_and_uses_it(tmp_path, monkeypatch) ->
     assert (tmp_path / ".vexor" / ".gitignore").is_file()
     expected_cache_path = tmp_path / ".vexor" / cache_module.DB_FILENAME
     assert result.cache_path == expected_cache_path.resolve()
+
+
+def _capture_directory(monkeypatch, attribute, result):
+    """Stub one service entry point and record the directory the API resolved."""
+
+    captured: dict[str, object] = {}
+
+    def fake(directory, *_args, **_kwargs):
+        captured["directory"] = directory
+        return result(directory) if callable(result) else result
+
+    monkeypatch.setattr(api_module, attribute, fake)
+    return captured
+
+
+def _capture_search_directory(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_perform_search(request):
+        captured["directory"] = request.directory
+        return SearchResponse(
+            base_path=request.directory,
+            backend=None,
+            results=[],
+            is_stale=False,
+            index_empty=True,
+        )
+
+    monkeypatch.setattr(api_module, "perform_search", fake_perform_search)
+    return captured
+
+
+@pytest.fixture
+def elsewhere(tmp_path, monkeypatch):
+    """Change into a directory that is not the one the module was imported from."""
+
+    workdir = tmp_path / "elsewhere"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)
+    return workdir.resolve()
+
+
+def test_search_default_path_tracks_cwd_at_call_time(elsewhere, monkeypatch) -> None:
+    captured = _capture_search_directory(monkeypatch)
+
+    api_module.search("hello", mode="name", use_config=False)
+
+    assert captured["directory"] == elsewhere
+
+
+def test_index_default_path_tracks_cwd_at_call_time(elsewhere, monkeypatch) -> None:
+    captured = _capture_directory(
+        monkeypatch, "build_index", IndexResult(status=IndexStatus.EMPTY)
+    )
+
+    api_module.index(mode="name", use_config=False)
+
+    assert captured["directory"] == elsewhere
+
+
+def test_index_in_memory_default_path_tracks_cwd_at_call_time(
+    elsewhere, monkeypatch
+) -> None:
+    captured = _capture_directory(
+        monkeypatch,
+        "build_index_in_memory",
+        lambda directory: (np.zeros((0, 3), dtype=np.float32), [], []),
+    )
+
+    api_module.index_in_memory(mode="name", use_config=False)
+
+    assert captured["directory"] == elsewhere
+
+
+def test_clear_index_default_path_tracks_cwd_at_call_time(elsewhere, monkeypatch) -> None:
+    captured = _capture_directory(monkeypatch, "clear_index_entries", 0)
+
+    api_module.clear_index(mode="name")
+
+    assert captured["directory"] == elsewhere
+
+
+def test_client_search_default_path_tracks_cwd_at_call_time(
+    elsewhere, monkeypatch
+) -> None:
+    captured = _capture_search_directory(monkeypatch)
+
+    with api_module.VexorClient(use_config=False) as client:
+        client.search("hello", mode="name")
+
+    assert captured["directory"] == elsewhere
+
+
+def test_client_index_default_path_tracks_cwd_at_call_time(elsewhere, monkeypatch) -> None:
+    captured = _capture_directory(
+        monkeypatch, "build_index", IndexResult(status=IndexStatus.EMPTY)
+    )
+
+    with api_module.VexorClient(use_config=False) as client:
+        client.index(mode="name")
+
+    assert captured["directory"] == elsewhere

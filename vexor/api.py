@@ -332,7 +332,7 @@ class VexorClient:
         self,
         query: str,
         *,
-        path: Path | str = Path.cwd(),
+        path: Path | str = ".",
         top: int = 5,
         include_hidden: bool = False,
         respect_gitignore: bool = True,
@@ -406,7 +406,7 @@ class VexorClient:
 
     def index(
         self,
-        path: Path | str = Path.cwd(),
+        path: Path | str = ".",
         *,
         include_hidden: bool = False,
         respect_gitignore: bool = True,
@@ -467,7 +467,7 @@ class VexorClient:
 
     def index_in_memory(
         self,
-        path: Path | str = Path.cwd(),
+        path: Path | str = ".",
         *,
         include_hidden: bool = False,
         respect_gitignore: bool = True,
@@ -527,7 +527,7 @@ class VexorClient:
 
     def clear_index(
         self,
-        path: Path | str = Path.cwd(),
+        path: Path | str = ".",
         *,
         include_hidden: bool = False,
         respect_gitignore: bool = True,
@@ -587,7 +587,7 @@ def config_context(
 def search(
     query: str,
     *,
-    path: Path | str = Path.cwd(),
+    path: Path | str = ".",
     top: int = 5,
     include_hidden: bool = False,
     respect_gitignore: bool = True,
@@ -654,7 +654,7 @@ def search(
 
 
 def index(
-    path: Path | str = Path.cwd(),
+    path: Path | str = ".",
     *,
     include_hidden: bool = False,
     respect_gitignore: bool = True,
@@ -709,7 +709,7 @@ def index(
 
 
 def index_in_memory(
-    path: Path | str = Path.cwd(),
+    path: Path | str = ".",
     *,
     include_hidden: bool = False,
     respect_gitignore: bool = True,
@@ -764,7 +764,7 @@ def index_in_memory(
 
 
 def clear_index(
-    path: Path | str = Path.cwd(),
+    path: Path | str = ".",
     *,
     include_hidden: bool = False,
     respect_gitignore: bool = True,
