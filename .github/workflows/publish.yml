@@ -125,7 +125,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          spec="$(grep -oE 'ruff==[0-9]+\.[0-9]+\.[0-9]+' pyproject.toml | head -n 1)"
+          # `|| true` keeps `set -e` from aborting the assignment when grep finds
+          # nothing, so the missing-pin case reaches the error message below.
+          spec="$(grep -oE 'ruff==[0-9]+\.[0-9]+\.[0-9]+' pyproject.toml | head -n 1 || true)"
           if [ -z "${spec}" ]; then
             echo "::error::pyproject.toml has no pinned ruff version to install." >&2
             exit 1
