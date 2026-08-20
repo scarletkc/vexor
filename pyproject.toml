@@ -109,14 +109,6 @@ ignore = [
     "RUF001",
 ]
 
-[tool.ruff.lint.per-file-ignores]
-# Both modules default `path` to `Path.cwd()`, which binds the working directory
-# at import time instead of at call time. That is a real defect in the Python API
-# and is tracked separately; fixing it changes public signatures, so it does not
-# ride along with the linter rollout.
-"vexor/api.py" = ["B008"]
-"vexor/cli.py" = ["B008"]
-
 [tool.ruff.lint.flake8-bugbear]
 # Typer carries CLI metadata in call-expression defaults, so B008 there reports
 # the framework's documented signature style rather than a shared-state bug.

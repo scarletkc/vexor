@@ -382,7 +382,7 @@ def main(
 def search(
     query: str = typer.Argument(..., help=Messages.HELP_QUERY),
     path: Path = typer.Option(
-        Path.cwd(),
+        Path("."),
         "--path",
         "-p",
         help=Messages.HELP_SEARCH_PATH,
@@ -581,7 +581,7 @@ def search(
 @app.command()
 def index(
     path: Path = typer.Option(
-        Path.cwd(),
+        Path("."),
         "--path",
         "-p",
         help=Messages.HELP_INDEX_PATH,
@@ -1659,7 +1659,7 @@ def install(
 @app.command(help=Messages.HELP_MCP)
 def mcp(
     path: Path = typer.Option(
-        Path.cwd(),
+        Path("."),
         "--path",
         "-p",
         help=Messages.HELP_MCP_PATH,

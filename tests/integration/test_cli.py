@@ -2404,3 +2404,49 @@ def test_project_local_cache_index_search_show_and_clear(tmp_path, monkeypatch):
     assert "Removed 1 cached index entry" in clear_result.stdout
     assert show_after_clear.exit_code == 0
     assert "No cached index found" in show_after_clear.stdout
+
+
+def test_search_without_path_uses_cwd_at_invocation(tmp_path, monkeypatch):
+    """`--path` defaults to the directory the command runs in, not the import-time one."""
+    runner = CliRunner()
+    workdir = tmp_path / "elsewhere"
+    workdir.mkdir()
+    captured = {}
+
+    def fake_perform_search(request):
+        captured["directory"] = request.directory
+        return SearchResponse(
+            base_path=request.directory,
+            backend="fake-backend",
+            results=[],
+            is_stale=False,
+            index_empty=True,
+        )
+
+    monkeypatch.setattr("vexor.cli.perform_search", fake_perform_search)
+    monkeypatch.chdir(workdir)
+
+    result = runner.invoke(app, ["search", "alpha"])
+
+    assert result.exit_code == 0
+    assert captured["directory"] == workdir.resolve()
+
+
+def test_index_without_path_uses_cwd_at_invocation(tmp_path, monkeypatch):
+    """Indexing with no --path must target the directory the command runs in."""
+    runner = CliRunner()
+    workdir = tmp_path / "elsewhere"
+    workdir.mkdir()
+    captured = {}
+
+    def fake_build_index(directory, **_kwargs):
+        captured["directory"] = directory
+        return IndexResult(status=IndexStatus.EMPTY)
+
+    monkeypatch.setattr("vexor.cli.build_index", fake_build_index)
+    monkeypatch.chdir(workdir)
+
+    result = runner.invoke(app, ["index"])
+
+    assert result.exit_code == 0
+    assert captured["directory"] == workdir.resolve()
