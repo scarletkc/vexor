@@ -16,13 +16,15 @@ the handle does not touch the database; the named collection is created by its
 first successful non-empty write.
 
 The handle uses the client's resolved embedding configuration unless you pass
-overrides to `collection(...)`. The provider, model, and vector dimension are
-pinned when the first write creates the collection. Any later write **or search**
-configured with a different provider, model, or dimension raises an error that
-tells you to recreate the collection instead of mixing incompatible vectors.
-Reads are checked too: two models can share a vector width while embedding into
-unrelated spaces, so a dimension match alone would let a query score vectors it
-has nothing to do with and return a ranking that means nothing.
+overrides to `collection(...)`.
+
+The provider, model, and vector dimension are fixed when the collection is
+created. Later writes **and searches** configured differently are rejected, with
+an error telling you to recreate the collection.
+
+Matching dimensions are not enough on their own: two models can produce
+incompatible vector spaces at the same width. That is why searches are checked
+against the pinned contract too, not just against the vector size.
 
 ## Write records
 
@@ -40,12 +42,15 @@ One asymmetry to know about: a `datetime` is stored as both an ISO 8601 string
 and epoch seconds, so range filters on it work as expected, but reading a record
 back returns the ISO **string**, not a `datetime` object. Parse it yourself if
 you need the type: `datetime.fromisoformat(record.metadata["sent_at"])`.
-Stored `datetime` values are returned as ISO 8601 strings when records are read.
 
 An upsert replaces the record's metadata wholesale. When its text has not
 changed, Vexor keeps the existing embedding and BM25 postings instead of
 embedding it again, but still rewrites the metadata. The returned
 `UpsertReport` reports `written`, `embedded`, and `skipped` counts.
+
+One record is one vector. V1 does not chunk long text, and text that exceeds the
+embedding provider's limit surfaces the provider error rather than being
+silently truncated. Split long documents yourself before upserting them.
 
 ## Filter records
 
@@ -82,10 +87,6 @@ collections do not have an approximate nearest-neighbor index. Search cost
 therefore tracks the size of one filtered slice. Without a filter, that slice
 is the entire collection, so use selective metadata such as a chat, tenant, or
 time boundary when the application naturally has one.
-
-V1 stores one vector per record and does not chunk long text. Text that exceeds
-the embedding provider's limit surfaces the provider error; Vexor does not
-silently truncate it.
 
 ## Worked example: database-backed chat history
 
