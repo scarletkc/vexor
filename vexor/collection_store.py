@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -172,8 +173,32 @@ def _open(readonly: bool = False) -> sqlite3.Connection:
     db_path = collections_db_path()
     conn = connect(db_path, readonly=readonly)
     if not readonly:
+        # Hand transaction control to us so writes can open with BEGIN
+        # IMMEDIATE; see _write_transaction for why that matters.
+        conn.isolation_level = None
         _ensure_schema(conn)
     return conn
+
+
+@contextmanager
+def _write_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """Run a write transaction that takes the write lock up front.
+
+    SQLite's default DEFERRED transaction takes a read lock on the first SELECT
+    and only tries to upgrade on the first write. Two writers that each hold a
+    read lock can never both upgrade, so SQLite returns SQLITE_BUSY immediately
+    and ``busy_timeout`` does not apply — waiting cannot resolve a deadlock.
+    ``BEGIN IMMEDIATE`` takes the write lock at the start, which ``busy_timeout``
+    does cover, so concurrent writers queue instead of failing.
+    """
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
 
 
 def _open_readonly() -> sqlite3.Connection | None:
@@ -293,7 +318,7 @@ def ensure_collection(
         raise CollectionError(Messages.ERROR_COLLECTION_DIMENSION_INVALID)
     conn = _open()
     try:
-        with conn:
+        with _write_transaction(conn):
             row = conn.execute(
                 "SELECT * FROM collection WHERE name = ?", (clean_name,)
             ).fetchone()
@@ -383,7 +408,7 @@ def drop_collection(name: str) -> bool:
         return False
     conn = _open()
     try:
-        with conn:
+        with _write_transaction(conn):
             cursor = conn.execute(
                 "DELETE FROM collection WHERE name = ?", ((name or "").strip(),)
             )
@@ -427,7 +452,7 @@ def clear_all_collections() -> None:
     # caller asked for the records to be gone, and that must succeed either way.
     conn = _open()
     try:
-        with conn:
+        with _write_transaction(conn):
             conn.execute("DELETE FROM collection")
     finally:
         conn.close()
@@ -489,7 +514,7 @@ def upsert_records(collection_id: int, records: Sequence[PreparedRecord]) -> int
     conn = _open()
     try:
         updated_at = datetime.now(timezone.utc).isoformat()
-        with conn:
+        with _write_transaction(conn):
             for record in records:
                 conn.execute(
                     """
@@ -594,7 +619,7 @@ def delete_records(collection_id: int, record_keys: Sequence[str]) -> int:
     conn = _open()
     try:
         removed = 0
-        with conn:
+        with _write_transaction(conn):
             for batch in chunk_values(keys):
                 placeholders = ", ".join("?" for _ in batch)
                 cursor = conn.execute(

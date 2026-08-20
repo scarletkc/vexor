@@ -436,3 +436,70 @@ def test_searching_with_a_different_model_raises_even_at_the_same_dimension(
 
     # The matching contract still works.
     assert [hit.id for hit in _search("c", "query", backend)] == ["a"]
+
+
+# ---------------------------------------------------------------------------
+# 8. Concurrent writers must queue, not fail
+# ---------------------------------------------------------------------------
+
+
+def test_concurrent_first_writes_do_not_deadlock(isolated_cache):
+    """Racing writers must serialize instead of raising "database is locked".
+
+    A DEFERRED transaction takes a read lock on its first SELECT and only tries
+    to upgrade on the first write. Two writers holding read locks can never both
+    upgrade, so SQLite returns BUSY immediately and busy_timeout does not help --
+    waiting cannot resolve a deadlock. Writes therefore open with BEGIN
+    IMMEDIATE, which busy_timeout does cover.
+    """
+
+    import threading
+
+    errors: list[str] = []
+    created: list[int] = []
+    barrier = threading.Barrier(8)
+
+    def worker() -> None:
+        try:
+            barrier.wait()
+            info = store.ensure_collection(
+                "race", provider="local", model="m", dimension=3
+            )
+            created.append(info.id)
+        # Broad on purpose: the failure mode under test is any raise at all.
+        except Exception as exc:
+            errors.append(f"{type(exc).__name__}: {exc}")
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert len(set(created)) == 1, "all writers must converge on one collection"
+
+
+def test_concurrent_upserts_all_land(isolated_cache):
+    import threading
+
+    backend = CountingBackend({})
+    errors: list[str] = []
+    barrier = threading.Barrier(8)
+
+    def worker(index: int) -> None:
+        try:
+            barrier.wait()
+            _upsert("race", [{"id": f"r{index}", "text": f"text {index}"}], backend)
+        # Broad on purpose: the failure mode under test is any raise at all.
+        except Exception as exc:
+            errors.append(f"{type(exc).__name__}: {exc}")
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert collection_service.count_records(name="race") == 8
