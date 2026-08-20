@@ -16,8 +16,10 @@ from .cache import (
     project_cache_context,
     set_cache_dir,
 )
+from .collection_store import CollectionError, CollectionInfo, StoredRecord
 from .config import (
     DEFAULT_BATCH_SIZE,
+    DEFAULT_EMBED_CONCURRENCY,
     DEFAULT_EXTRACT_BACKEND,
     DEFAULT_EXTRACT_CONCURRENCY,
     DEFAULT_RERANK,
@@ -35,6 +37,13 @@ from .providers.capabilities import (
     DEFAULT_PROVIDER,
     resolve_default_model,
     validate_embedding_dimensions_for_model,
+)
+from .search import VexorSearcher
+from .services import collection_service
+from .services.collection_service import (
+    DEFAULT_COLLECTION_RERANK,
+    RecordResult,
+    UpsertReport,
 )
 from .services.freshness_service import FreshnessTracker
 from .services.index_service import (
@@ -553,6 +562,54 @@ class VexorClient:
             recursive=recursive,
             extensions=extensions,
             exclude_patterns=exclude_patterns,
+            data_dir=resolved_data_dir,
+            config_dir=resolved_config_dir,
+            cache_dir=resolved_cache_dir,
+        )
+
+    def collection(
+        self,
+        name: str,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        batch_size: int | None = None,
+        embed_concurrency: int | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        local_cuda: bool | None = None,
+        embedding_dimensions: int | None = None,
+        use_config: bool | None = None,
+        config: Config | Mapping[str, object] | str | None = None,
+        no_cache: bool = False,
+        data_dir: Path | str | None = None,
+        config_dir: Path | str | None = None,
+        cache_dir: Path | str | None = None,
+    ) -> CollectionHandle:
+        """Return a handle to the named record collection.
+
+        The collection is created on first write, not here, so asking for a
+        handle never touches the database.
+        """
+
+        resolved_use_config = self.use_config if use_config is None else use_config
+        resolved_data_dir, resolved_config_dir, resolved_cache_dir = (
+            self._resolve_dir_overrides(data_dir, config_dir, cache_dir)
+        )
+        return CollectionHandle(
+            name,
+            provider=provider,
+            model=model,
+            batch_size=batch_size,
+            embed_concurrency=embed_concurrency,
+            base_url=base_url,
+            api_key=api_key,
+            local_cuda=local_cuda,
+            embedding_dimensions=embedding_dimensions,
+            use_config=resolved_use_config,
+            config=config,
+            runtime_config=self._runtime_config,
+            no_cache=no_cache,
             data_dir=resolved_data_dir,
             config_dir=resolved_config_dir,
             cache_dir=resolved_cache_dir,
@@ -1245,3 +1302,216 @@ def _coerce_embedding_dimensions(value: int | None) -> int | None:
     if value < 0:
         raise VexorError(Messages.ERROR_EMBEDDING_DIMENSIONS_INVALID)
     return value
+
+
+@contextmanager
+def _collection_errors():
+    """Translate store/service contract errors into the public error type."""
+
+    try:
+        yield
+    except CollectionError as exc:
+        raise VexorError(str(exc)) from exc
+
+
+class CollectionHandle:
+    """Session handle for one named collection.
+
+    A collection holds caller-supplied records instead of files, so nothing here
+    takes a path. The embedding provider, model, and vector width are pinned on
+    first write and verified on every later one; changing any of them raises
+    rather than mixing incompatible vectors into one corpus.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        batch_size: int | None = None,
+        embed_concurrency: int | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        local_cuda: bool | None = None,
+        embedding_dimensions: int | None = None,
+        use_config: bool = True,
+        config: Config | Mapping[str, object] | str | None = None,
+        runtime_config: _RuntimeConfigOverride | None = None,
+        no_cache: bool = False,
+        data_dir: Path | str | None = None,
+        config_dir: Path | str | None = None,
+        cache_dir: Path | str | None = None,
+    ) -> None:
+        self.name = name
+        self._provider = provider
+        self._model = model
+        self._batch_size = batch_size
+        self._embed_concurrency = embed_concurrency
+        self._base_url = base_url
+        self._api_key = api_key
+        self._local_cuda = local_cuda
+        self._embedding_dimensions = embedding_dimensions
+        self._use_config = use_config
+        self._config = config
+        self._runtime_config = runtime_config
+        self._no_cache = no_cache
+        self._data_dir = data_dir
+        self._config_dir = config_dir
+        self._cache_dir = cache_dir
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"CollectionHandle(name={self.name!r})"
+
+    def _settings(self) -> RuntimeSettings:
+        # ``directory=None`` on purpose: collections live in the shared cache
+        # directory, so picking up a project-local config from the working
+        # directory would make the pinned provider depend on where Python
+        # happened to be started.
+        return _resolve_settings(
+            directory=None,
+            provider=self._provider,
+            model=self._model,
+            batch_size=self._batch_size,
+            embed_concurrency=self._embed_concurrency,
+            extract_concurrency=None,
+            extract_backend=None,
+            base_url=self._base_url,
+            api_key=self._api_key,
+            local_cuda=self._local_cuda,
+            embedding_dimensions=self._embedding_dimensions,
+            auto_index=None,
+            use_config=self._use_config,
+            runtime_config=self._runtime_config,
+            config_override=self._config,
+        )
+
+    def _dir_context(self):
+        return _data_dir_context(
+            self._data_dir,
+            config_dir=self._config_dir,
+            cache_dir=self._cache_dir,
+        )
+
+    def _searcher(self, settings: RuntimeSettings) -> VexorSearcher:
+        return VexorSearcher(
+            model_name=settings.model_name,
+            batch_size=settings.batch_size,
+            embed_concurrency=settings.embed_concurrency or DEFAULT_EMBED_CONCURRENCY,
+            provider=settings.provider,
+            base_url=settings.base_url,
+            api_key=settings.api_key,
+            local_cuda=settings.local_cuda,
+            embedding_dimensions=settings.embedding_dimensions,
+        )
+
+    def upsert_many(
+        self,
+        records: Sequence[Mapping[str, object]],
+    ) -> UpsertReport:
+        """Insert or replace records, embedding only the texts that changed.
+
+        Each record is a mapping with ``id`` and ``text``, plus an optional flat
+        ``metadata`` mapping of scalars. A record whose text is unchanged since
+        the last upsert keeps its stored vector and postings; its metadata is
+        still replaced, so a pure metadata edit costs nothing to embed.
+        """
+
+        with self._dir_context(), _collection_errors():
+            settings = self._settings()
+            return collection_service.upsert_records(
+                name=self.name,
+                records=records,
+                searcher=self._searcher(settings),
+                model_name=settings.model_name,
+                provider=settings.provider,
+                embedding_dimension=settings.embedding_dimensions,
+                no_cache=self._no_cache,
+            )
+
+    def upsert(
+        self,
+        record_id: str,
+        text: str,
+        metadata: Mapping[str, object] | None = None,
+    ) -> UpsertReport:
+        """Insert or replace a single record."""
+
+        return self.upsert_many(
+            [{"id": record_id, "text": text, "metadata": metadata}]
+        )
+
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 10,
+        filters: Mapping[str, object] | None = None,
+        rerank: str = DEFAULT_COLLECTION_RERANK,
+    ) -> list[RecordResult]:
+        """Search this collection, applying *filters* before anything is scored.
+
+        Filtering is strict and resolves to a candidate id set first, so a
+        record that never reaches the global head is still findable inside its
+        own filtered subset.
+        """
+
+        with self._dir_context(), _collection_errors():
+            settings = self._settings()
+            return collection_service.search_records(
+                name=self.name,
+                query=query,
+                searcher=self._searcher(settings),
+                model_name=settings.model_name,
+                provider=settings.provider,
+                top_k=top_k,
+                filters=filters,
+                rerank=rerank,
+                embedding_dimension=settings.embedding_dimensions,
+                no_cache=self._no_cache,
+            )
+
+    def delete_many(self, record_ids: Sequence[str]) -> int:
+        """Delete records by id, returning how many existed."""
+
+        with self._dir_context(), _collection_errors():
+            return collection_service.delete_records(
+                name=self.name, record_keys=record_ids
+            )
+
+    def delete(self, record_id: str) -> int:
+        """Delete a single record by id."""
+
+        return self.delete_many([record_id])
+
+    def get_many(self, record_ids: Sequence[str]) -> list[StoredRecord]:
+        """Return stored records by id, skipping ids that are absent."""
+
+        with self._dir_context(), _collection_errors():
+            return collection_service.get_records(
+                name=self.name, record_keys=record_ids
+            )
+
+    def get(self, record_id: str) -> StoredRecord | None:
+        """Return one stored record, or ``None`` when it is absent."""
+
+        found = self.get_many([record_id])
+        return found[0] if found else None
+
+    def count(self) -> int:
+        """Return how many records this collection holds."""
+
+        with self._dir_context(), _collection_errors():
+            return collection_service.count_records(name=self.name)
+
+    def info(self) -> CollectionInfo | None:
+        """Return the pinned provider/model/dimension contract, or ``None``."""
+
+        with self._dir_context(), _collection_errors():
+            return collection_service.collection_info(name=self.name)
+
+    def drop(self) -> bool:
+        """Delete this collection and every record in it."""
+
+        with self._dir_context(), _collection_errors():
+            return collection_service.drop_collection(name=self.name)

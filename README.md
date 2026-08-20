@@ -173,6 +173,7 @@ Everyday usage fits in `vexor "query"`, `vexor search`, and `vexor index` (see Q
 - [CLI reference](https://github.com/scarletkc/vexor/blob/main/docs/cli.md) — commands, flags, index modes, cache behavior
 - [MCP server](https://github.com/scarletkc/vexor/blob/main/docs/mcp.md) — client setup, environment variables, tool schemas
 - [Python API](https://github.com/scarletkc/vexor/blob/main/docs/api/python.md) — programmatic usage
+- [Collections API](https://github.com/scarletkc/vexor/blob/main/docs/api/collections.md) — database-backed text records and filtered search
 
 ## Contributing
 

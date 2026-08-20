@@ -5,10 +5,26 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .api import InMemoryIndex, VexorClient, VexorError
+    from .api import (
+        CollectionError,
+        CollectionHandle,
+        CollectionInfo,
+        InMemoryIndex,
+        RecordResult,
+        StoredRecord,
+        UpsertReport,
+        VexorClient,
+        VexorError,
+    )
 
 __all__ = [
+    "CollectionError",
+    "CollectionHandle",
+    "CollectionInfo",
     "InMemoryIndex",
+    "RecordResult",
+    "StoredRecord",
+    "UpsertReport",
     "VexorClient",
     "VexorError",
     "__version__",
@@ -26,7 +42,13 @@ __version__ = "0.27.2"
 
 _API_EXPORTS = frozenset(
     {
+        "CollectionError",
+        "CollectionHandle",
+        "CollectionInfo",
         "InMemoryIndex",
+        "RecordResult",
+        "StoredRecord",
+        "UpsertReport",
         "VexorClient",
         "VexorError",
         "clear_index",
