@@ -40,6 +40,8 @@
 
 - Use `docs/development.md` for setup. `python -m pytest` is the main offline test command; run
   focused tests while developing and the full suite before merging.
+- `python -m ruff check .` must pass; it gates the release job. Suppress a rule only with a
+  comment saying why, and never by widening the ignore list to hide a real finding.
 - Cover relevant success and failure paths, especially optional extras such as `flashrank` and
   platform-specific shell behavior. Use fixtures or stubs and keep provider and network
   interactions mocked in the offline suite. Assert behavior or structured output rather than

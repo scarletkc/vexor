@@ -57,6 +57,9 @@ local-cuda = [
     "onnxruntime-gpu>=1.17.0; platform_system != \"Darwin\"",
 ]
 dev = [
+    # Pinned so a ruff release cannot turn a green branch red on its own; the
+    # lint workflow reads this exact spec.
+    "ruff==0.16.3",
     "pytest>=7.4",
     "pytest-cov>=4.1",
     "build>=1.2.1",
