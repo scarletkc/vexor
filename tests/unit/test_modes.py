@@ -84,7 +84,8 @@ def test_full_strategy_supports_docx(tmp_path):
 def test_brief_strategy_extracts_keywords(tmp_path):
     file_path = tmp_path / "req.md"
     file_path.write_text(
-        """# Login requirement\nUsers must login with MFA. The login flow should support backup codes."""
+        "# Login requirement\n"
+        "Users must login with MFA. The login flow should support backup codes."
     )
     strategy = BriefStrategy()
     payload = strategy.payload_for_file(file_path)
@@ -126,7 +127,9 @@ TAIL_CONSTANT = "tail"
 
     assert payloads
     assert payloads[0].chunk_index == 0
-    assert all(payload.start_line is not None and payload.end_line is not None for payload in payloads)
+    assert all(
+        payload.start_line is not None and payload.end_line is not None for payload in payloads
+    )
     assert any("foo" in payload.label for payload in payloads)
     assert any("VALUE = 42" in payload.label for payload in payloads)
     assert any("Bar.method" in (payload.preview or "") for payload in payloads)
@@ -164,7 +167,9 @@ Child body.
     assert payloads
     assert payloads[0].chunk_index == 0
     assert payloads[0].preview is not None
-    assert all(payload.start_line is not None and payload.end_line is not None for payload in payloads)
+    assert all(
+        payload.start_line is not None and payload.end_line is not None for payload in payloads
+    )
     assert payloads[0].preview.startswith("preamble")
     assert any("Top > Child" in (payload.preview or "") for payload in payloads)
 

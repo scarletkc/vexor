@@ -41,7 +41,9 @@ def test_gemini_backend_chunks_requests(monkeypatch):
             [[0.5, 0.5]],
         ],
     )
-    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=2, api_key="cfg-key")
+    backend = gemini_backend.GeminiEmbeddingBackend(
+        model_name="demo", chunk_size=2, api_key="cfg-key"
+    )
 
     vectors = backend.embed(["a", "bb", "ccc"])
 
@@ -52,7 +54,9 @@ def test_gemini_backend_chunks_requests(monkeypatch):
 
 def test_gemini_backend_rejects_placeholder_api_key():
     with pytest.raises(RuntimeError) as exc:
-        gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=2, api_key="your_api_key_here")
+        gemini_backend.GeminiEmbeddingBackend(
+            model_name="demo", chunk_size=2, api_key="your_api_key_here"
+        )
     assert "api key" in str(exc.value).lower()
 
 
@@ -93,7 +97,9 @@ def test_gemini_backend_formats_client_errors(monkeypatch):
         "Client",
         lambda **_kwargs: SimpleNamespace(models=BoomModels()),
     )
-    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=None, api_key="cfg-key")
+    backend = gemini_backend.GeminiEmbeddingBackend(
+        model_name="demo", chunk_size=None, api_key="cfg-key"
+    )
 
     with pytest.raises(RuntimeError) as exc:
         backend.embed(["x"])
@@ -103,7 +109,9 @@ def test_gemini_backend_formats_client_errors(monkeypatch):
 
 def test_gemini_backend_empty(monkeypatch):
     _install_fake_client(monkeypatch, batches=[])
-    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=2, api_key="cfg-key")
+    backend = gemini_backend.GeminiEmbeddingBackend(
+        model_name="demo", chunk_size=2, api_key="cfg-key"
+    )
 
     result = backend.embed([])
 
@@ -111,8 +119,10 @@ def test_gemini_backend_empty(monkeypatch):
 
 
 def test_gemini_backend_no_embeddings(monkeypatch):
-    models = _install_fake_client(monkeypatch, batches=[[]])
-    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=None, api_key="cfg-key")
+    _install_fake_client(monkeypatch, batches=[[]])
+    backend = gemini_backend.GeminiEmbeddingBackend(
+        model_name="demo", chunk_size=None, api_key="cfg-key"
+    )
 
     with pytest.raises(RuntimeError) as exc:
         backend.embed(["file.txt"])
@@ -146,7 +156,9 @@ def test_gemini_backend_retries_transient_errors(monkeypatch):
     )
     monkeypatch.setattr(gemini_backend, "_sleep", lambda _seconds: None)
 
-    backend = gemini_backend.GeminiEmbeddingBackend(model_name="demo", chunk_size=None, api_key="cfg-key")
+    backend = gemini_backend.GeminiEmbeddingBackend(
+        model_name="demo", chunk_size=None, api_key="cfg-key"
+    )
     vectors = backend.embed(["x"])
 
     assert calls["count"] == 2

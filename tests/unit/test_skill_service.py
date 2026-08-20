@@ -21,7 +21,10 @@ def test_resolve_skill_roots_variants(tmp_path):
     assert resolve_skill_roots("claude", home=home) == [expected_claude]
     assert resolve_skill_roots("auto", home=home) == [expected_claude, expected_codex]
     assert resolve_skill_roots("claude/codex", home=home) == [expected_claude, expected_codex]
-    assert resolve_skill_roots("claude,codex,claude", home=home) == [expected_claude, expected_codex]
+    assert resolve_skill_roots("claude,codex,claude", home=home) == [
+        expected_claude,
+        expected_codex,
+    ]
 
     custom = tmp_path / "custom-skills"
     assert resolve_skill_roots(str(custom), home=home) == [custom]
@@ -67,7 +70,8 @@ def test_install_bundled_skill_installs_and_updates(tmp_path, monkeypatch):
     destination_root = tmp_path / "dest"
     result = install_bundled_skill(skill_name="vexor-cli", skills_dir=destination_root)
     assert result.status == SkillInstallStatus.installed
-    assert (destination_root / "vexor-cli" / "SKILL.md").read_text(encoding="utf-8") == "hello skill"
+    skill_file = destination_root / "vexor-cli" / "SKILL.md"
+    assert skill_file.read_text(encoding="utf-8") == "hello skill"
 
     result2 = install_bundled_skill(skill_name="vexor-cli", skills_dir=destination_root)
     assert result2.status == SkillInstallStatus.up_to_date
@@ -80,7 +84,7 @@ def test_install_bundled_skill_installs_and_updates(tmp_path, monkeypatch):
     # Force should overwrite.
     result3 = install_bundled_skill(skill_name="vexor-cli", skills_dir=destination_root, force=True)
     assert result3.status == SkillInstallStatus.installed
-    assert (destination_root / "vexor-cli" / "SKILL.md").read_text(encoding="utf-8") == "hello skill"
+    assert skill_file.read_text(encoding="utf-8") == "hello skill"
 
 
 def test_resolve_skill_source_dir_uses_packaged_resources(tmp_path, monkeypatch):
@@ -113,7 +117,9 @@ def test_resolve_skill_source_dir_uses_packaged_resources(tmp_path, monkeypatch)
 
 def test_resolve_skill_source_dir_raises_when_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(skill_service, "_repo_skill_dir", lambda _name: tmp_path / "missing")
-    monkeypatch.setattr(skill_service.resources, "files", lambda _pkg: tmp_path / "missing-traversable")
+    monkeypatch.setattr(
+        skill_service.resources, "files", lambda _pkg: tmp_path / "missing-traversable"
+    )
 
     def raise_not_found(_path):
         raise FileNotFoundError("missing")

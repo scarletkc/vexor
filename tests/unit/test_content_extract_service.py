@@ -1,5 +1,7 @@
+import contextlib
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 from docx import Document
@@ -95,7 +97,9 @@ def test_read_chunk_content_stops_reading_at_the_requested_lines(tmp_path):
     """Reading a small chunk must not pull the whole file into memory."""
     source = tmp_path / "big.txt"
     # ~2 MB, with the wanted lines right at the top.
-    source.write_text("".join(f"line-{idx} {'x' * 200}\n" for idx in range(10_000)), encoding="utf-8")
+    source.write_text(
+        "".join(f"line-{idx} {'x' * 200}\n" for idx in range(10_000)), encoding="utf-8"
+    )
 
     read_sizes = []
     real_open = Path.open
@@ -583,17 +587,13 @@ def test_extract_code_chunks_without_end_lineno_falls_back(tmp_path, monkeypatch
         module = real_parse(source)
         for node in getattr(module, "body", []) or []:
             if hasattr(node, "end_lineno"):
-                try:
+                with contextlib.suppress(Exception):
                     delattr(node, "end_lineno")
-                except Exception:
-                    pass
             body = getattr(node, "body", None) or []
             for child in body:
                 if hasattr(child, "end_lineno"):
-                    try:
+                    with contextlib.suppress(Exception):
                         delattr(child, "end_lineno")
-                    except Exception:
-                        pass
         return module
 
     monkeypatch.setattr(ces.ast, "parse", fake_parse)
@@ -681,7 +681,7 @@ def test_pdf_extractor_error_and_empty_paths(monkeypatch, tmp_path):
             return "   "
 
     class Reader:
-        pages = [ErrorPage(), BlankPage()]
+        pages: ClassVar[list] = [ErrorPage(), BlankPage()]
 
     monkeypatch.setattr("pypdf.PdfReader", lambda _path: Reader())
     assert ces._pdf_extractor(pdf_path) is None

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from types import ModuleType, SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
@@ -171,7 +172,7 @@ def test_gemini_format_error_handles_api_key_message():
 
 
 class DummyTextEmbedding:
-    calls: list[dict[str, object]] = []
+    calls: ClassVar[list[dict[str, object]]] = []
 
     def __init__(self, **kwargs):
         DummyTextEmbedding.calls.append(kwargs)
@@ -235,7 +236,7 @@ def test_local_register_custom_model_success_and_already_registered(monkeypatch)
     monkeypatch.setitem(sys.modules, "fastembed.common.model_description", model_description)
 
     class TextEmbedding:
-        calls = []
+        calls: ClassVar[list] = []
 
         @classmethod
         def add_custom_model(cls, **kwargs):

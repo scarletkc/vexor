@@ -696,7 +696,7 @@ def test_get_supported_dimensions_unsupported():
 
 def test_set_embedding_dimensions_valid(tmp_path, monkeypatch):
     """Test setting a valid dimension for a supported model."""
-    config_file = _prepare_config(tmp_path, monkeypatch)
+    _prepare_config(tmp_path, monkeypatch)
     # First set a model that supports dimensions
     config_module.save_config(config_module.Config(model="voyage-3"))
 

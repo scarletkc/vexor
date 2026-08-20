@@ -508,7 +508,9 @@ def test_clear_index_removes_cached_entries(tmp_path, monkeypatch):
     assert not list(vector_dir.glob("*.npy"))
 
     with pytest.raises(FileNotFoundError):
-        cache.load_index(root=root, model="model-a", include_hidden=False, mode=MODE, recursive=True)
+        cache.load_index(
+            root=root, model="model-a", include_hidden=False, mode=MODE, recursive=True
+        )
 
     # unrelated include_hidden flag should remain untouched
     cache.store_index(
@@ -560,7 +562,9 @@ def test_recursive_and_non_recursive_caches_are_separate(tmp_path, monkeypatch):
         entries=_entries_for_files(root, [file_path], embeddings, previews=[file_path.name]),
     )
 
-    data = cache.load_index(root=root, model="model", include_hidden=False, mode=MODE, recursive=False)
+    data = cache.load_index(
+        root=root, model="model", include_hidden=False, mode=MODE, recursive=False
+    )
     assert data["recursive"] is False
 
 
@@ -580,7 +584,9 @@ def test_apply_index_updates_handles_add_modify_delete(tmp_path, monkeypatch):
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        entries=_entries_for_files(root, [file_a, file_b], embeddings, previews=[file_a.name, file_b.name]),
+        entries=_entries_for_files(
+            root, [file_a, file_b], embeddings, previews=[file_a.name, file_b.name]
+        ),
     )
 
     file_a.write_text("updated")
@@ -629,7 +635,9 @@ def test_apply_index_updates_handles_add_modify_delete(tmp_path, monkeypatch):
     )
 
     assert [p.name for p in paths] == ["a.txt", "c.txt"]
-    expected = np.stack([changed_entries[0].embedding, changed_entries[1].embedding], dtype=np.float32)
+    expected = np.stack(
+        [changed_entries[0].embedding, changed_entries[1].embedding], dtype=np.float32
+    )
     assert np.allclose(vectors, expected)
     assert meta["dimension"] == 2
 
@@ -645,7 +653,7 @@ def test_apply_index_updates_rewrites_cascades_and_preserves_bm25(
         file_path.write_text(file_path.stem)
     entries = []
     for idx, (file_path, term) in enumerate(
-        zip(files, ("alpha", "beta", "gamma"))
+        zip(files, ("alpha", "beta", "gamma"), strict=True)
     ):
         entries.append(
             cache.IndexedChunk(
@@ -731,7 +739,9 @@ def test_apply_index_updates_allows_deletions_without_embeddings(tmp_path, monke
         include_hidden=False,
         mode=MODE,
         recursive=True,
-        entries=_entries_for_files(root, [file_a, file_b], embeddings, previews=[file_a.name, file_b.name]),
+        entries=_entries_for_files(
+            root, [file_a, file_b], embeddings, previews=[file_a.name, file_b.name]
+        ),
     )
 
     file_b.unlink()
@@ -839,7 +849,9 @@ def test_extension_specific_caches_have_distinct_metadata(tmp_path, monkeypatch)
     assert removed == 1
     with pytest.raises(FileNotFoundError):
         cache.load_index(root, "model", False, MODE, True, extensions=(".py",))
-    assert cache.load_index(root, "model", False, MODE, True, extensions=(".md",))["extensions"] == (".md",)
+    assert cache.load_index(
+        root, "model", False, MODE, True, extensions=(".md",))["extensions"] == (".md",
+    )
 
 
 def test_clear_all_cache_removes_database(tmp_path, monkeypatch):

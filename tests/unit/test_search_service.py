@@ -77,7 +77,6 @@ def test_hybrid_retrieves_lexical_match_outside_dense_candidate_clamp(
                 "bm25_doc_len": len(tokens),
             }
         )
-    metadata = {"chunks": chunks}
     meta_getter = service._chunk_meta_from_entries(chunks)
 
     legacy, legacy_label, _ = service._rank_results(
@@ -353,7 +352,9 @@ def test_perform_search_skips_query_cache_when_no_cache(monkeypatch, tmp_path: P
     assert response.results[0].path.name == "a.txt"
 
 
-def test_perform_search_missing_index_raises_when_auto_index_disabled(monkeypatch, tmp_path: Path) -> None:
+def test_perform_search_missing_index_raises_when_auto_index_disabled(
+    monkeypatch, tmp_path: Path
+) -> None:
     def fake_load_index_vectors(*_args, **_kwargs):
         raise FileNotFoundError("missing index")
 
@@ -1229,26 +1230,26 @@ def test_perform_search_raises_on_dimension_mismatch(monkeypatch, tmp_path: Path
 
 
 def _content_request(tmp_path: Path, **overrides) -> SearchRequest:
-    params = dict(
-        query="needle",
-        directory=tmp_path,
-        include_hidden=False,
-        respect_gitignore=True,
-        mode="full",
-        recursive=True,
-        top_k=5,
-        model_name="model",
-        batch_size=0,
-        provider="local",
-        base_url=None,
-        api_key=None,
-        local_cuda=False,
-        exclude_patterns=(),
-        extensions=(),
-        auto_index=False,
-        rerank="off",
-        include_content=True,
-    )
+    params = {
+        "query": "needle",
+        "directory": tmp_path,
+        "include_hidden": False,
+        "respect_gitignore": True,
+        "mode": "full",
+        "recursive": True,
+        "top_k": 5,
+        "model_name": "model",
+        "batch_size": 0,
+        "provider": "local",
+        "base_url": None,
+        "api_key": None,
+        "local_cuda": False,
+        "exclude_patterns": (),
+        "extensions": (),
+        "auto_index": False,
+        "rerank": "off",
+        "include_content": True,
+    }
     params.update(overrides)
     return SearchRequest(**params)
 
@@ -1315,13 +1316,19 @@ def test_split_chunk_windows_read_back_their_own_lines(tmp_path: Path) -> None:
     chunks = [
         {
             "chunk_index": 0,
-            "preview": 'class Registry: [#1] :: class Registry: SETTING_0 = "value number 0 for the registry entry"',
+            "preview": (
+                'class Registry: [#1] :: class Registry: '
+                'SETTING_0 = "value number 0 for the registry entry"'
+            ),
             "start_line": 1,
             "end_line": 41,
         },
         {
             "chunk_index": 1,
-            "preview": 'class Registry: [#2] :: SETTING_20 = "value number 20 for the registry entry" SETTING_21 =',
+            "preview": (
+                'class Registry: [#2] :: '
+                'SETTING_20 = "value number 20 for the registry entry" SETTING_21 ='
+            ),
             "start_line": 1,
             "end_line": 41,
         },

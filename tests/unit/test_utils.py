@@ -147,23 +147,31 @@ def test_collect_files_respects_gitignore_and_exclude(tmp_path):
     assert ".hidden.txt" not in names
 
     # include hidden still respects ignore rules.
-    files_hidden = utils.collect_files(root, include_hidden=True, recursive=True, respect_gitignore=True)
+    files_hidden = utils.collect_files(
+        root, include_hidden=True, recursive=True, respect_gitignore=True
+    )
     names_hidden = [path.name for path in files_hidden]
     assert ".hidden.txt" in names_hidden
     assert "ignored.txt" not in names_hidden
 
     # no respect gitignore includes ignored/excluded.
-    files_all = utils.collect_files(root, include_hidden=True, recursive=True, respect_gitignore=False)
+    files_all = utils.collect_files(
+        root, include_hidden=True, recursive=True, respect_gitignore=False
+    )
     names_all = [path.name for path in files_all]
     assert "ignored.txt" in names_all
     assert "excluded.txt" in names_all
 
     # extension filtering intersects.
-    files_py = utils.collect_files(root, include_hidden=True, recursive=True, respect_gitignore=False, extensions=[".py"])
+    files_py = utils.collect_files(
+        root, include_hidden=True, recursive=True, respect_gitignore=False, extensions=[".py"]
+    )
     assert [path.name for path in files_py] == ["sub_kept.py"]
 
     # non-recursive.
-    top_only = utils.collect_files(root, include_hidden=True, recursive=False, respect_gitignore=False)
+    top_only = utils.collect_files(
+        root, include_hidden=True, recursive=False, respect_gitignore=False
+    )
     assert all(path.parent == root for path in top_only)
 
 
