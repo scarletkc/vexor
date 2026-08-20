@@ -69,7 +69,8 @@ def _search(name, query, backend, **kwargs):
         name=name,
         query=query,
         searcher=_searcher(backend),
-        model_name="stub-model",
+        model_name=kwargs.pop("model_name", "stub-model"),
+        provider=kwargs.pop("provider", "local"),
         **kwargs,
     )
 
@@ -371,3 +372,67 @@ def test_exists_is_the_way_to_require_a_key(isolated_cache):
         for result in _search("c", "q", backend, filters={"status": {"exists": False}})
     }
     assert absent == {"plain"}
+
+
+# ---------------------------------------------------------------------------
+# 6. Teardown must not create state, and must not fail on a held file handle
+# ---------------------------------------------------------------------------
+
+
+def test_dropping_a_missing_collection_does_not_create_the_database(isolated_cache):
+    assert collection_service.drop_collection(name="never-existed") is False
+    assert not store.collections_db_path().exists()
+
+
+def test_clear_all_collections_succeeds_while_a_connection_is_open(isolated_cache):
+    """Clearing must work even when a reader still holds the file.
+
+    On Windows an open handle makes ``unlink`` raise, so emptying the tables has
+    to happen first: the caller asked for the records to be gone, and a lock
+    somewhere else in the process must not turn that into an error.
+    """
+
+    backend = CountingBackend({"alpha": [1.0, 0.0, 0.0]})
+    _upsert("c", [{"id": "a", "text": "alpha"}], backend)
+    held = store._open_readonly()
+    try:
+        store.clear_all_collections()
+        assert store.list_collections() == []
+    finally:
+        if held is not None:
+            held.close()
+
+    # The store stays usable after a clear, whether or not the file survived.
+    _upsert("c2", [{"id": "a", "text": "alpha"}], backend)
+    assert [info.name for info in store.list_collections()] == ["c2"]
+
+
+# ---------------------------------------------------------------------------
+# 7. The pinned contract guards reads, not just writes
+# ---------------------------------------------------------------------------
+
+
+def test_searching_with_a_different_model_raises_even_at_the_same_dimension(
+    isolated_cache,
+):
+    """A same-width model must not be allowed to query someone else's vectors.
+
+    Two models can share a vector width while embedding into unrelated spaces.
+    A dimension check alone lets the dot product succeed and return a ranking
+    that means nothing, which is worse than an error because nothing surfaces.
+    """
+
+    backend = CountingBackend({"alpha": [1.0, 0.0, 0.0], "query": [1.0, 0.0, 0.0]})
+    _upsert("c", [{"id": "a", "text": "alpha"}], backend)
+
+    # Same dimension, different model: must raise rather than score.
+    with pytest.raises(CollectionError) as excinfo:
+        _search("c", "query", backend, model_name="other-model")
+    assert "recreate" in str(excinfo.value).lower()
+
+    # Same dimension, different provider: same rule.
+    with pytest.raises(CollectionError):
+        _search("c", "query", backend, provider="openai")
+
+    # The matching contract still works.
+    assert [hit.id for hit in _search("c", "query", backend)] == ["a"]

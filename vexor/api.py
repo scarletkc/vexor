@@ -1463,6 +1463,7 @@ class CollectionHandle:
                 query=query,
                 searcher=self._searcher(settings),
                 model_name=settings.model_name,
+                provider=settings.provider,
                 top_k=top_k,
                 filters=filters,
                 rerank=rerank,

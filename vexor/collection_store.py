@@ -378,6 +378,9 @@ def list_collections() -> list[CollectionInfo]:
 def drop_collection(name: str) -> bool:
     """Delete *name* and everything under it. Returns ``False`` when absent."""
 
+    if not collections_db_path().exists():
+        # Dropping something that was never created must not create a database.
+        return False
     conn = _open()
     try:
         with conn:
@@ -417,10 +420,26 @@ def clear_all_collections() -> None:
     """
 
     db_path = collections_db_path()
+    if not db_path.exists():
+        return
+    # Empty the tables first. Unlinking alone is not enough on Windows, where an
+    # open reader anywhere in the process holds the file and unlink raises; the
+    # caller asked for the records to be gone, and that must succeed either way.
+    conn = _open()
+    try:
+        with conn:
+            conn.execute("DELETE FROM collection")
+    finally:
+        conn.close()
     for suffix in ("", "-wal", "-shm"):
         candidate = Path(f"{db_path}{suffix}")
-        if candidate.exists():
-            candidate.unlink()
+        try:
+            if candidate.exists():
+                candidate.unlink()
+        except OSError:
+            # The rows are already gone; a leftover empty file is harmless and
+            # will be reused by the next write.
+            pass
 
 
 # --------------------------------------------------------------------------

@@ -64,6 +64,37 @@ def _require_collection(name: str) -> CollectionInfo:
     return info
 
 
+def _verify_contract(
+    info: CollectionInfo,
+    *,
+    name: str,
+    provider: str,
+    model_name: str,
+    dimension: int | None = None,
+) -> None:
+    """Raise unless the caller's embedding contract matches what is pinned.
+
+    This has to guard reads as well as writes. Two different models can share a
+    vector width, so a dimension check alone lets a query embedded by one model
+    score vectors produced by another: the arithmetic succeeds and the ranking
+    is meaningless. Silently wrong results are worse than an error.
+    """
+
+    effective_dimension = info.dimension if dimension is None else dimension
+    if (
+        info.provider != provider
+        or info.model != model_name
+        or info.dimension != effective_dimension
+    ):
+        raise CollectionError(
+            Messages.ERROR_COLLECTION_CONTRACT_MISMATCH.format(
+                name=name,
+                stored=f"{info.provider}/{info.model}/{info.dimension}",
+                requested=f"{provider}/{model_name}/{effective_dimension}",
+            )
+        )
+
+
 def _normalize_records(
     records: Sequence[Mapping[str, object]],
     *,
@@ -118,14 +149,7 @@ def upsert_records(
     info = collection_store.get_collection(name)
     existing_hashes: dict[str, str] = {}
     if info is not None:
-        if info.provider != provider or info.model != model_name:
-            raise CollectionError(
-                Messages.ERROR_COLLECTION_CONTRACT_MISMATCH.format(
-                    name=name,
-                    stored=f"{info.provider}/{info.model}/{info.dimension}",
-                    requested=f"{provider}/{model_name}/{info.dimension}",
-                )
-            )
+        _verify_contract(info, name=name, provider=provider, model_name=model_name)
         existing_hashes = collection_store.load_record_hashes(
             info.id, [key for key, _, _, _ in normalized]
         )
@@ -158,13 +182,13 @@ def upsert_records(
         dimension = int(vectors.shape[1])
     else:
         dimension = info.dimension
-        if vectors is not None and int(vectors.shape[1]) != dimension:
-            raise CollectionError(
-                Messages.ERROR_COLLECTION_CONTRACT_MISMATCH.format(
-                    name=name,
-                    stored=f"{info.provider}/{info.model}/{dimension}",
-                    requested=f"{provider}/{model_name}/{int(vectors.shape[1])}",
-                )
+        if vectors is not None:
+            _verify_contract(
+                info,
+                name=name,
+                provider=provider,
+                model_name=model_name,
+                dimension=int(vectors.shape[1]),
             )
 
     info = collection_store.ensure_collection(
@@ -218,6 +242,7 @@ def search_records(
     query: str,
     searcher,
     model_name: str,
+    provider: str,
     top_k: int = 10,
     filters: Mapping[str, object] | None = None,
     rerank: str = DEFAULT_COLLECTION_RERANK,
@@ -240,6 +265,7 @@ def search_records(
     if top_k <= 0:
         return []
     info = _require_collection(name)
+    _verify_contract(info, name=name, provider=provider, model_name=model_name)
 
     candidate_ids = collection_store.resolve_filter_ids(info.id, filters)
     if not candidate_ids:
@@ -260,14 +286,15 @@ def search_records(
     if query_matrix.size == 0:
         raise CollectionError(Messages.ERROR_COLLECTION_EMBED_FAILED)
     query_vector = np.asarray(query_matrix[0], dtype=np.float32).ravel()
-    if query_vector.shape[0] != info.dimension:
-        raise CollectionError(
-            Messages.ERROR_COLLECTION_CONTRACT_MISMATCH.format(
-                name=name,
-                stored=f"{info.provider}/{info.model}/{info.dimension}",
-                requested=f"{info.provider}/{model_name}/{query_vector.shape[0]}",
-            )
-        )
+    # Same provider and model can still yield a different width when the
+    # configured embedding_dimensions changed since the collection was pinned.
+    _verify_contract(
+        info,
+        name=name,
+        provider=provider,
+        model_name=model_name,
+        dimension=int(query_vector.shape[0]),
+    )
 
     # Both sides are L2-normalized, so the dot product is cosine similarity.
     scores = np.asarray(matrix @ query_vector, dtype=np.float32)
