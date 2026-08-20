@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
@@ -324,3 +325,25 @@ def test_update_pre_release_check_does_not_touch_notice_cache(monkeypatch):
     result = runner.invoke(app, ["update", "--pre"])
     assert result.exit_code == 0
     assert written == []
+
+
+def test_mcp_command_without_path_uses_cwd_at_invocation(monkeypatch, tmp_path):
+    """The MCP server's default root follows the directory the command runs in."""
+    runner = CliRunner()
+    workdir = tmp_path / "elsewhere"
+    workdir.mkdir()
+    captured = {}
+
+    import vexor.services.mcp_service as mcp_service
+
+    def fake_serve_stdio(default_path=None):
+        # Mirror what VexorMcpServer.__init__ does with the value it is handed.
+        captured["resolved"] = Path(default_path or Path.cwd()).resolve()
+
+    monkeypatch.setattr(mcp_service, "serve_stdio", fake_serve_stdio)
+    monkeypatch.chdir(workdir)
+
+    result = runner.invoke(app, ["mcp"])
+
+    assert result.exit_code == 0
+    assert captured["resolved"] == workdir.resolve()
