@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 _NUMERIC_THREAD_ENV = (
     "OPENBLAS_NUM_THREADS",

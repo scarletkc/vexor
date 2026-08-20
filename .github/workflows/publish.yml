@@ -106,9 +106,43 @@ jobs:
           fail_ci_if_error: false
           verbose: false
 
+  ruff:
+    name: Ruff (ubuntu-latest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      # Installing the pin straight from pyproject keeps CI and local dev on one
+      # ruff version without repeating the number here.
+      - name: Install ruff
+        shell: bash
+        run: |
+          set -euo pipefail
+          # `|| true` keeps `set -e` from aborting the assignment when grep finds
+          # nothing, so the missing-pin case reaches the error message below.
+          spec="$(grep -oE 'ruff==[0-9]+\.[0-9]+\.[0-9]+' pyproject.toml | head -n 1 || true)"
+          if [ -z "${spec}" ]; then
+            echo "::error::pyproject.toml has no pinned ruff version to install." >&2
+            exit 1
+          fi
+          python -m pip install --upgrade pip
+          pip install "${spec}"
+
+      - name: Run ruff
+        shell: bash
+        run: |
+          ruff check --output-format github .
+
   prepare_release:
     name: Prepare release metadata
-    needs: pytest
+    needs: [pytest, ruff]
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && inputs.force_release)

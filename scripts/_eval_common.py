@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 DEFAULT_QUERIES = Path(__file__).with_name("eval_queries.jsonl")
 

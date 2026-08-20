@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
-from typing import Iterator, Sequence
+from collections.abc import Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 from dotenv import load_dotenv
@@ -12,8 +12,8 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
-from .capabilities import DEFAULT_GEMINI_MODEL
 from ..text import Messages
+from .capabilities import DEFAULT_GEMINI_MODEL
 
 
 class GeminiEmbeddingBackend:

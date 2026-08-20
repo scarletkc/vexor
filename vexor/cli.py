@@ -10,10 +10,11 @@ import shutil
 import subprocess
 import sys
 import threading
+from collections.abc import Sequence
 from difflib import get_close_matches
 from enum import Enum
 from pathlib import Path
-from typing import Sequence, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
@@ -26,7 +27,8 @@ try:
 except ImportError:  # pragma: no cover - Typer before the vendored Click runtime
     from click import Command, Context, UsageError
 
-from . import __version__, cache, config as config_module
+from . import __version__, cache
+from . import config as config_module
 from .cache import (
     cache_db_path,
     clear_all_cache,
@@ -35,8 +37,8 @@ from .cache import (
 )
 from .config import (
     DEFAULT_BATCH_SIZE,
-    DEFAULT_FLASHRANK_MODEL,
     DEFAULT_FLASHRANK_MAX_LENGTH,
+    DEFAULT_FLASHRANK_MODEL,
     DEFAULT_RERANK,
     SUPPORTED_EXTRACT_BACKENDS,
     SUPPORTED_RERANKERS,
@@ -46,12 +48,12 @@ from .config import (
     resolve_remote_rerank_api_key,
 )
 from .modes import available_modes, get_strategy
+from .output import format_status_icon
 from .providers.capabilities import (
     DEFAULT_GEMINI_MODEL,
     DEFAULT_LOCAL_MODEL,
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
-    DEFAULT_VOYAGE_MODEL,
     DIMENSION_SUPPORTED_MODELS,
     SUPPORTED_PROVIDERS,
     get_supported_dimensions,
@@ -59,49 +61,48 @@ from .providers.capabilities import (
     resolve_default_model,
     supports_dimensions,
 )
+from .providers.local import LocalEmbeddingBackend, resolve_fastembed_cache_dir
 from .services.cache_service import is_cache_current, load_index_metadata_safe
 from .services.config_service import (
     apply_config_updates,
     get_config_origin_labels,
     get_config_resolution,
 )
-from .services.init_service import run_init_wizard, should_auto_run_init
 from .services.index_service import IndexStatus, build_index, clear_index_entries
-from .services.search_service import SearchRequest, perform_search, _select_cache_superset
-from .services.system_service import (
-    DoctorCheckResult,
-    build_standalone_download_url,
-    build_upgrade_commands,
-    detect_install_method,
-    check_for_update,
-    fetch_latest_pypi_version,
-    find_command_on_path,
-    git_worktree_is_dirty,
-    InstallMethod,
-    is_version_newer,
-    resolve_editor_command,
-    run_upgrade_commands,
-    run_all_doctor_checks,
-    update_check_enabled,
-    write_update_cache,
-)
+from .services.init_service import run_init_wizard, should_auto_run_init
+from .services.search_service import SearchRequest, _select_cache_superset, perform_search
 from .services.skill_service import (
     DEFAULT_SKILL_NAME,
     SkillInstallStatus,
     install_bundled_skill,
     resolve_skill_roots,
 )
-from .providers.local import LocalEmbeddingBackend, resolve_fastembed_cache_dir
-from .output import format_status_icon
+from .services.system_service import (
+    DoctorCheckResult,
+    InstallMethod,
+    build_standalone_download_url,
+    build_upgrade_commands,
+    check_for_update,
+    detect_install_method,
+    fetch_latest_pypi_version,
+    find_command_on_path,
+    git_worktree_is_dirty,
+    is_version_newer,
+    resolve_editor_command,
+    run_all_doctor_checks,
+    run_upgrade_commands,
+    update_check_enabled,
+    write_update_cache,
+)
 from .text import Messages, Styles
 from .utils import (
-    resolve_directory,
-    format_path,
-    ensure_positive,
     build_exclude_spec,
+    ensure_positive,
+    format_path,
     is_excluded_path,
-    normalize_extensions,
     normalize_exclude_patterns,
+    normalize_extensions,
+    resolve_directory,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -349,7 +350,9 @@ def _should_index_before_search(request: SearchRequest) -> bool:
     exclude_spec = build_exclude_spec(request.exclude_patterns)
     if exclude_spec is not None:
         file_snapshot = _filter_snapshot_by_exclude_patterns(file_snapshot, exclude_spec)
-    if file_snapshot and not is_cache_current(
+    if not file_snapshot:
+        return False
+    return not is_cache_current(
         request.directory,
         request.include_hidden,
         request.respect_gitignore,
@@ -357,9 +360,7 @@ def _should_index_before_search(request: SearchRequest) -> bool:
         recursive=request.recursive,
         exclude_patterns=request.exclude_patterns,
         extensions=request.extensions,
-    ):
-        return True
-    return False
+    )
 
 
 @app.callback()
@@ -532,13 +533,13 @@ def search(
             console.print(_styled(message, Styles.ERROR))
         else:
             typer.echo(message, err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     except (RuntimeError, ValueError) as exc:
         if output_format == SearchOutputFormat.rich:
             console.print(_styled(str(exc), Styles.ERROR))
         else:
             typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     if response.index_empty:
         if output_format == SearchOutputFormat.rich:
@@ -762,7 +763,7 @@ def index(
             )
     except (RuntimeError, ValueError) as exc:
         console.print(_styled(str(exc), Styles.ERROR))
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
     if result.status == IndexStatus.EMPTY:
         console.print(_styled(Messages.INFO_NO_FILES, Styles.WARNING))
         raise typer.Exit(code=0)
@@ -772,7 +773,9 @@ def index(
         )
         return
     if result.cache_path is not None:
-        console.print(_styled(Messages.INFO_INDEX_SAVED.format(path=result.cache_path), Styles.SUCCESS))
+        console.print(
+            _styled(Messages.INFO_INDEX_SAVED.format(path=result.cache_path), Styles.SUCCESS)
+        )
 
 
 @app.command(help=Messages.HELP_INIT)
@@ -1093,7 +1096,8 @@ def config(
     if effective_embedding_dimensions is not None:
         if effective_embedding_dimensions < 0:
             raise typer.BadParameter(
-                f"--set-embedding-dimensions must be non-negative, got {effective_embedding_dimensions}"
+                "--set-embedding-dimensions must be non-negative, got "
+                f"{effective_embedding_dimensions}"
             )
         if effective_embedding_dimensions > 0:
             # Resolve effective model from provider + model to account for provider defaults
@@ -1101,12 +1105,14 @@ def config(
             if not supports_dimensions(effective_model):
                 raise typer.BadParameter(
                     f"Model '{effective_model}' does not support custom dimensions. "
-                    f"Supported model names/prefixes: {', '.join(DIMENSION_SUPPORTED_MODELS.keys())}"
+                    "Supported model names/prefixes: "
+                    f"{', '.join(DIMENSION_SUPPORTED_MODELS.keys())}"
                 )
             supported = get_supported_dimensions(effective_model)
             if supported and effective_embedding_dimensions not in supported:
                 raise typer.BadParameter(
-                    f"Dimension {effective_embedding_dimensions} is not supported for model '{effective_model}'. "
+                    f"Dimension {effective_embedding_dimensions} is not supported "
+                    f"for model '{effective_model}'. "
                     f"Supported dimensions: {supported}"
                 )
 
@@ -1196,7 +1202,7 @@ def config(
                 _prepare_flashrank_model(flashrank_model)
             except RuntimeError as exc:
                 console.print(_styled(str(exc), Styles.ERROR))
-                raise typer.Exit(code=1)
+                raise typer.Exit(code=1) from exc
             console.print(_styled(Messages.INFO_FLASHRANK_SETUP_DONE, Styles.SUCCESS))
     if updates.flashrank_model_set and set_flashrank_model_option is not None:
         if flashrank_model_reset:
@@ -1268,9 +1274,12 @@ def config(
                         Styles.ERROR,
                     )
                 )
-                raise typer.Exit(code=1)
+                raise typer.Exit(code=1) from exc
             console.print(
-                _styled(Messages.INFO_FLASHRANK_CACHE_CLEARED.format(path=cache_dir), Styles.SUCCESS)
+                _styled(
+                    Messages.INFO_FLASHRANK_CACHE_CLEARED.format(path=cache_dir),
+                    Styles.SUCCESS,
+                )
             )
 
     if clear_index_all:
@@ -1489,7 +1498,7 @@ def local(
                     Styles.ERROR,
                 )
             )
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from exc
         console.print(
             _styled(Messages.INFO_LOCAL_CACHE_CLEARED.format(path=cache_dir), Styles.SUCCESS)
         )
@@ -1530,7 +1539,7 @@ def local(
                     Styles.ERROR,
                 )
             )
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from exc
         try:
             providers = ort.get_available_providers()
         except Exception as exc:
@@ -1543,7 +1552,7 @@ def local(
                     Styles.ERROR,
                 )
             )
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from exc
         if "CUDAExecutionProvider" not in providers:
             console.print(_styled(Messages.DOCTOR_LOCAL_CUDA_MISSING, Styles.ERROR))
             console.print(
@@ -1560,7 +1569,7 @@ def local(
         vectors = backend.embed(["test"])
     except RuntimeError as exc:
         console.print(_styled(str(exc), Styles.ERROR))
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     if vectors.size == 0:
         console.print(_styled(Messages.ERROR_NO_EMBEDDINGS, Styles.ERROR))
@@ -1626,7 +1635,7 @@ def install(
             console.print(
                 _styled(Messages.ERROR_INSTALL_SKILL_SOURCE.format(reason=str(exc)), Styles.ERROR)
             )
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from exc
 
         if result.status == SkillInstallStatus.up_to_date:
             console.print(
@@ -1688,11 +1697,8 @@ def doctor(
             config = get_config_resolution(None).config
         except (ValueError, OSError, UnicodeDecodeError):
             config = config_module.Config()
-        if isinstance(exc, config_module.ProjectConfigError):
-            message = str(exc)
-            detail = None
-        elif isinstance(exc, ValueError) and not isinstance(
-            exc, json.JSONDecodeError
+        if isinstance(exc, config_module.ProjectConfigError) or (
+            isinstance(exc, ValueError) and not isinstance(exc, json.JSONDecodeError)
         ):
             message = str(exc)
             detail = None
@@ -1778,7 +1784,7 @@ def update(
         console.print(
             _styled(Messages.ERROR_UPDATE_FETCH.format(reason=str(exc)), Styles.ERROR)
         )
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     is_newer = is_version_newer(latest, __version__)
 
@@ -1823,7 +1829,11 @@ def update(
                 )
             )
             if asset:
-                console.print(_styled(Messages.INFO_UPDATE_STANDALONE_ASSET.format(asset=asset), Styles.INFO))
+                console.print(
+                    _styled(
+                        Messages.INFO_UPDATE_STANDALONE_ASSET.format(asset=asset), Styles.INFO
+                    )
+                )
             console.print(_styled(Messages.INFO_UPDATE_STANDALONE_URL.format(url=url), Styles.INFO))
             return
 
@@ -1898,7 +1908,7 @@ def alias() -> None:
                 Styles.ERROR,
             )
         )
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command()
@@ -2013,7 +2023,7 @@ def _render_results_json(response, base: Path) -> None:
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
-def _render_result_content(result: "SearchResult") -> None:
+def _render_result_content(result: SearchResult) -> None:
     """Print one result's source text under its table row."""
     if result.content is None:
         if result.content_unavailable:
@@ -2037,7 +2047,7 @@ def _render_result_content(result: "SearchResult") -> None:
 
 
 def _render_results(
-    results: Sequence["SearchResult"],
+    results: Sequence[SearchResult],
     base: Path,
     backend: str | None,
     reranker: str | None,
@@ -2086,7 +2096,7 @@ def _escape_porcelain_field(value: str) -> str:
 
 
 def _render_results_porcelain(
-    results: Sequence["SearchResult"],
+    results: Sequence[SearchResult],
     base: Path,
 ) -> None:
     for idx, result in enumerate(results, start=1):
@@ -2105,7 +2115,7 @@ def _render_results_porcelain(
         typer.echo("\t".join(fields))
 
 
-def _render_results_porcelain_z(results: Sequence["SearchResult"], base: Path) -> None:
+def _render_results_porcelain_z(results: Sequence[SearchResult], base: Path) -> None:
     for idx, result in enumerate(results, start=1):
         preview = result.preview if result.preview is not None else "-"
         start_line = str(result.start_line) if result.start_line is not None else "-"
@@ -2281,7 +2291,7 @@ def _edit_config_file() -> None:
         )
     )
     try:
-        subprocess.run(cmd_list + [str(config_path)], check=True)
+        subprocess.run([*cmd_list, str(config_path)], check=True)
     except FileNotFoundError as exc:
         console.print(
             _styled(
@@ -2289,7 +2299,7 @@ def _edit_config_file() -> None:
                 Styles.ERROR,
             )
         )
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
     except subprocess.CalledProcessError as exc:
         code = exc.returncode if exc.returncode is not None else 1
         console.print(
@@ -2298,4 +2308,4 @@ def _edit_config_file() -> None:
                 Styles.ERROR,
             )
         )
-        raise typer.Exit(code=code)
+        raise typer.Exit(code=code) from exc

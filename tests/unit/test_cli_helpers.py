@@ -5,9 +5,9 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+import typer
 
 from vexor import cli
-import typer
 
 
 def test_format_lines_variants():

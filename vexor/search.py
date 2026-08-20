@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Protocol, Sequence
+from typing import Protocol
 
 import numpy as np
 
@@ -70,7 +71,9 @@ class VexorSearcher:
         self.base_url = resolve_base_url(self.provider, base_url)
         self.api_key = resolve_api_key(api_key, self.provider)
         self.local_cuda = bool(local_cuda)
-        self.embedding_dimensions = embedding_dimensions if embedding_dimensions and embedding_dimensions > 0 else None
+        self.embedding_dimensions = (
+            embedding_dimensions if embedding_dimensions and embedding_dimensions > 0 else None
+        )
         if backend is not None:
             self._backend = backend
             self._device = getattr(backend, "device", "Custom embedding backend")
@@ -106,7 +109,7 @@ class VexorSearcher:
         """Public helper to encode arbitrary text batches."""
         return self._encode(texts)
 
-    def search(self, query: str, files: Sequence[Path], top_k: int = 5) -> List[SearchResult]:
+    def search(self, query: str, files: Sequence[Path], top_k: int = 5) -> list[SearchResult]:
         """Return the *top_k* most similar files for *query*."""
         clean_query = query.strip()
         if not clean_query:
@@ -121,7 +124,7 @@ class VexorSearcher:
         similarities = file_vectors @ query_vector
         scored = [
             SearchResult(path=path, score=float(score))
-            for path, score in zip(files, similarities)
+            for path, score in zip(files, similarities, strict=True)
         ]
         scored.sort(key=lambda item: item.score, reverse=True)
         return scored[:top_k]

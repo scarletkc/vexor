@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Iterable, List, Sequence, Tuple
 import os
-
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 
 GITIGNORE_FILENAME = ".gitignore"
 VEXORIGNORE_FILENAME = ".vexorignore"
@@ -76,9 +75,7 @@ def _looks_like_extension_token(token: str) -> bool:
         return False
     if token in {".", ".."}:
         return False
-    if any(ch in token for ch in ("/", "\\", "*", "?", "[", "]")):
-        return False
-    return True
+    return not any(ch in token for ch in ("/", "\\", "*", "?", "[", "]"))
 
 
 def build_exclude_spec(patterns: Iterable[str] | None):
@@ -107,7 +104,7 @@ def _relative_posix(path: Path, root: Path) -> str:
 
 
 def _find_git_root(path: Path) -> Path | None:
-    for candidate in (path,) + tuple(path.parents):
+    for candidate in (path, *tuple(path.parents)):
         git_entry = candidate / ".git"
         if git_entry.exists():
             return candidate
@@ -164,10 +161,7 @@ def _scope_gitignore_line(line: str, base_dir: str) -> str | None:
     directory_only = body.endswith("/") and not body.endswith(r"\/")
     body_check = body[:-1] if directory_only else body
     has_slash = "/" in body_check
-    if has_slash:
-        scoped = f"{base_dir}/{body}"
-    else:
-        scoped = f"{base_dir}/**/{body}"
+    scoped = f"{base_dir}/{body}" if has_slash else f"{base_dir}/**/{body}"
     return f"{prefix}{scoped}"
 
 
@@ -252,12 +246,12 @@ def collect_files(
     extensions: Sequence[str] | None = None,
     exclude_patterns: Sequence[str] | None = None,
     respect_gitignore: bool = True,
-) -> List[Path]:
+) -> list[Path]:
     """Collect files under *root*; optionally keep hidden entries and recurse."""
 
     directory = resolve_directory(root)
-    files: List[Path] = []
-    normalized_exts: Tuple[str, ...] = tuple(extensions or ())
+    files: list[Path] = []
+    normalized_exts: tuple[str, ...] = tuple(extensions or ())
     normalized_excludes = normalize_exclude_patterns(exclude_patterns)
 
     exclude_spec = None

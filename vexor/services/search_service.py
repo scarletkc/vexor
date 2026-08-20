@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import contextlib
+import json
+import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-import json
-import re
-
-import numpy as np
-from typing import Callable, Sequence, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from urllib import error as urlerror
 from urllib import request as urlrequest
+
+import numpy as np
 
 from .. import bm25
 from ..config import (
@@ -444,7 +446,9 @@ def _rank_documents_bm25(
             _FUSION_SEMANTIC_WEIGHT * base
             + (1.0 - _FUSION_SEMANTIC_WEIGHT) * lexical,
         )
-        for index, (base, lexical) in enumerate(zip(base_norm, lexical_norm))
+        for index, (base, lexical) in enumerate(
+            zip(base_norm, lexical_norm, strict=True)
+        )
     ]
     fused.sort(key=lambda item: item[1], reverse=True)
     return fused
@@ -466,6 +470,7 @@ def _apply_bm25_rerank(query: str, results: Sequence[SearchResult]) -> list[Sear
 @lru_cache(maxsize=4)
 def _get_flashranker(model_name: str | None, max_length: int):
     from flashrank import Ranker
+
     from ..config import flashrank_cache_dir
 
     cache_dir = flashrank_cache_dir()
@@ -740,14 +745,13 @@ def _resolve_query_vector(
                 query_text_hash = embedding_cache_key(
                     request.query, dimension=request.embedding_dimensions
                 )
-            try:
+            # Cache storage is best-effort; a failure must not fail the search.
+            with contextlib.suppress(Exception):
                 store_embedding_cache(
                     model=request.model_name,
                     embeddings={query_text_hash: query_vector},
                     dimension=request.embedding_dimensions,
                 )
-            except Exception:  # pragma: no cover - best-effort cache storage
-                pass
     if (
         not request.no_cache
         and not query_cache_hit
@@ -755,10 +759,9 @@ def _resolve_query_vector(
         and index_id is not None
         and query_hash is not None
     ):
-        try:
+        # Cache storage is best-effort; a failure must not fail the search.
+        with contextlib.suppress(Exception):
             store_query_vector(int(index_id), query_hash, request.query, query_vector)
-        except Exception:  # pragma: no cover - best-effort cache storage
-            pass
     return query_vector
 
 
@@ -836,7 +839,8 @@ def _rank_results(
         raise ValueError(
             f"Embedding dimension mismatch: index has {index_dimension}-dim vectors, "
             f"but query embedding is {query_dimension}-dim. "
-            f"This typically happens when embedding_dimensions was changed after building the index. "
+            f"This typically happens when embedding_dimensions was changed "
+            f"after building the index. "
             f"Rebuild the index with: vexor index {request.directory}"
         )
 

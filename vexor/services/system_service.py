@@ -11,21 +11,21 @@ import shlex
 import shutil
 import subprocess
 import sys
-from enum import Enum
+from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Optional, Sequence
-from urllib.parse import urlparse
 from urllib import error, request
+from urllib.parse import urlparse
 
 from ..config import (
-    Config,
-    ConfigOrigin,
-    ConfigResolution,
     DEFAULT_FLASHRANK_MODEL,
     DEFAULT_RERANK,
     ENV_NO_UPDATE_CHECK,
     SUPPORTED_RERANKERS,
+    Config,
+    ConfigOrigin,
+    ConfigResolution,
     RemoteRerankConfig,
     normalize_remote_rerank_url,
     resolve_remote_rerank_api_key,
@@ -921,13 +921,13 @@ def fetch_remote_version(url: str, *, timeout: float = 10.0) -> str:
     return match.group(1)
 
 
-def find_command_on_path(command: str) -> Optional[str]:
+def find_command_on_path(command: str) -> str | None:
     """Return the resolved path for *command* if present on PATH."""
 
     return shutil.which(command)
 
 
-def resolve_editor_command() -> Optional[Sequence[str]]:
+def resolve_editor_command() -> Sequence[str] | None:
     """Return the preferred editor command as a tokenized sequence."""
 
     for env_var in ("VISUAL", "EDITOR"):

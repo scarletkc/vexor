@@ -1,12 +1,12 @@
-import numpy as np
 import string
+
+import numpy as np
 
 import vexor.cache as cache
 import vexor.search as search_module
 from vexor.search import VexorSearcher
 from vexor.services.index_service import IndexStatus, build_index
 from vexor.utils import collect_files
-
 
 ALPHABET = string.ascii_lowercase
 ALPHABET_INDEX = {ch: idx for idx, ch in enumerate(ALPHABET)}

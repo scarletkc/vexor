@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from vexor.services import system_service
 from vexor.config import RemoteRerankConfig
+from vexor.services import system_service
 
 
 class DummyResponse:
@@ -237,7 +236,7 @@ def test_check_config_exists_reports_override_summary(tmp_path):
     project_file = tmp_path / "project" / ".vexor" / "config.json"
     project_file.parent.mkdir(parents=True)
     project_file.write_text("{}", encoding="utf-8")
-    origins = {field: ConfigOrigin.DEFAULT for field in CONFIG_FIELD_NAMES}
+    origins = dict.fromkeys(CONFIG_FIELD_NAMES, ConfigOrigin.DEFAULT)
     origins["provider"] = ConfigOrigin.GLOBAL
     origins["rerank"] = ConfigOrigin.PROJECT
     origins["model"] = ConfigOrigin.PROJECT
@@ -278,7 +277,7 @@ def test_check_config_exists_omits_override_lines_without_overrides(tmp_path):
     global_file = tmp_path / "global" / "config.json"
     global_file.parent.mkdir()
     global_file.write_text("{}", encoding="utf-8")
-    origins = {field: ConfigOrigin.GLOBAL for field in CONFIG_FIELD_NAMES}
+    origins = dict.fromkeys(CONFIG_FIELD_NAMES, ConfigOrigin.GLOBAL)
     resolution = ConfigResolution(
         config=Config(),
         origins=origins,
@@ -296,7 +295,9 @@ def test_check_cache_directory_reports_create_and_write_failures(monkeypatch, tm
     monkeypatch.setattr("vexor.config.CONFIG_DIR", config_dir)
 
     with monkeypatch.context() as patch:
-        patch.setattr(Path, "mkdir", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("nope")))
+        patch.setattr(
+            Path, "mkdir", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("nope"))
+        )
         created = system_service.check_cache_directory()
 
     assert created.passed is False
@@ -454,11 +455,32 @@ def test_remote_rerank_api_failure_and_success(monkeypatch):
 
 
 def test_run_all_doctor_checks_respects_skip_api(monkeypatch):
-    monkeypatch.setattr(system_service, "check_command_on_path", lambda: system_service.DoctorCheckResult("cmd", True, "ok"))
-    monkeypatch.setattr(system_service, "check_config_exists", lambda: system_service.DoctorCheckResult("cfg", True, "ok"))
-    monkeypatch.setattr(system_service, "check_cache_directory", lambda: system_service.DoctorCheckResult("cache", True, "ok"))
-    monkeypatch.setattr(system_service, "check_api_key_configured", lambda *_args: system_service.DoctorCheckResult("key", True, "ok"))
-    monkeypatch.setattr(system_service, "check_api_connectivity", lambda *_args, **_kwargs: pytest.fail("should skip"))
+    monkeypatch.setattr(
+        system_service,
+        "check_command_on_path",
+        lambda: system_service.DoctorCheckResult("cmd", True, "ok"),
+    )
+    monkeypatch.setattr(
+        system_service,
+        "check_config_exists",
+        lambda: system_service.DoctorCheckResult("cfg", True, "ok"),
+    )
+    monkeypatch.setattr(
+        system_service,
+        "check_cache_directory",
+        lambda: system_service.DoctorCheckResult("cache", True, "ok"),
+    )
+    monkeypatch.setattr(
+        system_service,
+        "check_api_key_configured",
+        lambda *_args: system_service.DoctorCheckResult("key", True, "ok"),
+    )
+    monkeypatch.setattr(
+        system_service,
+        "check_api_connectivity",
+        lambda *_args,
+        **_kwargs: pytest.fail("should skip"),
+    )
 
     results = system_service.run_all_doctor_checks(
         provider="openai",
@@ -556,8 +578,12 @@ def test_detect_install_method_editable_user_system_and_unknown(monkeypatch, tmp
     monkeypatch.setattr(system_service.sys, "frozen", False, raising=False)
     monkeypatch.setattr(system_service.sys, "prefix", str(tmp_path / "base"))
     monkeypatch.setattr(system_service.sys, "base_prefix", str(tmp_path / "base"), raising=False)
-    monkeypatch.setattr(system_service, "find_command_on_path", lambda _cmd: str(tmp_path / "vexor.exe"))
-    monkeypatch.setattr("importlib.metadata.distribution", lambda _name: DummyDist(repo, direct_url))
+    monkeypatch.setattr(
+        system_service, "find_command_on_path", lambda _cmd: str(tmp_path / "vexor.exe")
+    )
+    monkeypatch.setattr(
+        "importlib.metadata.distribution", lambda _name: DummyDist(repo, direct_url)
+    )
     editable = system_service.detect_install_method()
     assert editable.method == system_service.InstallMethod.GIT_EDITABLE
 
@@ -585,7 +611,9 @@ def test_detect_install_method_editable_user_system_and_unknown(monkeypatch, tmp
 
 def test_detect_install_method_pipx_and_uv(monkeypatch, tmp_path):
     monkeypatch.setattr(system_service.sys, "frozen", False, raising=False)
-    monkeypatch.setattr("importlib.metadata.distribution", lambda _name: (_ for _ in ()).throw(RuntimeError("none")))
+    monkeypatch.setattr(
+        "importlib.metadata.distribution", lambda _name: (_ for _ in ()).throw(RuntimeError("none"))
+    )
     monkeypatch.setattr(system_service, "find_command_on_path", lambda _cmd: None)
     monkeypatch.setattr(system_service.sys, "base_prefix", str(tmp_path / "base"), raising=False)
 
@@ -636,13 +664,25 @@ def test_upgrade_commands_download_urls_and_runners(monkeypatch, tmp_path):
     assert system_service.run_upgrade_commands([["ok"], ["also-ok"]]) == 0
     assert calls == [["ok"], ["also-ok"]]
 
-    monkeypatch.setattr(system_service.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=7))
+    monkeypatch.setattr(
+        system_service.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=7)
+    )
     assert system_service.run_upgrade_commands([["bad"]]) == 7
 
-    monkeypatch.setattr(system_service.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()))
+    monkeypatch.setattr(
+        system_service.subprocess,
+        "run",
+        lambda *_args,
+        **_kwargs: (_ for _ in ()).throw(FileNotFoundError()),
+    )
     assert system_service.run_upgrade_commands([["missing"]]) == 127
 
-    monkeypatch.setattr(system_service.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("x", 1)))
+    monkeypatch.setattr(
+        system_service.subprocess,
+        "run",
+        lambda *_args,
+        **_kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("x", 1)),
+    )
     assert system_service.run_upgrade_commands([["slow"]]) == 124
 
 
@@ -758,7 +798,7 @@ def test_check_for_update_cache_only_mode(tmp_path, monkeypatch):
 
 
 def test_update_check_enabled_env_and_config(monkeypatch):
-    from vexor.config import Config, ENV_NO_UPDATE_CHECK
+    from vexor.config import ENV_NO_UPDATE_CHECK, Config
     from vexor.services import system_service
 
     monkeypatch.delenv(ENV_NO_UPDATE_CHECK, raising=False)

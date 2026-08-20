@@ -1,4 +1,5 @@
 import json
+
 import pytest
 
 from vexor import config as config_module
@@ -379,7 +380,7 @@ def test_config_dir_context_overrides_config_file(tmp_path):
         loaded = config_module.load_config()
         assert loaded.provider == "gemini"
         assert (tmp_path / "config.json").exists()
-    assert config_module.CONFIG_DIR == original_config_dir
+    assert original_config_dir == config_module.CONFIG_DIR
 
 
 def test_explicit_config_dir_is_not_reloaded_as_untrusted_project_config(tmp_path):
@@ -695,7 +696,7 @@ def test_get_supported_dimensions_unsupported():
 
 def test_set_embedding_dimensions_valid(tmp_path, monkeypatch):
     """Test setting a valid dimension for a supported model."""
-    config_file = _prepare_config(tmp_path, monkeypatch)
+    _prepare_config(tmp_path, monkeypatch)
     # First set a model that supports dimensions
     config_module.save_config(config_module.Config(model="voyage-3"))
 

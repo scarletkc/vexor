@@ -6,7 +6,6 @@ import numpy as np
 
 import vexor.cache as cache
 
-
 MODE = "name"
 
 

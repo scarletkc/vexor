@@ -7,13 +7,13 @@ import os
 import sqlite3
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime, timezone, timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
-from typing import Iterable, Iterator, Mapping, Sequence
 
 import numpy as np
 
@@ -35,7 +35,7 @@ EMBED_CACHE_TTL_DAYS = 30
 EMBED_CACHE_MAX_ENTRIES = 50_000
 EMBED_MEMORY_CACHE_MAX_ENTRIES = 2_048
 
-_EMBED_MEMORY_CACHE: "OrderedDict[tuple[str, str, int | None, str], np.ndarray]" = (
+_EMBED_MEMORY_CACHE: OrderedDict[tuple[str, str, int | None, str], np.ndarray] = (
     OrderedDict()
 )
 _EMBED_MEMORY_LOCK = Lock()
@@ -165,10 +165,7 @@ def embedding_cache_key(text: str, dimension: int | None = None) -> str:
     """
     clean_text = text or ""
     # Include dimension in hash to prevent cross-dimension cache pollution
-    if dimension is not None:
-        base = f"{clean_text}|dim={dimension}"
-    else:
-        base = clean_text
+    base = f"{clean_text}|dim={dimension}" if dimension is not None else clean_text
     return hashlib.sha1(base.encode("utf-8")).hexdigest()
 
 
@@ -367,7 +364,9 @@ def cache_db_path() -> Path:
     return cache_dir / DB_FILENAME
 
 
-def cache_file(root: Path, model: str, include_hidden: bool) -> Path:  # pragma: no cover - kept for API parity
+def cache_file(  # pragma: no cover - kept for API parity
+    root: Path, model: str, include_hidden: bool
+) -> Path:
     """Return the on-disk cache artifact path (single SQLite DB)."""
     return cache_db_path()
 
@@ -933,7 +932,8 @@ def apply_index_updates(
                 """
                 SELECT id, dimension, vector_file
                 FROM index_metadata
-                WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
+                WHERE cache_key = ? AND model = ? AND include_hidden = ?
+                  AND respect_gitignore = ? AND recursive = ? AND mode = ?
                 """,
                 (key, model, include_flag, gitignore_flag, recursive_flag, mode),
             ).fetchone()
@@ -1304,7 +1304,8 @@ def backfill_chunk_lines(
             """
             SELECT id
             FROM index_metadata
-            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
+            WHERE cache_key = ? AND model = ? AND include_hidden = ?
+              AND respect_gitignore = ? AND recursive = ? AND mode = ?
             """,
             (key, model, include_flag, gitignore_flag, recursive_flag, mode),
         ).fetchone()
@@ -1397,8 +1398,8 @@ def load_index(
                 conn,
                 tables=("index_metadata", "indexed_file", "indexed_chunk", "chunk_meta"),
             )
-        except sqlite3.OperationalError:
-            raise FileNotFoundError(db_path)
+        except sqlite3.OperationalError as exc:
+            raise FileNotFoundError(db_path) from exc
         key = _cache_key(
             root,
             include_hidden,
@@ -1413,9 +1414,11 @@ def load_index(
         recursive_flag = 1 if recursive else 0
         meta = conn.execute(
             """
-            SELECT id, root_path, model, include_hidden, respect_gitignore, recursive, mode, dimension, version, generated_at, exclude_patterns, extensions
+            SELECT id, root_path, model, include_hidden, respect_gitignore, recursive,
+                   mode, dimension, version, generated_at, exclude_patterns, extensions
             FROM index_metadata
-            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
+            WHERE cache_key = ? AND model = ? AND include_hidden = ?
+              AND respect_gitignore = ? AND recursive = ? AND mode = ?
             """,
             (key, model, include_flag, gitignore_flag, recursive_flag, mode),
         ).fetchone()
@@ -1520,8 +1523,8 @@ def load_index_vectors(
             )
             if not _column_exists(conn, "index_metadata", "vector_file"):
                 raise sqlite3.OperationalError("Missing column: index_metadata.vector_file")
-        except sqlite3.OperationalError:
-            raise FileNotFoundError(db_path)
+        except sqlite3.OperationalError as exc:
+            raise FileNotFoundError(db_path) from exc
         key = _cache_key(
             root,
             include_hidden,
@@ -1539,7 +1542,8 @@ def load_index_vectors(
             SELECT id, root_path, model, include_hidden, respect_gitignore, recursive, mode,
                    dimension, version, generated_at, exclude_patterns, extensions, vector_file
             FROM index_metadata
-            WHERE cache_key = ? AND model = ? AND include_hidden = ? AND respect_gitignore = ? AND recursive = ? AND mode = ?
+            WHERE cache_key = ? AND model = ? AND include_hidden = ?
+              AND respect_gitignore = ? AND recursive = ? AND mode = ?
             """,
             (key, model, include_flag, gitignore_flag, recursive_flag, mode),
         ).fetchone()
@@ -1717,7 +1721,8 @@ def load_chunk_metadata(
             placeholders = ", ".join("?" for _ in chunk)
             rows = connection.execute(
                 f"""
-                SELECT c.id AS chunk_id, c.chunk_index, m.preview, m.label_hash, m.start_line, m.end_line
+                SELECT c.id AS chunk_id, c.chunk_index, m.preview, m.label_hash,
+                       m.start_line, m.end_line
                 FROM indexed_chunk AS c
                 LEFT JOIN chunk_meta AS m ON m.chunk_id = c.id
                 WHERE c.id IN ({placeholders})

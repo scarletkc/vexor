@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 class Styles:
     ERROR = "red"
     WARNING = "yellow"
@@ -24,13 +25,20 @@ class Messages:
     HELP_INCLUDE_HIDDEN = "Use the index built with hidden files included."
     HELP_INDEX_PATH = "Root directory to scan for indexing."
     HELP_INDEX_INCLUDE = "Include hidden files and directories when building the index."
-    HELP_INDEX_CLEAR = "Remove the cached index for the specified path (respecting include-hidden, mode and recursion)."
+    HELP_INDEX_CLEAR = (
+        "Remove the cached index for the specified path "
+        "(respecting include-hidden, mode and recursion)."
+    )
     HELP_INDEX_SHOW = "Display metadata for the cached index matching the provided options."
     HELP_INDEX_LOCAL = "Store the index in <path>/.vexor/index.db."
-    HELP_RECURSIVE = "Recurse into subdirectories (default). Disable to work only on the specified directory."
+    HELP_RECURSIVE = (
+        "Recurse into subdirectories (default). "
+        "Disable to work only on the specified directory."
+    )
     HELP_MODE = (
-        "Indexing mode (auto=smart default, name=filename, head=head snippet, brief=keyword summary, "
-        "full=chunked content, code=python module/function/class chunks, outline=markdown headings) "
+        "Indexing mode (auto=smart default, name=filename, head=head snippet, "
+        "brief=keyword summary, full=chunked content, "
+        "code=python module/function/class chunks, outline=markdown headings) "
         "to control how embeddings are built."
     )
     HELP_EXTENSIONS = (
@@ -249,7 +257,9 @@ class Messages:
     ERROR_FLASHRANK_SETUP = "Failed to prepare FlashRank model ({reason})."
     ERROR_BASE_URL_CONFLICT = "Cannot set and clear the base URL in the same command."
     ERROR_EXTENSIONS_EMPTY = "Provide at least one valid file extension when using --ext."
-    ERROR_BOOLEAN_INVALID = "Unsupported boolean value '{value}'. Use true/false, yes/no, 1/0, on/off."
+    ERROR_BOOLEAN_INVALID = (
+        "Unsupported boolean value '{value}'. Use true/false, yes/no, 1/0, on/off."
+    )
     INIT_TITLE = "Vexor Setup Wizard"
     INIT_INTRO = "Let's configure the basics so you can search quickly."
     INIT_CONFIG_HINT = "You can review or update settings anytime with `vexor config`."
@@ -422,7 +432,9 @@ class Messages:
         "Install `vexor\\[local-cuda]` or `onnxruntime-gpu` ({reason})"
     )
     INFO_CONFIG_EDITING = "Opening config file in editor ({editor}): {path}"
-    ERROR_CONFIG_EDITOR_NOT_FOUND = "Unable to determine a text editor. Set $VISUAL or $EDITOR, or install nano/vi."
+    ERROR_CONFIG_EDITOR_NOT_FOUND = (
+        "Unable to determine a text editor. Set $VISUAL or $EDITOR, or install nano/vi."
+    )
     ERROR_CONFIG_EDITOR_FAILED = "Editor exited with status {code}."
     ERROR_CONFIG_EDITOR_LAUNCH = "Failed to launch editor: {reason}."
     ERROR_CONFIG_JSON_INVALID = "Config JSON must be an object."
@@ -548,7 +560,9 @@ class Messages:
     INFO_ALIAS_POWERSHELL = "Set-Alias vx vexor"
     INFO_FEEDBACK_OPENING = "Opening feedback form: {url}"
     INFO_FEEDBACK_GH = "Creating GitHub issue via `gh`..."
-    WARNING_FEEDBACK_GH_FAILED = "Unable to run `gh issue create` ({reason}); opening browser instead."
+    WARNING_FEEDBACK_GH_FAILED = (
+        "Unable to run `gh issue create` ({reason}); opening browser instead."
+    )
     ERROR_FEEDBACK_LAUNCH = "Unable to open browser for {url} ({reason})."
     ERROR_INSTALL_SKILL_SOURCE = "Unable to locate the bundled skill files ({reason})."
     ERROR_INSTALL_SKILL_EXISTS = (

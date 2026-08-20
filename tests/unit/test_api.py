@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from vexor import api as api_module
-from vexor.config import Config, DEFAULT_GEMINI_MODEL, DEFAULT_MODEL, RemoteRerankConfig
+from vexor.config import DEFAULT_GEMINI_MODEL, DEFAULT_MODEL, Config, RemoteRerankConfig
 from vexor.search import SearchResult
 from vexor.services.index_service import IndexResult, IndexStatus
 from vexor.services.search_service import SearchResponse
@@ -333,9 +333,9 @@ def test_set_data_dir_updates_config_and_cache(tmp_path) -> None:
 
     api_module.set_data_dir(tmp_path)
     try:
-        assert config_module.CONFIG_DIR == tmp_path
-        assert config_module.CONFIG_FILE == tmp_path / "config.json"
-        assert cache_module.CACHE_DIR == tmp_path
+        assert tmp_path == config_module.CONFIG_DIR
+        assert tmp_path / "config.json" == config_module.CONFIG_FILE
+        assert tmp_path == cache_module.CACHE_DIR
     finally:
         config_module.set_config_dir(original_config_dir)
         cache_module.set_cache_dir(original_cache_dir)
@@ -555,7 +555,7 @@ def test_search_uses_data_dir_override(tmp_path, monkeypatch) -> None:
 
     req = captured["request"]
     assert req.provider == "gemini"
-    assert config_module.CONFIG_DIR == original_config_dir
+    assert original_config_dir == config_module.CONFIG_DIR
 
 
 def test_client_config_context_scopes_runtime_config(tmp_path, monkeypatch) -> None:

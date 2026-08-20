@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from vexor import __version__
+from vexor.config import ENV_NO_UPDATE_CHECK
 from vexor.search import SearchResult
 from vexor.services.index_service import IndexResult, IndexStatus
 from vexor.services.mcp_service import (
@@ -438,7 +439,7 @@ def test_emit_update_notice_writes_when_newer(monkeypatch, tmp_path):
     import vexor.services.mcp_service as mcp_service
     import vexor.services.system_service as system_service
 
-    monkeypatch.delenv(mcp_service.ENV_NO_UPDATE_CHECK, raising=False)
+    monkeypatch.delenv(ENV_NO_UPDATE_CHECK, raising=False)
     monkeypatch.setattr(
         system_service, "check_for_update", lambda current, **kw: "99.0.0"
     )
@@ -452,7 +453,7 @@ def test_emit_update_notice_silent_when_current(monkeypatch):
     import vexor.services.mcp_service as mcp_service
     import vexor.services.system_service as system_service
 
-    monkeypatch.delenv(mcp_service.ENV_NO_UPDATE_CHECK, raising=False)
+    monkeypatch.delenv(ENV_NO_UPDATE_CHECK, raising=False)
     monkeypatch.setattr(
         system_service, "check_for_update", lambda current, **kw: None
     )
@@ -465,7 +466,7 @@ def test_emit_update_notice_disabled_by_env(monkeypatch):
     import vexor.services.mcp_service as mcp_service
     import vexor.services.system_service as system_service
 
-    monkeypatch.setenv(mcp_service.ENV_NO_UPDATE_CHECK, "1")
+    monkeypatch.setenv(ENV_NO_UPDATE_CHECK, "1")
 
     def _explode(current, **kw):
         raise AssertionError("update check must not run when disabled")
@@ -480,7 +481,7 @@ def test_emit_update_notice_swallows_errors(monkeypatch):
     import vexor.services.mcp_service as mcp_service
     import vexor.services.system_service as system_service
 
-    monkeypatch.delenv(mcp_service.ENV_NO_UPDATE_CHECK, raising=False)
+    monkeypatch.delenv(ENV_NO_UPDATE_CHECK, raising=False)
 
     def _boom(current, **kw):
         raise RuntimeError("network down")

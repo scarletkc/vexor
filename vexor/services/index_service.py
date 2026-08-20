@@ -2,29 +2,29 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import itertools
 import os
+from collections import Counter
+from collections.abc import MutableMapping, Sequence
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import MutableMapping, Sequence
 
 import numpy as np
 
-from .cache_service import load_index_metadata_safe
-from .content_extract_service import TEXT_EXTENSIONS
-from .js_parser import JSTS_EXTENSIONS
-from ..cache import CACHE_VERSION, IndexedChunk, backfill_chunk_lines
 from .. import bm25
+from ..cache import CACHE_VERSION, IndexedChunk, backfill_chunk_lines
 from ..config import (
     DEFAULT_EMBED_CONCURRENCY,
     DEFAULT_EXTRACT_BACKEND,
     DEFAULT_EXTRACT_CONCURRENCY,
 )
-from ..modes import get_strategy, ModePayload
+from ..modes import ModePayload, get_strategy
+from .cache_service import load_index_metadata_safe
+from .content_extract_service import TEXT_EXTENSIONS
+from .js_parser import JSTS_EXTENSIONS
 
 INCREMENTAL_CHANGE_THRESHOLD = 0.5
 MTIME_TOLERANCE = 5e-1
@@ -148,8 +148,8 @@ def build_index(
 ) -> IndexResult:
     """Create or refresh the cached index for *directory*."""
 
-    from ..utils import collect_files  # local import
     from ..cache import apply_index_updates, store_index  # local import
+    from ..utils import collect_files  # local import
 
     files = collect_files(
         directory,
@@ -604,7 +604,7 @@ def _diff_cached_files(
         elif _has_entry_changed(entry, cached_entry):
             diff.modified.append(entry.path)
 
-    for rel_path in cached_map.keys():
+    for rel_path in cached_map:
         if rel_path not in current:
             diff.removed.append(rel_path)
 
@@ -617,12 +617,8 @@ def _has_entry_changed(entry: SnapshotEntry, cached_entry: dict) -> bool:
     if cached_mtime is None:
         return True
     if abs(entry.mtime - cached_mtime) > MTIME_TOLERANCE:
-        if cached_size is not None and cached_size == entry.size:
-            return False
-        return True
-    if cached_size is not None and cached_size != entry.size:
-        return True
-    return False
+        return not (cached_size is not None and cached_size == entry.size)
+    return bool(cached_size is not None and cached_size != entry.size)
 
 
 def _apply_incremental_update(
@@ -675,7 +671,8 @@ def _apply_incremental_update(
             new_dimension = embeddings.shape[1] if embeddings.ndim == 2 else 0
             if new_dimension != cached_index_dimension:
                 raise ValueError(
-                    f"Embedding dimension mismatch: existing index has {cached_index_dimension}-dim vectors, "
+                    f"Embedding dimension mismatch: existing index has "
+                    f"{cached_index_dimension}-dim vectors, "
                     f"but new embeddings are {new_dimension}-dim. "
                     f"This typically happens when embedding_dimensions config was changed. "
                     f"Clear the index and rebuild: vexor index --clear {directory}"
@@ -741,11 +738,10 @@ def _embed_labels_with_cache(
     hashes = [embedding_cache_key(label, dimension=embedding_dimension) for label in labels]
     cached = load_embedding_cache(model_name, hashes, dimension=embedding_dimension)
     missing: dict[str, str] = {}
-    for label, text_hash in zip(labels, hashes):
+    for label, text_hash in zip(labels, hashes, strict=True):
         vector = cached.get(text_hash)
-        if vector is None or vector.size == 0:
-            if text_hash not in missing:
-                missing[text_hash] = label
+        if (vector is None or vector.size == 0) and text_hash not in missing:
+            missing[text_hash] = label
 
     if missing:
         missing_items = list(missing.items())

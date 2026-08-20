@@ -57,6 +57,9 @@ local-cuda = [
     "onnxruntime-gpu>=1.17.0; platform_system != \"Darwin\"",
 ]
 dev = [
+    # Pinned so a ruff release cannot turn a green branch red on its own; the
+    # lint workflow reads this exact spec.
+    "ruff==0.16.3",
     "pytest>=7.4",
     "pytest-cov>=4.1",
     "build>=1.2.1",
@@ -90,6 +93,34 @@ packages = ["vexor"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "plugins/vexor/skills" = "vexor/_bundled_skills"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
+ignore = [
+    # Nested conditionals here usually stage interactive prompts or ordered
+    # guards; folding them into `and` chains hides the side-effecting calls.
+    "SIM102",
+    # Vexor indexes multilingual text, so CJK punctuation in fixtures and
+    # message copy is content rather than a homoglyph mistake.
+    "RUF001",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Both modules default `path` to `Path.cwd()`, which binds the working directory
+# at import time instead of at call time. That is a real defect in the Python API
+# and is tracked separately; fixing it changes public signatures, so it does not
+# ride along with the linter rollout.
+"vexor/api.py" = ["B008"]
+"vexor/cli.py" = ["B008"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Typer carries CLI metadata in call-expression defaults, so B008 there reports
+# the framework's documented signature style rather than a shared-state bug.
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

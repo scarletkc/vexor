@@ -6,8 +6,15 @@ python -m venv .venv          # only if .venv is missing
 python -m pip install -e .[dev]
 python -m vexor
 python -m pytest
+python -m ruff check .
 ```
 Tests rely on fake embedding backends, so no network access is required.
+
+Ruff is the lint gate, configured under `[tool.ruff]` in `pyproject.toml` and
+run by the `ruff` job in `.github/workflows/publish.yml`, which a release now
+depends on. The version is pinned in the `dev` extra and CI installs that exact
+pin, so bumping it there is what moves CI. `ruff check --fix` applies the safe
+fixes; read the diff before reaching for `--unsafe-fixes`.
 
 Global cache files and configuration live in `~/.vexor`. A project with a
 `.vexor/` directory keeps its index there and may add the restricted

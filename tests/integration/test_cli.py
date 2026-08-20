@@ -5,15 +5,14 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
+import vexor.cache as cache
 from vexor import __version__
 from vexor.cli import app
 from vexor.config import DEFAULT_MODEL
-import vexor.cache as cache
 from vexor.search import SearchResult
 from vexor.services.index_service import IndexResult, IndexStatus
 from vexor.services.search_service import ContentBudget, SearchResponse
 from vexor.text import Messages
-
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -1803,7 +1802,9 @@ def test_doctor_reports_success(monkeypatch):
     # Mock all doctor checks to pass
     from vexor.services.system_service import DoctorCheckResult
     mock_results = [
-        DoctorCheckResult(name="Command", passed=True, message="`vexor` found at /usr/local/bin/vexor"),
+        DoctorCheckResult(
+            name="Command", passed=True, message="`vexor` found at /usr/local/bin/vexor"
+        ),
         DoctorCheckResult(name="Config", passed=True, message="Config exists"),
         DoctorCheckResult(name="Cache Dir", passed=True, message="Cache writable"),
         DoctorCheckResult(name="API Key", passed=True, message="API key configured"),
@@ -1842,7 +1843,9 @@ def test_doctor_handles_malformed_config(monkeypatch, temp_config_home):
     from vexor.services.system_service import DoctorCheckResult
 
     mock_results = [
-        DoctorCheckResult(name="Command", passed=True, message="`vexor` found at /usr/local/bin/vexor"),
+        DoctorCheckResult(
+            name="Command", passed=True, message="`vexor` found at /usr/local/bin/vexor"
+        ),
         DoctorCheckResult(name="Config", passed=True, message="Config exists"),
         DoctorCheckResult(name="Cache Dir", passed=True, message="Cache writable"),
         DoctorCheckResult(name="API Key", passed=True, message="API key configured"),
@@ -1966,7 +1969,9 @@ def test_update_detects_newer_version(monkeypatch):
 
 def test_update_reports_up_to_date(monkeypatch):
     runner = CliRunner()
-    monkeypatch.setattr("vexor.cli.fetch_latest_pypi_version", lambda *_args, **_kwargs: __version__)
+    monkeypatch.setattr(
+        "vexor.cli.fetch_latest_pypi_version", lambda *_args, **_kwargs: __version__
+    )
 
     result = runner.invoke(app, ["update"])
 
@@ -2234,8 +2239,9 @@ def test_brief_mode_keywords(tmp_path, monkeypatch):
     project.mkdir()
     file_path = project / "prd.md"
     file_path.write_text(
-        """# Messaging
-The chat module must support offline messaging. Offline send, offline sync, and offline drafts are required."""
+        "# Messaging\n"
+        "The chat module must support offline messaging."
+        " Offline send, offline sync, and offline drafts are required."
     )
 
     index_result = runner.invoke(

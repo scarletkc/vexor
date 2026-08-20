@@ -82,7 +82,9 @@ def test_collect_remote_settings_variants(monkeypatch):
 
 
 def test_collect_provider_settings_local_and_fallback(monkeypatch):
-    monkeypatch.setattr(init_service, "_collect_local_settings", lambda dry_run: {"provider": "local"})
+    monkeypatch.setattr(
+        init_service, "_collect_local_settings", lambda dry_run: {"provider": "local"}
+    )
     _prompt_sequence(monkeypatch, ["local"])
     assert init_service._collect_provider_settings(dry_run=False) == {"provider": "local"}
 
@@ -142,7 +144,9 @@ def test_collect_rerank_settings_variants(monkeypatch):
     prepared = {"called": False}
     _prompt_sequence(monkeypatch, ["flashrank"])
     monkeypatch.setattr(init_service, "_ensure_flashrank_available", lambda dry_run: True)
-    monkeypatch.setattr(init_service, "_maybe_prepare_flashrank_model", lambda dry_run: prepared.update(called=True))
+    monkeypatch.setattr(
+        init_service, "_maybe_prepare_flashrank_model", lambda dry_run: prepared.update(called=True)
+    )
     assert init_service._collect_rerank_settings(dry_run=False) == {"rerank": "flashrank"}
     assert prepared["called"] is True
 
@@ -206,7 +210,9 @@ def test_prompt_skill_install_and_doctor(monkeypatch):
     installed = {"target": None}
     _confirm_sequence(monkeypatch, [True])
     _prompt_sequence(monkeypatch, ["D", "/tmp/skills"])
-    monkeypatch.setattr(init_service, "_install_skills", lambda target: installed.update(target=target))
+    monkeypatch.setattr(
+        init_service, "_install_skills", lambda target: installed.update(target=target)
+    )
     init_service._prompt_skill_install(dry_run=False)
     assert installed["target"] == "/tmp/skills"
 
@@ -280,7 +286,11 @@ def test_install_skills_status_and_errors(monkeypatch, tmp_path):
     )
     init_service._install_skills("auto")
 
-    monkeypatch.setattr(init_service, "resolve_skill_roots", lambda _target: (_ for _ in ()).throw(ValueError("bad target")))
+    monkeypatch.setattr(
+        init_service,
+        "resolve_skill_roots",
+        lambda _target: (_ for _ in ()).throw(ValueError("bad target")),
+    )
     init_service._install_skills("bad")
 
     monkeypatch.setattr(init_service, "resolve_skill_roots", lambda _target: [tmp_path / "skills"])
@@ -300,7 +310,11 @@ def test_install_skills_status_and_errors(monkeypatch, tmp_path):
 
 
 def test_cuda_fastembed_flashrank_and_model_prepare(monkeypatch):
-    monkeypatch.setattr(init_service.importlib.util, "find_spec", lambda name: object() if name == "fastembed" else None)
+    monkeypatch.setattr(
+        init_service.importlib.util,
+        "find_spec",
+        lambda name: object() if name == "fastembed" else None,
+    )
     assert init_service._is_fastembed_available() is True
     assert init_service._is_flashrank_available() is False
 
@@ -364,7 +378,11 @@ def test_flashrank_prepare_and_install_extras(monkeypatch, tmp_path):
 
     with monkeypatch.context() as patch:
         _confirm_sequence(patch, [True])
-        patch.setattr(init_service, "_prepare_flashrank_model", lambda _model: (_ for _ in ()).throw(RuntimeError("bad model")))
+        patch.setattr(
+            init_service,
+            "_prepare_flashrank_model",
+            lambda _model: (_ for _ in ()).throw(RuntimeError("bad model")),
+        )
         init_service._maybe_prepare_flashrank_model(dry_run=False)
 
     flashrank_module = ModuleType("flashrank")
@@ -405,10 +423,14 @@ def test_install_extras_and_build_commands(monkeypatch, tmp_path):
 
     pip_system = InstallInfo(InstallMethod.PIP_SYSTEM, None, None, None, requires_admin=True)
     monkeypatch.setattr(init_service, "detect_install_method", lambda: pip_system)
-    monkeypatch.setattr(init_service.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=1))
+    monkeypatch.setattr(
+        init_service.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=1)
+    )
     assert init_service._install_extras("local", dry_run=False) is False
 
-    monkeypatch.setattr(init_service.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(
+        init_service.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=0)
+    )
     assert init_service._install_extras("local", dry_run=False) is True
 
     formatted = init_service._format_command(["python", "path with spaces"])
@@ -417,12 +439,18 @@ def test_install_extras_and_build_commands(monkeypatch, tmp_path):
 
 def test_run_init_wizard_dry_run(monkeypatch):
     calls = {"apply": 0}
-    monkeypatch.setattr(init_service, "_collect_provider_settings", lambda dry_run: {"provider": "openai"})
+    monkeypatch.setattr(
+        init_service, "_collect_provider_settings", lambda dry_run: {"provider": "openai"}
+    )
     monkeypatch.setattr(init_service, "_collect_rerank_settings", lambda dry_run: {"rerank": "off"})
     monkeypatch.setattr(init_service, "_prompt_alias_setup", lambda dry_run: None)
     monkeypatch.setattr(init_service, "_prompt_skill_install", lambda dry_run: None)
     monkeypatch.setattr(init_service, "_prompt_doctor_check", lambda dry_run: None)
-    monkeypatch.setattr(init_service, "apply_config_updates", lambda **_kwargs: calls.update(apply=calls["apply"] + 1))
+    monkeypatch.setattr(
+        init_service,
+        "apply_config_updates",
+        lambda **_kwargs: calls.update(apply=calls["apply"] + 1),
+    )
 
     init_service.run_init_wizard(dry_run=True)
 

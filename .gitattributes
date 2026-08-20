@@ -1,0 +1,7 @@
+# Store every text file with LF in the repository and check it back out as LF,
+# so a contributor's core.autocrlf setting cannot change what lands here.
+* text=auto eol=lf
+
+# Binary assets must never go through line-ending conversion.
+*.png binary
+*.ico binary

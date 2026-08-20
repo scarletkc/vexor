@@ -1,5 +1,7 @@
 import importlib
+import sqlite3
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 
@@ -8,11 +10,9 @@ import vexor.modes as modes
 from vexor.services import index_service
 from vexor.services.index_service import IndexStatus, build_index, build_index_in_memory
 
-import sqlite3
-
 
 class DummySearcher:
-    calls = []
+    calls: ClassVar[list] = []
 
     def __init__(self, *args, **kwargs):
         self.device = "dummy"
@@ -48,7 +48,7 @@ def test_build_index_runs_incremental_update(tmp_path, monkeypatch):
     file_a.write_text("a")
     file_b.write_text("b")
 
-    kwargs = dict(provider="gemini", base_url=None, api_key=None)
+    kwargs = {"provider": "gemini", "base_url": None, "api_key": None}
     first = build_index(
         root,
         include_hidden=False,
@@ -130,7 +130,7 @@ def test_legacy_index_rebuild_reuses_embedding_cache(tmp_path, monkeypatch):
     root = tmp_path / "project"
     root.mkdir()
     (root / "a.txt").write_text("a", encoding="utf-8")
-    kwargs = dict(provider="gemini", base_url=None, api_key=None)
+    kwargs = {"provider": "gemini", "base_url": None, "api_key": None}
 
     first = build_index(
         root,
@@ -184,13 +184,33 @@ def test_build_index_falls_back_to_full_rebuild(tmp_path, monkeypatch):
         path.write_text(name)
         files.append(path)
 
-    build_index(root, include_hidden=False, mode="name", recursive=True, model_name="model", batch_size=0, provider="gemini", base_url=None, api_key=None)
+    build_index(
+        root,
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key=None,
+    )
     DummySearcher.calls = []
 
     for file in files[:3]:
         file.write_text(file.read_text() + "!")
 
-    build_index(root, include_hidden=False, mode="name", recursive=True, model_name="model", batch_size=0, provider="gemini", base_url=None, api_key=None)
+    build_index(
+        root,
+        include_hidden=False,
+        mode="name",
+        recursive=True,
+        model_name="model",
+        batch_size=0,
+        provider="gemini",
+        base_url=None,
+        api_key=None,
+    )
     assert DummySearcher.calls == []
 
 
@@ -207,7 +227,7 @@ def test_build_index_backfills_line_metadata_when_missing(tmp_path, monkeypatch)
         encoding="utf-8",
     )
 
-    kwargs = dict(provider="gemini", base_url=None, api_key=None)
+    kwargs = {"provider": "gemini", "base_url": None, "api_key": None}
     first = build_index(
         root,
         include_hidden=False,
@@ -262,7 +282,9 @@ def test_build_index_backfills_line_metadata_when_missing(tmp_path, monkeypatch)
     meta = cache.load_index(root, "model", False, "code", True)
     chunks = [entry for entry in meta["chunks"] if entry["path"] == "sample.py"]
     assert chunks
-    assert any(entry["start_line"] is not None and entry["end_line"] is not None for entry in chunks)
+    assert any(
+        entry["start_line"] is not None and entry["end_line"] is not None for entry in chunks
+    )
 
 
 def test_build_index_returns_empty_when_no_files(tmp_path, monkeypatch):
@@ -293,7 +315,9 @@ def test_build_index_returns_up_to_date_when_no_changes(tmp_path, monkeypatch):
     file_a.write_text("a", encoding="utf-8")
 
     monkeypatch.setattr("vexor.utils.collect_files", lambda *_args, **_kwargs: [file_a])
-    monkeypatch.setattr(index_service, "_diff_cached_files", lambda *_args, **_kwargs: index_service.FileDiff())
+    monkeypatch.setattr(
+        index_service, "_diff_cached_files", lambda *_args, **_kwargs: index_service.FileDiff()
+    )
 
     class DummyStrategy:
         def payloads_for_files(self, files):
@@ -439,7 +463,7 @@ def test_build_index_in_memory_builds_metadata_and_uses_no_cache(
             ]
 
     class CountingSearcher:
-        calls = []
+        calls: ClassVar[list] = []
         device = "memory"
 
         def __init__(self, **kwargs):
