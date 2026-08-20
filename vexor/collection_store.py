@@ -450,6 +450,37 @@ def drop_collection(name: str) -> bool:
         conn.close()
 
 
+def drop_collection_if_empty(name: str, collection_id: int) -> bool:
+    """Drop *name* only if it is still *collection_id* and still holds nothing.
+
+    Both checks happen inside one write transaction. Doing them as separate
+    statements would let a caller cleaning up its own failed creation delete a
+    different caller's collection: the row can gain records, or be dropped and
+    recreated under the same name, between a separate check and the delete.
+    """
+
+    if not collections_db_path().exists():
+        return False
+    conn = _open()
+    try:
+        with _write_transaction(conn):
+            row = conn.execute(
+                "SELECT id FROM collection WHERE name = ?", ((name or "").strip(),)
+            ).fetchone()
+            if row is None or int(row["id"]) != int(collection_id):
+                return False
+            populated = conn.execute(
+                "SELECT 1 FROM collection_record WHERE collection_id = ? LIMIT 1",
+                (int(collection_id),),
+            ).fetchone()
+            if populated is not None:
+                return False
+            conn.execute("DELETE FROM collection WHERE id = ?", (int(collection_id),))
+            return True
+    finally:
+        conn.close()
+
+
 def count_records(
     collection_id: int,
     conn: sqlite3.Connection | None = None,

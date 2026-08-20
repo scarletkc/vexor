@@ -17,8 +17,15 @@ from pathlib import Path
 MAX_SQL_PARAMS = 900
 
 
-def _ensure_wal(conn: sqlite3.Connection) -> None:
-    """Put *conn* in WAL mode without fighting other connections over the switch.
+def _is_lock_contention(exc: sqlite3.OperationalError) -> bool:
+    """True when *exc* means "someone else holds it", not "something is broken"."""
+
+    message = str(exc).lower()
+    return any(token in message for token in ("readonly", "locked", "busy"))
+
+
+def _ensure_wal(conn: sqlite3.Connection) -> bool:
+    """Try to put *conn* in WAL mode. Returns whether the database ended up there.
 
     Changing ``journal_mode`` needs a brief exclusive lock, and SQLite does not
     run the busy handler for it: a concurrent switch returns SQLITE_BUSY
@@ -26,25 +33,31 @@ def _ensure_wal(conn: sqlite3.Connection) -> None:
     takes no lock, so the overwhelmingly common case — a database already in WAL
     — never contends at all.
 
-    Losing the race on a freshly created database is deliberately tolerated.
-    WAL is a concurrency optimization, not a correctness requirement; whichever
-    connection won the switch leaves the database in WAL for everyone after it,
-    and a connection that stayed on the rollback journal still reads and writes
-    correctly. Any other operational error still propagates.
+    Failing to switch is deliberately tolerated rather than raised. WAL is a
+    concurrency optimization, not a correctness requirement: a database left on
+    the rollback journal still reads and writes correctly, it just serializes
+    readers against writers. Note that an unsuccessful switch does *not* raise —
+    SQLite reports the mode still in force — so the result is inspected rather
+    than assumed. Errors that are not lock contention do propagate; a disk or
+    corruption failure here is real and must not be deferred to some later,
+    less obviously related query.
     """
 
     try:
         row = conn.execute("PRAGMA journal_mode;").fetchone()
-    except sqlite3.OperationalError:
-        return
-    if row is not None and str(row[0]).lower() == "wal":
-        return
-    try:
-        conn.execute("PRAGMA journal_mode = WAL;")
     except sqlite3.OperationalError as exc:
-        message = str(exc).lower()
-        if not any(token in message for token in ("readonly", "locked", "busy")):
+        if not _is_lock_contention(exc):
             raise
+        return False
+    if row is not None and str(row[0]).lower() == "wal":
+        return True
+    try:
+        result = conn.execute("PRAGMA journal_mode = WAL;").fetchone()
+    except sqlite3.OperationalError as exc:
+        if not _is_lock_contention(exc):
+            raise
+        return False
+    return result is not None and str(result[0]).lower() == "wal"
 
 
 def connect(

@@ -689,3 +689,99 @@ def test_a_failed_first_write_leaves_no_pinned_collection(isolated_cache):
     # The name is free again, including under a different contract.
     _upsert("fresh", [{"id": "a", "text": "alpha"}], backend, model="other-model")
     assert store.get_collection("fresh").model == "other-model"
+
+
+# ---------------------------------------------------------------------------
+# 10. Second review pass: the fixes themselves
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_never_deletes_a_concurrent_callers_records(isolated_cache):
+    """Failed-creation cleanup must not take someone else's collection with it.
+
+    Checking "is it empty" and deleting it are one transaction, conditional on
+    the row still being the same collection. Done as separate statements, a
+    caller cleaning up its own failed creation could delete records another
+    caller wrote in between.
+    """
+
+    backend = CountingBackend({"alpha": [1.0, 0.0, 0.0], "beta": [0.0, 1.0, 0.0]})
+    real_upsert = store.upsert_records
+
+    def fail_after_letting_b_win(collection_id, rows):
+        store.upsert_records = real_upsert
+        # Writer B succeeds against the collection A just created.
+        _upsert("shared", [{"id": "b-record", "text": "beta"}], backend)
+        raise RuntimeError("A's write failed")
+
+    store.upsert_records = fail_after_letting_b_win
+    try:
+        with pytest.raises(RuntimeError):
+            _upsert("shared", [{"id": "a-record", "text": "alpha"}], backend)
+    finally:
+        store.upsert_records = real_upsert
+
+    assert store.get_collection("shared") is not None
+    assert collection_service.count_records(name="shared") == 1
+    assert collection_service.get_records(name="shared", record_keys=["b-record"])
+
+
+def test_cleanup_failure_does_not_replace_the_original_error(isolated_cache):
+    backend = CountingBackend({"alpha": [1.0, 0.0, 0.0]})
+    real_upsert = store.upsert_records
+    real_drop = store.drop_collection_if_empty
+
+    def explode(collection_id, rows):
+        raise RuntimeError("ORIGINAL")
+
+    def cleanup_explodes(name, collection_id):
+        raise OSError("cleanup blew up")
+
+    store.upsert_records = explode
+    store.drop_collection_if_empty = cleanup_explodes
+    try:
+        with pytest.raises(RuntimeError, match="ORIGINAL"):
+            _upsert("fresh", [{"id": "a", "text": "alpha"}], backend)
+    finally:
+        store.upsert_records = real_upsert
+        store.drop_collection_if_empty = real_drop
+
+
+def test_ensure_wal_reports_the_mode_actually_in_force(tmp_path):
+    """An unsuccessful journal_mode switch does not raise, it reports the old mode.
+
+    So the result has to be inspected rather than assumed, or a database left on
+    the rollback journal would be treated as if it were in WAL.
+    """
+
+    from vexor import sqlite_util
+
+    conn = sqlite_util.connect(tmp_path / "fresh.db")
+    try:
+        assert str(conn.execute("PRAGMA journal_mode;").fetchone()[0]).lower() == "wal"
+        assert sqlite_util._ensure_wal(conn) is True
+    finally:
+        conn.close()
+
+
+def test_ensure_wal_propagates_errors_that_are_not_contention(tmp_path):
+    """Lock contention is tolerated; a disk or corruption error is not.
+
+    Swallowing everything would defer a real failure to some later, unrelated
+    query where it is far harder to attribute.
+    """
+
+    from vexor import sqlite_util
+
+    class Failing:
+        def execute(self, sql, *args):
+            raise sqlite3.OperationalError("disk I/O error")
+
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O"):
+        sqlite_util._ensure_wal(Failing())
+
+    class Contended:
+        def execute(self, sql, *args):
+            raise sqlite3.OperationalError("database is locked")
+
+    assert sqlite_util._ensure_wal(Contended()) is False

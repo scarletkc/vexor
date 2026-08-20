@@ -11,6 +11,7 @@ path and line range.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 
 import numpy as np
@@ -236,8 +237,17 @@ def upsert_records(
         # transactions. If the write fails, a collection this call brought into
         # existence would linger holding a pinned contract the caller never
         # successfully used — and block retrying the name under another one.
-        if not existed_before and collection_store.count_records(info.id) == 0:
-            collection_store.drop_collection(name)
+        #
+        # The drop is conditional on the row still being this exact collection
+        # and still being empty, decided inside one transaction, so a concurrent
+        # writer that populated it in the meantime keeps its records.
+        #
+        # Best-effort on purpose: whatever goes wrong while cleaning up matters
+        # far less than the error the caller is about to see, and must not
+        # replace it.
+        if not existed_before:
+            with suppress(Exception):
+                collection_store.drop_collection_if_empty(name, info.id)
         raise
     return UpsertReport(
         written=written,
