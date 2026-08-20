@@ -622,6 +622,10 @@ class Messages:
         "Metadata field '{key}' holds an unsupported {type}. Only str, int, float, "
         "bool, datetime, and None can be filtered on."
     )
+    ERROR_COLLECTION_FILTER_NOT_MAPPING = (
+        "Filters must be a mapping of field names to values or operator mappings, "
+        "not {type}. Pass None to search without filtering."
+    )
     ERROR_COLLECTION_FILTER_KEY_INVALID = "Filter keys must be non-empty strings."
     ERROR_COLLECTION_FILTER_EMPTY = "Filter conditions must not be empty."
     ERROR_COLLECTION_FILTER_OPERATOR_INVALID = (

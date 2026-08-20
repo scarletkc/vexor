@@ -9,6 +9,8 @@ contract exists to prevent.
 
 from __future__ import annotations
 
+import sqlite3
+
 import numpy as np
 import pytest
 
@@ -503,3 +505,187 @@ def test_concurrent_upserts_all_land(isolated_cache):
 
     assert errors == []
     assert collection_service.count_records(name="race") == 8
+
+
+# ---------------------------------------------------------------------------
+# 9. Findings from the review pass, each locked against regression
+# ---------------------------------------------------------------------------
+
+
+def test_a_falsey_non_mapping_filter_is_an_error_not_no_filter(isolated_cache):
+    """`filters=[]` must not silently widen the search to the whole collection.
+
+    Only ``None`` means "no filter". A caller who decoded a tenant filter into
+    the wrong shape has to hear about it, not receive every tenant's records.
+    """
+
+    backend = CountingBackend({"alpha": [1.0, 0.0, 0.0], "q": [1.0, 0.0, 0.0]})
+    _upsert(
+        "c",
+        [
+            {"id": "a", "text": "alpha", "metadata": {"tenant": "A"}},
+            {"id": "b", "text": "beta", "metadata": {"tenant": "B"}},
+        ],
+        backend,
+    )
+    for malformed in ([], False, 0, ""):
+        with pytest.raises(CollectionError):
+            _search("c", "q", backend, filters=malformed)
+    # None still means "search everything".
+    assert len(_search("c", "q", backend, filters=None, top_k=10)) == 2
+
+
+def test_text_losing_all_tokens_clears_its_bm25_statistics(isolated_cache):
+    """Stale token counts would skew the corpus average for every hybrid query."""
+
+    backend = CountingBackend({"alpha beta": [1.0, 0.0, 0.0], "!!!": [0.0, 0.0, 1.0]})
+    _upsert("c", [{"id": "a", "text": "alpha beta"}], backend)
+
+    def doc_rows() -> list[tuple[int, int]]:
+        conn = store._open_readonly()
+        try:
+            return [
+                (int(row["record_id"]), int(row["token_count"]))
+                for row in conn.execute(
+                    "SELECT record_id, token_count FROM collection_bm25_doc"
+                )
+            ]
+        finally:
+            conn.close()
+
+    assert doc_rows() == [(1, 2)]
+    _upsert("c", [{"id": "a", "text": "!!!"}], backend)
+    assert doc_rows() == [], "a text with no tokens must leave no length statistic"
+
+
+def test_metadata_only_upsert_loses_to_a_concurrent_text_change(isolated_cache):
+    """The record's text and its vector must never disagree.
+
+    "Unchanged" is decided before the write lock is taken. If another writer
+    changes the text in between, the metadata-only update is writing about a
+    version that no longer exists, so it is skipped rather than committing a row
+    whose text and embedding describe different strings.
+    """
+
+    backend = CountingBackend(
+        {"old text": [1.0, 0.0, 0.0], "new text": [0.0, 1.0, 0.0]}
+    )
+    _upsert("c", [{"id": "r", "text": "old text"}], backend)
+
+    real_upsert = store.upsert_records
+    fired = False
+
+    def interleave(collection_id, rows):
+        nonlocal fired
+        if not fired and rows and rows[0].refresh_embedding is False:
+            fired = True
+            store.upsert_records = real_upsert
+            _upsert("c", [{"id": "r", "text": "new text"}], backend)
+            store.upsert_records = interleave
+        return real_upsert(collection_id, rows)
+
+    store.upsert_records = interleave
+    try:
+        _upsert("c", [{"id": "r", "text": "old text", "metadata": {"w": "late"}}], backend)
+    finally:
+        store.upsert_records = real_upsert
+
+    info = store.get_collection("c")
+    ids = store.resolve_filter_ids(info.id, None)
+    record = store.fetch_by_ids(info.id, ids)[ids[0]]
+    _, matrix = store.load_vectors(info.id, ids, info.dimension)
+    expected = {"old text": [1.0, 0.0, 0.0], "new text": [0.0, 1.0, 0.0]}[record.text]
+    assert np.allclose(matrix[0], expected), "text and vector disagree"
+
+
+def test_search_holds_one_snapshot_so_a_filter_cannot_leak(isolated_cache):
+    """A record moved out of the filtered set mid-search must not be returned.
+
+    Filtering, vector loading, and the final fetch are separate statements. On
+    an idle connection WAL lets the snapshot advance between them, so without an
+    explicit read transaction a writer could hand tenant B's record to a caller
+    who filtered for tenant A.
+    """
+
+    backend = CountingBackend(
+        {"alpha": [1.0, 0.0, 0.0], "beta": [0.0, 1.0, 0.0], "q": [1.0, 0.0, 0.0]}
+    )
+    _upsert(
+        "c",
+        [
+            {"id": "a", "text": "alpha", "metadata": {"tenant": "A"}},
+            {"id": "b", "text": "beta", "metadata": {"tenant": "B"}},
+        ],
+        backend,
+    )
+
+    real_load = store.load_vectors
+    fired = False
+
+    def racing_load(collection_id, record_ids, dimension, conn=None):
+        nonlocal fired
+        if not fired:
+            fired = True
+            # The filter already picked 'a' for tenant A; move it to B.
+            _upsert(
+                "c",
+                [{"id": "a", "text": "alpha", "metadata": {"tenant": "B"}}],
+                backend,
+            )
+        return real_load(collection_id, record_ids, dimension, conn)
+
+    store.load_vectors = racing_load
+    try:
+        results = _search("c", "q", backend, filters={"tenant": "A"}, top_k=10)
+    finally:
+        store.load_vectors = real_load
+
+    assert [r for r in results if r.metadata.get("tenant") != "A"] == []
+
+
+def test_a_damaged_database_raises_instead_of_returning_nothing(isolated_cache):
+    """Collection records cannot be rebuilt, so silence is not an acceptable answer.
+
+    The file index degrades to empty on a read error because it can always be
+    rebuilt from disk. These records can only come back if the caller re-upserts
+    everything and pays for embeddings again, so damage has to surface.
+    """
+
+    backend = CountingBackend({"alpha": [1.0, 0.0, 0.0], "q": [1.0, 0.0, 0.0]})
+    _upsert("c", [{"id": "a", "text": "alpha"}], backend)
+
+    conn = store._open()
+    try:
+        conn.execute("DROP TABLE collection_embedding")
+    finally:
+        conn.close()
+
+    with pytest.raises(sqlite3.OperationalError):
+        _search("c", "q", backend)
+
+
+def test_a_failed_first_write_leaves_no_pinned_collection(isolated_cache):
+    """Creation and the first write are separate transactions.
+
+    If the write fails, a collection created by that same call must not survive
+    holding a contract the caller never successfully used, since that would also
+    block retrying the name under a different provider or model.
+    """
+
+    backend = CountingBackend({"alpha": [1.0, 0.0, 0.0]})
+    real_upsert = store.upsert_records
+
+    def explode(collection_id, rows):
+        raise RuntimeError("write failed")
+
+    store.upsert_records = explode
+    try:
+        with pytest.raises(RuntimeError):
+            _upsert("fresh", [{"id": "a", "text": "alpha"}], backend)
+    finally:
+        store.upsert_records = real_upsert
+
+    assert store.get_collection("fresh") is None
+    # The name is free again, including under a different contract.
+    _upsert("fresh", [{"id": "a", "text": "alpha"}], backend, model="other-model")
+    assert store.get_collection("fresh").model == "other-model"

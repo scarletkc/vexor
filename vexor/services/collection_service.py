@@ -147,6 +147,7 @@ def upsert_records(
     normalized = _normalize_records(records, embedding_dimension=embedding_dimension)
 
     info = collection_store.get_collection(name)
+    existed_before = info is not None
     existing_hashes: dict[str, str] = {}
     if info is not None:
         _verify_contract(info, name=name, provider=provider, model_name=model_name)
@@ -228,7 +229,16 @@ def upsert_records(
             )
         )
 
-    written = collection_store.upsert_records(info.id, prepared)
+    try:
+        written = collection_store.upsert_records(info.id, prepared)
+    except BaseException:
+        # Creating the collection and writing its first records are separate
+        # transactions. If the write fails, a collection this call brought into
+        # existence would linger holding a pinned contract the caller never
+        # successfully used — and block retrying the name under another one.
+        if not existed_before and collection_store.count_records(info.id) == 0:
+            collection_store.drop_collection(name)
+        raise
     return UpsertReport(
         written=written,
         embedded=len(pending),
@@ -264,17 +274,11 @@ def search_records(
         )
     if top_k <= 0:
         return []
+    # Resolve the contract and embed the query before opening the snapshot:
+    # embedding can be a network round trip, and holding a read transaction open
+    # across it would pin the WAL for the whole call.
     info = _require_collection(name)
     _verify_contract(info, name=name, provider=provider, model_name=model_name)
-
-    candidate_ids = collection_store.resolve_filter_ids(info.id, filters)
-    if not candidate_ids:
-        return []
-    record_ids, matrix = collection_store.load_vectors(
-        info.id, candidate_ids, info.dimension
-    )
-    if not record_ids:
-        return []
 
     query_matrix = embed_texts_with_cache(
         searcher=searcher,
@@ -286,30 +290,53 @@ def search_records(
     if query_matrix.size == 0:
         raise CollectionError(Messages.ERROR_COLLECTION_EMBED_FAILED)
     query_vector = np.asarray(query_matrix[0], dtype=np.float32).ravel()
-    # Same provider and model can still yield a different width when the
-    # configured embedding_dimensions changed since the collection was pinned.
-    _verify_contract(
-        info,
-        name=name,
-        provider=provider,
-        model_name=model_name,
-        dimension=int(query_vector.shape[0]),
-    )
 
-    # Both sides are L2-normalized, so the dot product is cosine similarity.
-    scores = np.asarray(matrix @ query_vector, dtype=np.float32)
-    if rerank_value == "hybrid":
-        scores = _fuse_hybrid(
-            collection_id=info.id,
-            query=clean_query,
-            record_ids=record_ids,
-            dense_scores=scores,
+    # Every read below shares one snapshot. Filtering, vector loading, posting
+    # loading, and the final record fetch must observe the same data: a writer
+    # moving a record out of the filtered set between two of those steps would
+    # otherwise let the result reach a caller whose filter excludes it.
+    with collection_store.read_snapshot() as snapshot:
+        if snapshot is None:
+            raise CollectionError(Messages.ERROR_COLLECTION_NOT_FOUND.format(name=name))
+        info = collection_store.get_collection(name, snapshot)
+        if info is None:
+            raise CollectionError(Messages.ERROR_COLLECTION_NOT_FOUND.format(name=name))
+        # Same provider and model can still yield a different width when the
+        # configured embedding_dimensions changed since the collection was
+        # pinned, so the width is checked against the snapshot's contract.
+        _verify_contract(
+            info,
+            name=name,
+            provider=provider,
+            model_name=model_name,
+            dimension=int(query_vector.shape[0]),
         )
 
-    order = sorted(range(len(record_ids)), key=lambda idx: (-scores[idx], idx))
-    top_rows = order[: int(top_k)]
-    selected_ids = [record_ids[row] for row in top_rows]
-    stored = collection_store.fetch_by_ids(info.id, selected_ids)
+        candidate_ids = collection_store.resolve_filter_ids(info.id, filters, snapshot)
+        if not candidate_ids:
+            return []
+        record_ids, matrix = collection_store.load_vectors(
+            info.id, candidate_ids, info.dimension, snapshot
+        )
+        if not record_ids:
+            return []
+
+        # Both sides are L2-normalized, so the dot product is cosine similarity.
+        scores = np.asarray(matrix @ query_vector, dtype=np.float32)
+        if rerank_value == "hybrid":
+            scores = _fuse_hybrid(
+                collection_id=info.id,
+                query=clean_query,
+                record_ids=record_ids,
+                dense_scores=scores,
+                conn=snapshot,
+            )
+
+        order = sorted(range(len(record_ids)), key=lambda idx: (-scores[idx], idx))
+        top_rows = order[: int(top_k)]
+        selected_ids = [record_ids[row] for row in top_rows]
+        stored = collection_store.fetch_by_ids(info.id, selected_ids, snapshot)
+
     results: list[RecordResult] = []
     for row in top_rows:
         record = stored.get(record_ids[row])
@@ -332,17 +359,20 @@ def _fuse_hybrid(
     query: str,
     record_ids: Sequence[int],
     dense_scores: np.ndarray,
+    conn=None,
 ) -> np.ndarray:
     """Fuse dense similarity with BM25 over the filtered subset only."""
 
     query_terms = list(dict.fromkeys(bm25.tokenize(query)))[: bm25.MAX_QUERY_TERMS]
     if not query_terms:
         return dense_scores
-    doc_count, avg_doc_len = collection_store.load_bm25_stats(collection_id, record_ids)
+    doc_count, avg_doc_len = collection_store.load_bm25_stats(
+        collection_id, record_ids, conn
+    )
     if doc_count <= 0 or avg_doc_len <= 0:
         return dense_scores
     postings = collection_store.load_bm25_postings(
-        collection_id, record_ids, query_terms
+        collection_id, record_ids, query_terms, conn
     )
     if not postings:
         return dense_scores

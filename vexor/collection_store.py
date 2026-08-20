@@ -202,15 +202,47 @@ def _write_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]
 
 
 def _open_readonly() -> sqlite3.Connection | None:
-    """Open the database read-only, or return ``None`` when it does not exist."""
+    """Open the database read-only, or return ``None`` when it does not exist.
+
+    A missing file is the one expected "nothing here" case — asking about a
+    collection before anything was ever written. Every other failure is real
+    damage and propagates, because these records cannot be rebuilt from disk the
+    way a file index can.
+    """
 
     db_path = collections_db_path()
     if not db_path.exists():
         return None
+    conn = connect(db_path, readonly=True)
+    # Explicit transaction control so read_snapshot can pin one snapshot.
+    conn.isolation_level = None
+    return conn
+
+
+@contextmanager
+def read_snapshot() -> Iterator[sqlite3.Connection | None]:
+    """Hold one read transaction so every query inside sees the same data.
+
+    WAL gives readers a consistent snapshot only for the duration of a read
+    transaction; between statements on an idle connection the snapshot advances.
+    A search that resolves its filter, loads vectors, then reads records across
+    three separate statements can therefore observe a record that a concurrent
+    writer moved out of the filtered set in between — and return it to the wrong
+    tenant. Yields ``None`` when the database does not exist yet.
+    """
+
+    conn = _open_readonly()
+    if conn is None:
+        yield None
+        return
     try:
-        return connect(db_path, readonly=True)
-    except sqlite3.OperationalError:
-        return None
+        conn.execute("BEGIN")
+        yield conn
+    finally:
+        try:
+            conn.rollback()
+        finally:
+            conn.close()
 
 
 # --------------------------------------------------------------------------
@@ -366,39 +398,40 @@ def ensure_collection(
         conn.close()
 
 
-def get_collection(name: str) -> CollectionInfo | None:
+def get_collection(
+    name: str,
+    conn: sqlite3.Connection | None = None,
+) -> CollectionInfo | None:
     """Return the stored contract for *name*, or ``None`` when it does not exist."""
 
-    conn = _open_readonly()
-    if conn is None:
+    owns_connection = conn is None
+    connection = conn if conn is not None else _open_readonly()
+    if connection is None:
         return None
     try:
-        try:
-            row = conn.execute(
-                "SELECT * FROM collection WHERE name = ?", ((name or "").strip(),)
-            ).fetchone()
-        except sqlite3.OperationalError:
-            return None
+        row = connection.execute(
+            "SELECT * FROM collection WHERE name = ?", ((name or "").strip(),)
+        ).fetchone()
         return _row_to_info(row) if row is not None else None
     finally:
-        conn.close()
+        if owns_connection:
+            connection.close()
 
-
-def list_collections() -> list[CollectionInfo]:
+def list_collections(
+    conn: sqlite3.Connection | None = None,
+) -> list[CollectionInfo]:
     """Return every stored collection, ordered by name."""
 
-    conn = _open_readonly()
-    if conn is None:
+    owns_connection = conn is None
+    connection = conn if conn is not None else _open_readonly()
+    if connection is None:
         return []
     try:
-        try:
-            rows = conn.execute("SELECT * FROM collection ORDER BY name").fetchall()
-        except sqlite3.OperationalError:
-            return []
+        rows = connection.execute("SELECT * FROM collection ORDER BY name").fetchall()
         return [_row_to_info(row) for row in rows]
     finally:
-        conn.close()
-
+        if owns_connection:
+            connection.close()
 
 def drop_collection(name: str) -> bool:
     """Delete *name* and everything under it. Returns ``False`` when absent."""
@@ -417,24 +450,25 @@ def drop_collection(name: str) -> bool:
         conn.close()
 
 
-def count_records(collection_id: int) -> int:
+def count_records(
+    collection_id: int,
+    conn: sqlite3.Connection | None = None,
+) -> int:
     """Return how many records *collection_id* holds."""
 
-    conn = _open_readonly()
-    if conn is None:
+    owns_connection = conn is None
+    connection = conn if conn is not None else _open_readonly()
+    if connection is None:
         return 0
     try:
-        try:
-            row = conn.execute(
-                "SELECT COUNT(*) AS total FROM collection_record WHERE collection_id = ?",
-                (int(collection_id),),
-            ).fetchone()
-        except sqlite3.OperationalError:
-            return 0
+        row = connection.execute(
+            "SELECT COUNT(*) AS total FROM collection_record WHERE collection_id = ?",
+            (int(collection_id),),
+        ).fetchone()
         return int(row["total"]) if row is not None else 0
     finally:
-        conn.close()
-
+        if owns_connection:
+            connection.close()
 
 def clear_all_collections() -> None:
     """Remove the collection database entirely.
@@ -475,68 +509,97 @@ def clear_all_collections() -> None:
 def load_record_hashes(
     collection_id: int,
     record_keys: Sequence[str],
+    conn: sqlite3.Connection | None = None,
 ) -> dict[str, str]:
     """Return ``{record_key: text_hash}`` for the keys already stored."""
 
     keys = [key for key in dict.fromkeys(record_keys) if key]
     if not keys:
         return {}
-    conn = _open_readonly()
-    if conn is None:
+    owns_connection = conn is None
+    connection = conn if conn is not None else _open_readonly()
+    if connection is None:
         return {}
     try:
         results: dict[str, str] = {}
         for batch in chunk_values(keys):
             placeholders = ", ".join("?" for _ in batch)
-            try:
-                rows = conn.execute(
-                    f"""
-                    SELECT record_key, text_hash
-                    FROM collection_record
-                    WHERE collection_id = ? AND record_key IN ({placeholders})
-                    """,
-                    (int(collection_id), *batch),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                return {}
+            rows = connection.execute(
+                f"""
+                SELECT record_key, text_hash
+                FROM collection_record
+                WHERE collection_id = ? AND record_key IN ({placeholders})
+                """,
+                (int(collection_id), *batch),
+            ).fetchall()
             for row in rows:
                 results[str(row["record_key"])] = str(row["text_hash"])
         return results
     finally:
-        conn.close()
-
+        if owns_connection:
+            connection.close()
 
 def upsert_records(collection_id: int, records: Sequence[PreparedRecord]) -> int:
-    """Insert or replace *records*, returning how many rows were written."""
+    """Insert or replace *records*, returning how many rows were written.
+
+    A record whose text is unchanged takes a narrower path: its metadata is
+    rewritten under a ``text_hash`` guard, so a concurrent writer that changed
+    the text between the service layer's read and this transaction wins and the
+    stale update is skipped. Without the guard the row would end up claiming the
+    old text while the embedding and postings describe the new one.
+    """
 
     if not records:
         return 0
     conn = _open()
     try:
         updated_at = datetime.now(timezone.utc).isoformat()
+        written = 0
         with _write_transaction(conn):
             for record in records:
-                conn.execute(
-                    """
-                    INSERT INTO collection_record (
-                        collection_id, record_key, text, text_hash,
-                        metadata_json, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(collection_id, record_key) DO UPDATE SET
-                        text = excluded.text,
-                        text_hash = excluded.text_hash,
-                        metadata_json = excluded.metadata_json,
-                        updated_at = excluded.updated_at
-                    """,
-                    (
-                        int(collection_id),
-                        record.record_key,
-                        record.text,
-                        record.text_hash,
-                        json.dumps(_metadata_to_json(record.metadata)),
-                        updated_at,
-                    ),
-                )
+                metadata_json = json.dumps(_metadata_to_json(record.metadata))
+                if record.refresh_embedding:
+                    conn.execute(
+                        """
+                        INSERT INTO collection_record (
+                            collection_id, record_key, text, text_hash,
+                            metadata_json, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(collection_id, record_key) DO UPDATE SET
+                            text = excluded.text,
+                            text_hash = excluded.text_hash,
+                            metadata_json = excluded.metadata_json,
+                            updated_at = excluded.updated_at
+                        """,
+                        (
+                            int(collection_id),
+                            record.record_key,
+                            record.text,
+                            record.text_hash,
+                            metadata_json,
+                            updated_at,
+                        ),
+                    )
+                else:
+                    cursor = conn.execute(
+                        """
+                        UPDATE collection_record
+                        SET metadata_json = ?, updated_at = ?
+                        WHERE collection_id = ? AND record_key = ? AND text_hash = ?
+                        """,
+                        (
+                            metadata_json,
+                            updated_at,
+                            int(collection_id),
+                            record.record_key,
+                            record.text_hash,
+                        ),
+                    )
+                    if cursor.rowcount == 0:
+                        # The text changed under us, so this metadata belongs to
+                        # a version that no longer exists. Leave the winner be.
+                        continue
+
                 row = conn.execute(
                     """
                     SELECT id FROM collection_record
@@ -545,21 +608,16 @@ def upsert_records(collection_id: int, records: Sequence[PreparedRecord]) -> int
                     (int(collection_id), record.record_key),
                 ).fetchone()
                 record_id = int(row["id"])
+                written += 1
+
                 # Metadata replaces wholesale on every upsert.
                 conn.execute(
                     "DELETE FROM collection_meta WHERE record_id = ?", (record_id,)
                 )
-                if record.refresh_embedding:
-                    # New text means the old postings score a string that no
-                    # longer exists, so they go before the new ones land.
-                    conn.execute(
-                        "DELETE FROM collection_bm25_posting WHERE record_id = ?",
-                        (record_id,),
-                    )
-                meta_rows = []
-                for key, value in record.metadata.items():
-                    value_text, value_num = _encode_value(value)
-                    meta_rows.append((record_id, key, value_text, value_num))
+                meta_rows = [
+                    (record_id, key, *_encode_value(value))
+                    for key, value in record.metadata.items()
+                ]
                 if meta_rows:
                     conn.executemany(
                         """
@@ -568,6 +626,22 @@ def upsert_records(collection_id: int, records: Sequence[PreparedRecord]) -> int
                         """,
                         meta_rows,
                     )
+
+                if not record.refresh_embedding:
+                    continue
+
+                # New text means the old postings and length statistics describe
+                # a string that no longer exists. Both go unconditionally: a text
+                # that tokenizes to nothing must not leave the previous
+                # token_count behind for the corpus average to pick up.
+                conn.execute(
+                    "DELETE FROM collection_bm25_posting WHERE record_id = ?",
+                    (record_id,),
+                )
+                conn.execute(
+                    "DELETE FROM collection_bm25_doc WHERE record_id = ?",
+                    (record_id,),
+                )
                 if record.vector is not None:
                     conn.execute(
                         """
@@ -582,7 +656,7 @@ def upsert_records(collection_id: int, records: Sequence[PreparedRecord]) -> int
                 if record.bm25_terms:
                     conn.execute(
                         """
-                        INSERT OR REPLACE INTO collection_bm25_doc (record_id, token_count)
+                        INSERT INTO collection_bm25_doc (record_id, token_count)
                         VALUES (?, ?)
                         """,
                         (record_id, int(record.token_count)),
@@ -598,7 +672,7 @@ def upsert_records(collection_id: int, records: Sequence[PreparedRecord]) -> int
                             for term, tf in record.bm25_terms.items()
                         ],
                     )
-        return len(records)
+        return written
     finally:
         conn.close()
 
@@ -648,30 +722,32 @@ def _decode_metadata(payload: str) -> dict[str, ScalarValue]:
     return loaded if isinstance(loaded, dict) else {}
 
 
-def fetch_records(collection_id: int, record_keys: Sequence[str]) -> list[StoredRecord]:
+def fetch_records(
+    collection_id: int,
+    record_keys: Sequence[str],
+    conn: sqlite3.Connection | None = None,
+) -> list[StoredRecord]:
     """Return stored records for *record_keys*, skipping keys that are absent."""
 
     keys = [key for key in dict.fromkeys(record_keys) if key]
     if not keys:
         return []
-    conn = _open_readonly()
-    if conn is None:
+    owns_connection = conn is None
+    connection = conn if conn is not None else _open_readonly()
+    if connection is None:
         return []
     try:
         found: dict[str, StoredRecord] = {}
         for batch in chunk_values(keys):
             placeholders = ", ".join("?" for _ in batch)
-            try:
-                rows = conn.execute(
-                    f"""
-                    SELECT record_key, text, metadata_json
-                    FROM collection_record
-                    WHERE collection_id = ? AND record_key IN ({placeholders})
-                    """,
-                    (int(collection_id), *batch),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                return []
+            rows = connection.execute(
+                f"""
+                SELECT record_key, text, metadata_json
+                FROM collection_record
+                WHERE collection_id = ? AND record_key IN ({placeholders})
+                """,
+                (int(collection_id), *batch),
+            ).fetchall()
             for row in rows:
                 found[str(row["record_key"])] = StoredRecord(
                     id=str(row["record_key"]),
@@ -680,14 +756,25 @@ def fetch_records(collection_id: int, record_keys: Sequence[str]) -> list[Stored
                 )
         return [found[key] for key in keys if key in found]
     finally:
-        conn.close()
-
+        if owns_connection:
+            connection.close()
 
 def _compile_filter(
     filters: Mapping[str, object] | None,
 ) -> tuple[list[str], list[object]]:
     """Compile *filters* into SQL fragments ANDed against ``collection_record``."""
 
+    if filters is None:
+        return [], []
+    if not isinstance(filters, Mapping):
+        # Only None means "no filter". A falsey non-mapping — an empty list, 0,
+        # False — is a malformed filter, and treating it as "no filter" would
+        # silently widen a tenant-scoped search to the entire collection.
+        raise CollectionError(
+            Messages.ERROR_COLLECTION_FILTER_NOT_MAPPING.format(
+                type=type(filters).__name__
+            )
+        )
     if not filters:
         return [], []
     clauses: list[str] = []
@@ -801,6 +888,7 @@ def _compile_operation(
 def resolve_filter_ids(
     collection_id: int,
     filters: Mapping[str, object] | None,
+    conn: sqlite3.Connection | None = None,
 ) -> list[int]:
     """Return the record ids matching *filters*, resolved before any scoring.
 
@@ -809,52 +897,50 @@ def resolve_filter_ids(
     """
 
     clauses, params = _compile_filter(filters)
-    conn = _open_readonly()
-    if conn is None:
+    owns_connection = conn is None
+    connection = conn if conn is not None else _open_readonly()
+    if connection is None:
         return []
     try:
         sql = "SELECT r.id FROM collection_record AS r WHERE r.collection_id = ?"
         if clauses:
             sql += " AND " + " AND ".join(clauses)
         sql += " ORDER BY r.id"
-        try:
-            rows = conn.execute(sql, (int(collection_id), *params)).fetchall()
-        except sqlite3.OperationalError:
-            return []
+        rows = connection.execute(sql, (int(collection_id), *params)).fetchall()
         return [int(row["id"]) for row in rows]
     finally:
-        conn.close()
-
+        if owns_connection:
+            connection.close()
 
 def load_vectors(
     collection_id: int,
     record_ids: Sequence[int],
     dimension: int,
+    conn: sqlite3.Connection | None = None,
 ) -> tuple[list[int], np.ndarray]:
     """Load embeddings for *record_ids*, dropping rows with no stored vector."""
 
     ids = [int(value) for value in record_ids]
+    empty = np.empty((0, dimension), dtype=np.float32)
     if not ids:
-        return [], np.empty((0, dimension), dtype=np.float32)
-    conn = _open_readonly()
-    if conn is None:
-        return [], np.empty((0, dimension), dtype=np.float32)
+        return [], empty
+    owns_connection = conn is None
+    connection = conn if conn is not None else _open_readonly()
+    if connection is None:
+        return [], empty
     try:
         vectors: dict[int, np.ndarray] = {}
         for batch in chunk_values(ids):
             placeholders = ", ".join("?" for _ in batch)
-            try:
-                rows = conn.execute(
-                    f"""
-                    SELECT e.record_id, e.vector_blob
-                    FROM collection_embedding AS e
-                    JOIN collection_record AS r ON r.id = e.record_id
-                    WHERE r.collection_id = ? AND e.record_id IN ({placeholders})
-                    """,
-                    (int(collection_id), *batch),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                return [], np.empty((0, dimension), dtype=np.float32)
+            rows = connection.execute(
+                f"""
+                SELECT e.record_id, e.vector_blob
+                FROM collection_embedding AS e
+                JOIN collection_record AS r ON r.id = e.record_id
+                WHERE r.collection_id = ? AND e.record_id IN ({placeholders})
+                """,
+                (int(collection_id), *batch),
+            ).fetchall()
             for row in rows:
                 blob = row["vector_blob"]
                 if not blob:
@@ -865,16 +951,17 @@ def load_vectors(
                 vectors[int(row["record_id"])] = vector
         ordered_ids = [value for value in ids if value in vectors]
         if not ordered_ids:
-            return [], np.empty((0, dimension), dtype=np.float32)
+            return [], empty
         matrix = np.vstack([vectors[value] for value in ordered_ids])
         return ordered_ids, matrix
     finally:
-        conn.close()
-
+        if owns_connection:
+            connection.close()
 
 def load_bm25_stats(
     collection_id: int,
     record_ids: Sequence[int],
+    conn: sqlite3.Connection | None = None,
 ) -> tuple[int, float]:
     """Return BM25 corpus statistics over *record_ids* only.
 
@@ -885,25 +972,23 @@ def load_bm25_stats(
     ids = [int(value) for value in record_ids]
     if not ids:
         return 0, 0.0
-    conn = _open_readonly()
-    if conn is None:
+    owns_connection = conn is None
+    connection = conn if conn is not None else _open_readonly()
+    if connection is None:
         return 0, 0.0
     try:
         total = 0
         length_sum = 0
         for batch in chunk_values(ids):
             placeholders = ", ".join("?" for _ in batch)
-            try:
-                row = conn.execute(
-                    f"""
-                    SELECT COUNT(*) AS doc_count, SUM(token_count) AS length_sum
-                    FROM collection_bm25_doc
-                    WHERE record_id IN ({placeholders})
-                    """,
-                    tuple(batch),
-                ).fetchone()
-            except sqlite3.OperationalError:
-                return 0, 0.0
+            row = connection.execute(
+                f"""
+                SELECT COUNT(*) AS doc_count, SUM(token_count) AS length_sum
+                FROM collection_bm25_doc
+                WHERE record_id IN ({placeholders})
+                """,
+                tuple(batch),
+            ).fetchone()
             if row is None:
                 continue
             total += int(row["doc_count"] or 0)
@@ -912,13 +997,14 @@ def load_bm25_stats(
             return 0, 0.0
         return total, length_sum / total
     finally:
-        conn.close()
-
+        if owns_connection:
+            connection.close()
 
 def load_bm25_postings(
     collection_id: int,
     record_ids: Sequence[int],
     terms: Sequence[str],
+    conn: sqlite3.Connection | None = None,
 ) -> dict[str, list[tuple[int, int, int]]]:
     """Load posting lists restricted to *record_ids*, shaped for ``bm25``."""
 
@@ -926,25 +1012,23 @@ def load_bm25_postings(
     unique_terms = [term for term in dict.fromkeys(terms) if term]
     if not ids or not unique_terms:
         return {}
-    conn = _open_readonly()
-    if conn is None:
+    owns_connection = conn is None
+    connection = conn if conn is not None else _open_readonly()
+    if connection is None:
         return {}
     try:
         results: dict[str, list[tuple[int, int, int]]] = {}
         for batch in chunk_values(unique_terms):
             placeholders = ", ".join("?" for _ in batch)
-            try:
-                rows = conn.execute(
-                    f"""
-                    SELECT p.term, p.record_id, p.tf, d.token_count
-                    FROM collection_bm25_posting AS p
-                    JOIN collection_bm25_doc AS d ON d.record_id = p.record_id
-                    WHERE p.collection_id = ? AND p.term IN ({placeholders})
-                    """,
-                    (int(collection_id), *batch),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                return {}
+            rows = connection.execute(
+                f"""
+                SELECT p.term, p.record_id, p.tf, d.token_count
+                FROM collection_bm25_posting AS p
+                JOIN collection_bm25_doc AS d ON d.record_id = p.record_id
+                WHERE p.collection_id = ? AND p.term IN ({placeholders})
+                """,
+                (int(collection_id), *batch),
+            ).fetchall()
             for row in rows:
                 record_id = int(row["record_id"])
                 if record_id not in ids:
@@ -954,33 +1038,35 @@ def load_bm25_postings(
                 )
         return results
     finally:
-        conn.close()
+        if owns_connection:
+            connection.close()
 
-
-def fetch_by_ids(collection_id: int, record_ids: Sequence[int]) -> dict[int, StoredRecord]:
+def fetch_by_ids(
+    collection_id: int,
+    record_ids: Sequence[int],
+    conn: sqlite3.Connection | None = None,
+) -> dict[int, StoredRecord]:
     """Return ``{record_id: StoredRecord}`` for the given internal ids."""
 
     ids = [int(value) for value in dict.fromkeys(record_ids)]
     if not ids:
         return {}
-    conn = _open_readonly()
-    if conn is None:
+    owns_connection = conn is None
+    connection = conn if conn is not None else _open_readonly()
+    if connection is None:
         return {}
     try:
         results: dict[int, StoredRecord] = {}
         for batch in chunk_values(ids):
             placeholders = ", ".join("?" for _ in batch)
-            try:
-                rows = conn.execute(
-                    f"""
-                    SELECT id, record_key, text, metadata_json
-                    FROM collection_record
-                    WHERE collection_id = ? AND id IN ({placeholders})
-                    """,
-                    (int(collection_id), *batch),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                return {}
+            rows = connection.execute(
+                f"""
+                SELECT id, record_key, text, metadata_json
+                FROM collection_record
+                WHERE collection_id = ? AND id IN ({placeholders})
+                """,
+                (int(collection_id), *batch),
+            ).fetchall()
             for row in rows:
                 results[int(row["id"])] = StoredRecord(
                     id=str(row["record_key"]),
@@ -989,4 +1075,6 @@ def fetch_by_ids(collection_id: int, record_ids: Sequence[int]) -> dict[int, Sto
                 )
         return results
     finally:
-        conn.close()
+        if owns_connection:
+            connection.close()
+
