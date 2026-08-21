@@ -210,6 +210,33 @@ def test_should_offer_update_notice_gating(monkeypatch):
     assert cli_module.should_offer_update_notice(["search", "q"]) is False
 
 
+def test_run_dispatches_config_without_starting_init_wizard(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    original_should_auto_run_init = cli.should_auto_run_init
+
+    def should_auto_run_init_interactively(args, *, config_path):
+        return original_should_auto_run_init(
+            args,
+            config_path=config_path,
+            is_tty=True,
+        )
+
+    dispatched: list[list[str]] = []
+    monkeypatch.setattr(cli.config_module, "CONFIG_FILE", config_path)
+    monkeypatch.setattr(cli, "should_auto_run_init", should_auto_run_init_interactively)
+    monkeypatch.setattr(
+        cli,
+        "run_init_wizard",
+        lambda: (_ for _ in ()).throw(AssertionError("init wizard must not run")),
+    )
+    monkeypatch.setattr(cli, "should_offer_update_notice", lambda _args: False)
+    monkeypatch.setattr(cli, "app", lambda *, args: dispatched.append(args))
+
+    cli.run(["config", "--show"])
+
+    assert dispatched == [["config", "--show"]]
+
+
 def test_print_update_notice_reads_cache_only(monkeypatch):
     from rich.console import Console
 

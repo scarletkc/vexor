@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from vexor.services import init_service
 from vexor.services.init_service import should_auto_run_init
 from vexor.text import Messages
@@ -29,6 +31,19 @@ def test_should_auto_run_init_runs_when_missing_config(tmp_path):
 def test_should_auto_run_init_skips_mcp_command(tmp_path):
     config_path = tmp_path / "config.json"
     assert should_auto_run_init(["mcp"], config_path=config_path, is_tty=True) is False
+
+
+@pytest.mark.parametrize(
+    "args",
+    (
+        ["config"],
+        ["config", "--show"],
+        ["config", "--set-api-key", "secret"],
+    ),
+)
+def test_should_auto_run_init_skips_config_commands(tmp_path, args):
+    config_path = tmp_path / "config.json"
+    assert should_auto_run_init(args, config_path=config_path, is_tty=True) is False
 
 
 def test_collect_remote_settings_voyageai_prompts_voyage_api_key(monkeypatch):

@@ -51,7 +51,9 @@ pip install vexor  # also works with pipx, uv
 ```bash
 vexor init
 ```
-The wizard also runs automatically on first use when no config exists.
+The wizard also runs automatically before the first interactive operational
+command when no config exists. Configuration-management (`vexor config`), MCP,
+help, and version commands run directly.
 
 ### 1. Search
 ```bash
