@@ -1,40 +1,63 @@
-name: Bootstrap uv lock
+name: Validate uv migration
 
 on:
   pull_request:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  lock:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
 
-      - name: Install uv
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      - name: Setup uv
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-dependency-glob: uv.lock
 
-      - name: Generate lockfile
-        run: uv lock
+      - name: Check lockfile
+        run: uv lock --check
 
-      - name: Commit lockfile
+      - name: Sync frozen environment
+        run: uv sync --frozen
+
+      - name: Run tests
+        run: uv run --no-sync pytest
+
+      - name: Run Ruff
+        run: uv run --no-sync ruff check .
+
+      - name: Build distributions with Hatchling
+        run: uv build
+
+      - name: Check package extras metadata
         shell: bash
         run: |
-          set -euo pipefail
-          if [ -z "$(git status --porcelain -- uv.lock)" ] && [ -f uv.lock ]; then
-            echo "uv.lock is already current."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add uv.lock
-          git commit -m "chore: add uv lockfile"
-          git push
+          uv run --no-sync python - <<'PY'
+          import glob
+          import zipfile
+
+          wheel = glob.glob("dist/*.whl")[0]
+          with zipfile.ZipFile(wheel) as archive:
+              metadata_name = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
+              metadata = archive.read(metadata_name).decode()
+
+          assert "Provides-Extra: dev" not in metadata
+          for extra in ("local", "local-cuda", "flashrank"):
+              assert f"Provides-Extra: {extra}" in metadata
+          assert "Requires-Dist: openai>=1.0.0" in metadata
+          print("Package metadata keeps runtime dependencies and user extras; dev is not published.")
+          PY
+
+      - name: Build Linux executable
+        run: uv run --no-sync pyinstaller vexor.spec
