@@ -1447,7 +1447,9 @@ class CollectionHandle:
         *,
         top_k: int = 10,
         filters: Mapping[str, object] | None = None,
-        rerank: str = DEFAULT_COLLECTION_RERANK,
+        rerank: str | None = None,
+        flashrank_model: str | None = None,
+        remote_rerank: RemoteRerankConfig | None = None,
     ) -> list[RecordResult]:
         """Search this collection, applying *filters* before anything is scored.
 
@@ -1466,7 +1468,17 @@ class CollectionHandle:
                 provider=settings.provider,
                 top_k=top_k,
                 filters=filters,
-                rerank=rerank,
+                rerank=rerank or settings.rerank or DEFAULT_COLLECTION_RERANK,
+                flashrank_model=(
+                    flashrank_model
+                    if flashrank_model is not None
+                    else settings.flashrank_model
+                ),
+                remote_rerank=(
+                    remote_rerank
+                    if remote_rerank is not None
+                    else settings.remote_rerank
+                ),
                 embedding_dimension=settings.embedding_dimensions,
                 no_cache=self._no_cache,
             )

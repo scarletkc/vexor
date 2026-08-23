@@ -60,13 +60,10 @@ never leaving the machine.
   - MCP exposure is deferred. The server is path-scoped today, and deciding
     which collection an agent may reach is a separate authorization design
     question.
-  - Collection search supports `rerank="off"` and `rerank="hybrid"` only;
-    FlashRank and remote reranking are deferred. `hybrid` already fuses dense
-    and BM25 scores over persisted postings whose idf is computed on the
-    filtered subset. That is better information than the legacy `bm25`
-    reranker's second pass over a truncated candidate list: the reranker
-    compensates for file search predating the inverted index, while a
-    collection has one from its first write.
+  - Collection search supports `off`, `bm25`, `flashrank`, `remote`, and
+    `hybrid`. Filters resolve before ranking; `hybrid` scores persisted BM25
+    postings over the full filtered subset, while the candidate rerankers use
+    the same expanded dense window as file search and score full record text.
   - Caller-supplied vectors and a custom embedding function are deferred.
     Their design must revisit the `text_hash` skip, which currently assumes
     that identical text always produces an identical vector; externally

@@ -25,18 +25,19 @@ from ..collection_store import (
     ScalarValue,
     StoredRecord,
 )
+from ..config import DEFAULT_RERANK, SUPPORTED_RERANKERS, RemoteRerankConfig
 from ..text import Messages
 from .embedding_service import embed_texts_with_cache
+from .search_service import (
+    _apply_ranking,
+    _rank_documents_bm25,
+    _rank_documents_flashrank,
+    _rank_documents_remote,
+    _resolve_rerank_candidates,
+)
 
-# v1 deliberately ships two ranking modes. ``hybrid`` already fuses dense and
-# BM25 over persisted postings whose idf is computed on the filtered subset,
-# which is strictly better information than the legacy ``bm25`` reranker's
-# second pass over a truncated candidate list — that reranker exists to
-# compensate for file search predating the inverted index, and a collection has
-# one from its first write. FlashRank and remote reranking are additive and can
-# land later without a schema change.
-SUPPORTED_COLLECTION_RERANKERS: tuple[str, ...] = ("off", "hybrid")
-DEFAULT_COLLECTION_RERANK = "off"
+SUPPORTED_COLLECTION_RERANKERS = SUPPORTED_RERANKERS
+DEFAULT_COLLECTION_RERANK = DEFAULT_RERANK
 
 
 @dataclass(slots=True)
@@ -266,6 +267,8 @@ def search_records(
     top_k: int = 10,
     filters: Mapping[str, object] | None = None,
     rerank: str = DEFAULT_COLLECTION_RERANK,
+    flashrank_model: str | None = None,
+    remote_rerank: RemoteRerankConfig | None = None,
     embedding_dimension: int | None = None,
     no_cache: bool = False,
 ) -> list[RecordResult]:
@@ -343,16 +346,20 @@ def search_records(
             )
 
         order = sorted(range(len(record_ids)), key=lambda idx: (-scores[idx], idx))
-        top_rows = order[: int(top_k)]
-        selected_ids = [record_ids[row] for row in top_rows]
+        use_candidate_rerank = rerank_value in {"bm25", "flashrank", "remote"}
+        candidate_limit = (
+            _resolve_rerank_candidates(top_k) if use_candidate_rerank else top_k
+        )
+        candidate_rows = order[: int(candidate_limit)]
+        selected_ids = [record_ids[row] for row in candidate_rows]
         stored = collection_store.fetch_by_ids(info.id, selected_ids, snapshot)
 
-    results: list[RecordResult] = []
-    for row in top_rows:
+    candidates: list[RecordResult] = []
+    for row in candidate_rows:
         record = stored.get(record_ids[row])
         if record is None:
             continue
-        results.append(
+        candidates.append(
             RecordResult(
                 id=record.id,
                 text=record.text,
@@ -360,7 +367,35 @@ def search_records(
                 score=float(scores[row]),
             )
         )
-    return results
+    # Model loading and remote calls can be slow, so rerank only after the read
+    # snapshot closes instead of pinning the collection WAL for their duration.
+    if rerank_value == "bm25":
+        ranking = _rank_documents_bm25(
+            clean_query,
+            [result.text for result in candidates],
+            [result.score for result in candidates],
+        )
+        if ranking is not None:
+            candidates = _apply_ranking(candidates, ranking)
+    elif rerank_value == "flashrank":
+        candidates = _apply_ranking(
+            candidates,
+            _rank_documents_flashrank(
+                clean_query,
+                [result.text for result in candidates],
+                flashrank_model,
+            ),
+        )
+    elif rerank_value == "remote":
+        candidates = _apply_ranking(
+            candidates,
+            _rank_documents_remote(
+                clean_query,
+                [result.text for result in candidates],
+                remote_rerank,
+            ),
+        )
+    return candidates[: int(top_k)]
 
 
 def _fuse_hybrid(

@@ -9,7 +9,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, TypeVar
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
@@ -353,10 +353,17 @@ def _build_rerank_documents(results: Sequence[SearchResult]) -> list[str]:
     return [_build_rerank_document(result) for result in results]
 
 
+class _ScoredResult(Protocol):
+    score: float
+
+
+_ScoredResultT = TypeVar("_ScoredResultT", bound=_ScoredResult)
+
+
 def _apply_ranking(
-    results: Sequence[SearchResult],
+    results: Sequence[_ScoredResultT],
     ranking: Sequence[tuple[int, float | None]],
-) -> list[SearchResult]:
+) -> list[_ScoredResultT]:
     """Reorder *results* by a reranker's ``(index, score)`` pairs.
 
     Unknown, duplicate, and out-of-range indices are dropped, and anything the

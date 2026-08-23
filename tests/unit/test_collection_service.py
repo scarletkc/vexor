@@ -11,6 +11,7 @@ import vexor
 import vexor.api as api_module
 import vexor.cache as cache
 from vexor.collection_store import CollectionError
+from vexor.config import RemoteRerankConfig
 from vexor.search import VexorSearcher
 from vexor.services import collection_service
 
@@ -104,8 +105,135 @@ def test_empty_search_query_raises_collection_error(isolated_cache):
 
 def test_unsupported_rerank_value_raises_collection_error(isolated_cache):
     backend = CountingBackend({})
-    with pytest.raises(CollectionError):
-        _search("missing", "query", backend, rerank="flashrank")
+    with pytest.raises(CollectionError, match="bogus"):
+        _search("missing", "query", backend, rerank="bogus")
+
+
+def test_bm25_reranks_dense_candidates_from_record_text(isolated_cache, monkeypatch):
+    backend = CountingBackend(
+        {
+            "first full record": [1.0, 0.0, 0.0],
+            "second full record": [0.8, 0.2, 0.0],
+            "query": [1.0, 0.0, 0.0],
+        }
+    )
+    _upsert(
+        "records",
+        [
+            {"id": "first", "text": "first full record"},
+            {"id": "second", "text": "second full record"},
+        ],
+        backend,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_rank(query, documents, base_scores):
+        captured.update(query=query, documents=documents, base_scores=base_scores)
+        return [(1, 0.95), (0, 0.25)]
+
+    monkeypatch.setattr(collection_service, "_rank_documents_bm25", fake_rank)
+
+    results = _search("records", "query", backend, top_k=1, rerank="bm25")
+
+    assert [result.id for result in results] == ["second"]
+    assert results[0].score == pytest.approx(0.95)
+    assert captured["query"] == "query"
+    assert captured["documents"] == ["first full record", "second full record"]
+    assert captured["base_scores"] == pytest.approx([1.0, 0.9701425])
+
+
+def test_flashrank_uses_configured_model_and_record_text(isolated_cache, monkeypatch):
+    backend = CountingBackend(
+        {
+            "first full record": [1.0, 0.0, 0.0],
+            "second full record": [0.8, 0.2, 0.0],
+            "query": [1.0, 0.0, 0.0],
+        }
+    )
+    _upsert(
+        "records",
+        [
+            {"id": "first", "text": "first full record"},
+            {"id": "second", "text": "second full record"},
+        ],
+        backend,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_rank(query, documents, model_name):
+        captured.update(query=query, documents=documents, model_name=model_name)
+        return [(1, 0.9), (0, 0.4)]
+
+    monkeypatch.setattr(collection_service, "_rank_documents_flashrank", fake_rank)
+
+    results = _search(
+        "records",
+        "query",
+        backend,
+        top_k=1,
+        rerank="flashrank",
+        flashrank_model="ranker-model",
+    )
+
+    assert [result.id for result in results] == ["second"]
+    assert captured == {
+        "query": "query",
+        "documents": ["first full record", "second full record"],
+        "model_name": "ranker-model",
+    }
+
+
+def test_remote_rerank_only_receives_filtered_candidates(isolated_cache, monkeypatch):
+    backend = CountingBackend(
+        {
+            "allowed record": [1.0, 0.0, 0.0],
+            "also allowed": [0.8, 0.2, 0.0],
+            "excluded record": [0.9, 0.1, 0.0],
+            "query": [1.0, 0.0, 0.0],
+        }
+    )
+    _upsert(
+        "records",
+        [
+            {"id": "a", "text": "allowed record", "metadata": {"tenant": "a"}},
+            {"id": "b", "text": "also allowed", "metadata": {"tenant": "a"}},
+            {
+                "id": "excluded",
+                "text": "excluded record",
+                "metadata": {"tenant": "b"},
+            },
+        ],
+        backend,
+    )
+    remote = RemoteRerankConfig(
+        base_url="https://rerank.example.test/v1/rerank",
+        api_key="secret",
+        model="rerank-model",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_rank(query, documents, config):
+        captured.update(query=query, documents=documents, config=config)
+        return [(1, 0.85), (0, None)]
+
+    monkeypatch.setattr(collection_service, "_rank_documents_remote", fake_rank)
+
+    results = _search(
+        "records",
+        "query",
+        backend,
+        top_k=2,
+        filters={"tenant": "a"},
+        rerank="remote",
+        remote_rerank=remote,
+    )
+
+    assert [result.id for result in results] == ["b", "a"]
+    assert captured == {
+        "query": "query",
+        "documents": ["allowed record", "also allowed"],
+        "config": remote,
+    }
 
 
 def test_non_positive_top_k_returns_empty_without_embedding(isolated_cache):
@@ -223,3 +351,62 @@ def test_collection_handle_translates_contract_errors_to_vexor_error(
             handle.upsert("", "body")
 
     assert not isinstance(excinfo.value, CollectionError)
+
+
+def test_collection_handle_uses_configured_reranker(tmp_path: Path, monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_search_records(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(collection_service, "search_records", fake_search_records)
+    config = {
+        "provider": "openai",
+        "model": "text-embedding-3-small",
+        "api_key": "embedding-key",
+        "rerank": "remote",
+        "remote_rerank": {
+            "base_url": "https://rerank.example.test/v1",
+            "api_key": "remote-key",
+            "model": "rerank-model",
+        },
+    }
+
+    with api_module.VexorClient(cache_dir=tmp_path / "api-cache") as client:
+        client.collection("api-records", config=config).search("query")
+
+    assert captured["rerank"] == "remote"
+    remote = captured["remote_rerank"]
+    assert isinstance(remote, RemoteRerankConfig)
+    assert remote.base_url == "https://rerank.example.test/v1/rerank"
+    assert remote.model == "rerank-model"
+
+
+def test_collection_handle_per_call_reranker_overrides_config(
+    tmp_path: Path,
+    monkeypatch,
+):
+    captured: dict[str, object] = {}
+
+    def fake_search_records(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(collection_service, "search_records", fake_search_records)
+    config = {
+        "provider": "openai",
+        "model": "text-embedding-3-small",
+        "api_key": "embedding-key",
+        "rerank": "remote",
+    }
+
+    with api_module.VexorClient(cache_dir=tmp_path / "api-cache") as client:
+        client.collection("api-records", config=config).search(
+            "query",
+            rerank="flashrank",
+            flashrank_model="ranker-model",
+        )
+
+    assert captured["rerank"] == "flashrank"
+    assert captured["flashrank_model"] == "ranker-model"
