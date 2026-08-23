@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -109,7 +110,10 @@ def test_unsupported_rerank_value_raises_collection_error(isolated_cache):
         _search("missing", "query", backend, rerank="bogus")
 
 
-def test_bm25_reranks_dense_candidates_from_record_text(isolated_cache, monkeypatch):
+def test_bm25_reranks_dense_candidates_from_record_text(
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     backend = CountingBackend(
         {
             "first full record": [1.0, 0.0, 0.0],
@@ -127,7 +131,11 @@ def test_bm25_reranks_dense_candidates_from_record_text(isolated_cache, monkeypa
     )
     captured: dict[str, object] = {}
 
-    def fake_rank(query, documents, base_scores):
+    def fake_rank(
+        query: str,
+        documents: Sequence[str],
+        base_scores: Sequence[float],
+    ) -> list[tuple[int, float]]:
         captured.update(query=query, documents=documents, base_scores=base_scores)
         return [(1, 0.95), (0, 0.25)]
 
@@ -142,7 +150,10 @@ def test_bm25_reranks_dense_candidates_from_record_text(isolated_cache, monkeypa
     assert captured["base_scores"] == pytest.approx([1.0, 0.9701425])
 
 
-def test_flashrank_uses_configured_model_and_record_text(isolated_cache, monkeypatch):
+def test_flashrank_uses_configured_model_and_record_text(
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     backend = CountingBackend(
         {
             "first full record": [1.0, 0.0, 0.0],
@@ -160,7 +171,11 @@ def test_flashrank_uses_configured_model_and_record_text(isolated_cache, monkeyp
     )
     captured: dict[str, object] = {}
 
-    def fake_rank(query, documents, model_name):
+    def fake_rank(
+        query: str,
+        documents: Sequence[str],
+        model_name: str | None,
+    ) -> list[tuple[int, float]]:
         captured.update(query=query, documents=documents, model_name=model_name)
         return [(1, 0.9), (0, 0.4)]
 
@@ -183,7 +198,10 @@ def test_flashrank_uses_configured_model_and_record_text(isolated_cache, monkeyp
     }
 
 
-def test_remote_rerank_only_receives_filtered_candidates(isolated_cache, monkeypatch):
+def test_remote_rerank_only_receives_filtered_candidates(
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     backend = CountingBackend(
         {
             "allowed record": [1.0, 0.0, 0.0],
@@ -212,7 +230,11 @@ def test_remote_rerank_only_receives_filtered_candidates(isolated_cache, monkeyp
     )
     captured: dict[str, object] = {}
 
-    def fake_rank(query, documents, config):
+    def fake_rank(
+        query: str,
+        documents: Sequence[str],
+        config: RemoteRerankConfig | None,
+    ) -> list[tuple[int, float | None]]:
         captured.update(query=query, documents=documents, config=config)
         return [(1, 0.85), (0, None)]
 
@@ -353,10 +375,13 @@ def test_collection_handle_translates_contract_errors_to_vexor_error(
     assert not isinstance(excinfo.value, CollectionError)
 
 
-def test_collection_handle_uses_configured_reranker(tmp_path: Path, monkeypatch):
+def test_collection_handle_uses_configured_reranker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict[str, object] = {}
 
-    def fake_search_records(**kwargs):
+    def fake_search_records(**kwargs: object) -> list[object]:
         captured.update(kwargs)
         return []
 
@@ -380,16 +405,17 @@ def test_collection_handle_uses_configured_reranker(tmp_path: Path, monkeypatch)
     remote = captured["remote_rerank"]
     assert isinstance(remote, RemoteRerankConfig)
     assert remote.base_url == "https://rerank.example.test/v1/rerank"
+    assert remote.api_key == "remote-key"
     assert remote.model == "rerank-model"
 
 
 def test_collection_handle_per_call_reranker_overrides_config(
     tmp_path: Path,
-    monkeypatch,
-):
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict[str, object] = {}
 
-    def fake_search_records(**kwargs):
+    def fake_search_records(**kwargs: object) -> list[object]:
         captured.update(kwargs)
         return []
 
@@ -399,14 +425,34 @@ def test_collection_handle_per_call_reranker_overrides_config(
         "model": "text-embedding-3-small",
         "api_key": "embedding-key",
         "rerank": "remote",
+        "remote_rerank": {
+            "base_url": "https://configured.example.test/v1",
+            "api_key": "configured-key",
+            "model": "configured-model",
+        },
     }
 
     with api_module.VexorClient(cache_dir=tmp_path / "api-cache") as client:
-        client.collection("api-records", config=config).search(
+        handle = client.collection("api-records", config=config)
+        handle.search(
             "query",
             rerank="flashrank",
             flashrank_model="ranker-model",
         )
 
-    assert captured["rerank"] == "flashrank"
-    assert captured["flashrank_model"] == "ranker-model"
+        assert captured["rerank"] == "flashrank"
+        assert captured["flashrank_model"] == "ranker-model"
+
+        per_call_remote = RemoteRerankConfig(
+            base_url="https://override.example.test/v1/rerank",
+            api_key="override-key",
+            model="override-model",
+        )
+        handle.search(
+            "query",
+            rerank="remote",
+            remote_rerank=per_call_remote,
+        )
+
+    assert captured["rerank"] == "remote"
+    assert captured["remote_rerank"] is per_call_remote

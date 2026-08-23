@@ -371,7 +371,7 @@ def _apply_ranking(
     response degrades to "reranked head, dense tail" instead of losing results.
     """
 
-    ordered: list[SearchResult] = []
+    ordered: list[_ScoredResultT] = []
     seen: set[int] = set()
     for index, score in ranking:
         if index < 0 or index >= len(results) or index in seen:
