@@ -90,7 +90,7 @@ jobs:
       - name: Sync dependencies
         if: steps.detect.outputs.changed == 'true'
         shell: bash
-        run: uv sync --frozen
+        run: uv sync --locked
 
       - name: Run pytest with coverage
         if: steps.detect.outputs.changed == 'true'
@@ -129,7 +129,7 @@ jobs:
 
       - name: Sync dependencies
         shell: bash
-        run: uv sync --frozen
+        run: uv sync --locked
 
       - name: Run ruff
         shell: bash
@@ -257,7 +257,7 @@ jobs:
 
       - name: Sync build dependencies
         shell: bash
-        run: uv sync --frozen
+        run: uv sync --locked
 
       - name: Clean previous builds
         shell: bash
