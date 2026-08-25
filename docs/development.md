@@ -1,20 +1,24 @@
 # Development
-Run development tasks inside the project virtualenv, creating one only when the
-repository has none:
+
+Use uv to create and keep the repository environment in sync with the committed
+lockfile:
+
 ```bash
-python -m venv .venv          # only if .venv is missing
-python -m pip install -e .[dev]
-python -m vexor
-python -m pytest
-python -m ruff check .
+uv sync
+uv run vexor
+uv run pytest
+uv run ruff check .
 ```
-Tests rely on fake embedding backends, so no network access is required.
+
+Tests rely on fake embedding backends, so no network access is required after
+the environment is synced.
 
 Ruff is the lint gate, configured under `[tool.ruff]` in `pyproject.toml` and
 run by the `ruff` job in `.github/workflows/publish.yml`, which a release now
-depends on. The version is pinned in the `dev` extra and CI installs that exact
-pin, so bumping it there is what moves CI. `ruff check --fix` applies the safe
-fixes; read the diff before reaching for `--unsafe-fixes`.
+depends on. Its version is pinned in the `dev` dependency group and captured in
+`uv.lock`, so bumping the pin and refreshing the lockfile moves CI and local
+development together. `uv run ruff check --fix .` applies the safe fixes; read
+the diff before reaching for `--unsafe-fixes`.
 
 Global cache files and configuration live in `~/.vexor`. A project with a
 `.vexor/` directory keeps its index there and may add the restricted
@@ -31,8 +35,8 @@ normal rebuild; do not add a silent compatibility path for corrupt sidecars.
 Run the local performance harness without provider credentials:
 
 ```bash
-python scripts/benchmark_search_cache.py
-python scripts/benchmark_search_cache.py --vector-count 30000 --file-count 10000
+uv run python scripts/benchmark_search_cache.py
+uv run python scripts/benchmark_search_cache.py --vector-count 30000 --file-count 10000
 ```
 
 The harness reports first and process-cached vector loads, full snapshot
@@ -44,8 +48,8 @@ same 30-query set in `scripts/eval_queries.jsonl` against whatever provider the
 config resolves to, and report MRR@10, Hit@1, and Hit@5:
 
 ```bash
-python scripts/eval_hybrid.py --path .            # dense vs BM25 rerank vs hybrid
-python scripts/eval_rerank_content.py --path . --rerank remote --chars 0 1000
+uv run python scripts/eval_hybrid.py --path .            # dense vs BM25 rerank vs hybrid
+uv run python scripts/eval_rerank_content.py --path . --rerank remote --chars 0 1000
 ```
 
 `eval_rerank_content.py` compares what each reranker scores: the stored preview
@@ -65,7 +69,7 @@ To put a hand-written section above that generated changelog, add
 `docs/release-notes/<version>.md`. `--note` starts the file for you:
 
 ```bash
-python scripts/bump_version.py 0.28.0 --note "Reranker now reads chunk text"
+uv run python scripts/bump_version.py 0.28.0 --note "Reranker now reads chunk text"
 ```
 
 The file must open with its own `## <title>` line so the section sits beside
