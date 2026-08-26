@@ -15,8 +15,8 @@ Call `VexorClient(...).collection("name")` to get a `CollectionHandle`. Getting
 the handle does not touch the database; the named collection is created by its
 first successful non-empty write.
 
-The handle uses the client's resolved embedding configuration unless you pass
-overrides to `collection(...)`.
+The handle uses the client's resolved embedding and reranker configuration
+unless you pass overrides to `collection(...)` or `search(...)`.
 
 The provider, model, and vector dimension are fixed when the collection is
 created. Later writes **and searches** configured differently are rejected, with
@@ -72,15 +72,29 @@ with `exists: True` when the key itself is required.
 
 Filters resolve to record IDs before query scoring. An unknown key therefore
 produces no matches for a positive condition, and a record excluded by a filter
-cannot re-enter through dense or hybrid ranking.
+cannot re-enter through dense retrieval or reranking.
 
 ## Search and scale
 
-`search(query, *, top_k=10, filters=None, rerank="off")` returns
-`RecordResult` objects with `id`, `text`, `metadata`, and `score`. Collection
-search accepts only `rerank="off"` for dense similarity or `rerank="hybrid"`
-to fuse dense and BM25 scores. Filters resolve before either mode scores
-candidates.
+`search(query, *, top_k=10, filters=None, rerank=None, flashrank_model=None,
+remote_rerank=None)` returns `RecordResult` objects with `id`, `text`,
+`metadata`, and `score`. When `rerank` is omitted, the handle uses the resolved
+Vexor configuration; the default configuration is `off`. An explicit argument
+overrides the configured strategy for that call.
+
+Collection search supports the same strategies as file search:
+
+- `off` ranks the filtered records by dense similarity.
+- `hybrid` fuses the full dense and BM25 rankings over the filtered records.
+- `bm25`, `flashrank`, and `remote` rerank an expanded dense candidate window,
+  then return its top results. These rerankers receive each candidate's full
+  record text rather than a file path or preview.
+
+FlashRank requires `pip install "vexor[flashrank]"`. Pass `flashrank_model` to
+override its configured model for one search. Remote reranking uses the
+configured endpoint, model, and API key; pass a `RemoteRerankConfig` as
+`remote_rerank` to override them for one search. Filters always resolve before
+the candidate window is selected or sent to a reranker.
 
 Dense scoring is a brute-force matrix product over the filtered candidate set;
 collections do not have an approximate nearest-neighbor index. Search cost

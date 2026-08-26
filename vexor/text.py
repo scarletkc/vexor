@@ -645,7 +645,7 @@ class Messages:
         "The '{operator}' operator only compares numbers, booleans, and datetimes."
     )
     ERROR_COLLECTION_RERANK_UNSUPPORTED = (
-        "Collection search does not support rerank '{value}' yet. Use one of: {allowed}."
+        "Collection search does not support rerank '{value}'. Use one of: {allowed}."
     )
     ERROR_COLLECTION_QUERY_EMPTY = "Search query must not be empty."
     ERROR_COLLECTION_EMBED_FAILED = (
