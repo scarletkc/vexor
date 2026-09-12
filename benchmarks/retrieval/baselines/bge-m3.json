@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-12T07:39:28.047493+00:00",
+  "suite_sha256": "28ee4c785c9e8792107649d2d030a66be2bbf66dfcee9c10332c05a56dbee4f0",
+  "runner_sha256": "4c277715633e46118a30f52ec25549f89e7e78b5532c1ee77f38a70fb31b1208",
+  "runtime_sha256": "15c8f167e62d7aeb64c8eecc1ec9483abbd9d34cce61dfe30fad252c92d39ba2",
+  "vexor_version": "0.29.0",
+  "python": "3.13.14",
+  "platform": "Windows",
+  "packages": {
+    "numpy": "2.5.2",
+    "openai": "3.3.1",
+    "google-genai": "2.19.0",
+    "fastembed": null,
+    "flashrank": null,
+    "tokenizers": "0.23.1"
+  },
+  "config": {
+    "provider": "custom",
+    "model": "BAAI/bge-m3",
+    "embedding_dimensions": null,
+    "batch_size": 64,
+    "embed_concurrency": 4,
+    "extract_concurrency": 4,
+    "extract_backend": "auto",
+    "local_cuda": false,
+    "flashrank_model": "ms-marco-TinyBERT-L-2-v2",
+    "remote_rerank_model": "BAAI/bge-reranker-v2-m3"
+  },
+  "top": 10,
+  "repeats": 3,
+  "content_chars_per_result": 2000,
+  "content_chars_total": 8000,
+  "timing_protocol": "one untimed warmup per query/arm; shared query cache; rotated arms",
+  "index_ms": {
+    "code": 10607.505299999957,
+    "docs": 446.125699999925,
+    "zh-records": 318.31320000003416
+  },
+  "corpora": {
+    "code": {
+      "mode": "code",
+      "sha256": {
+        "vexor/services/collection_service.py": "869d56340eec2b4b04e4ecc9fa50128026d6b31b74f501c4eb6e0fa92e3d6f59",
+        "vexor/services/embedding_service.py": "65ea4b6d5110e911be38d127dbdd4153c428ea0c34084d0288b2b26c93efa896",
+        "vexor/bm25.py": "9b9b90ed30d6b61878cb85e6096867afab391830cab49e6d51e73ecdb5ef9856",
+        "vexor/providers/openai.py": "5a14122b2ae0a66a317f8da26d0dbd2180ad77f1e37c6085690761e60f5530a4",
+        "vexor/services/content_extract_service.py": "38e7acc6165596882480a5ef836d78afc4e283a0204b29dc53d6d5cf2b73c903",
+        "vexor/services/init_service.py": "76eb9ec7c373020b32a2a7e72a8c4c2ccd9b71c8e585d1f1b1c5b53fe5835aa8"
+      },
+      "provenance": "Current Vexor runtime sources; normalized source hashes recorded per run."
+    },
+    "docs": {
+      "mode": "outline",
+      "sha256": {
+        "docs/configuration.md": "bac993f8f077ab9dd5faad1c8b44d54f3494e02e26ff735f927ba6f5edcb3ed9",
+        "docs/api/collections.md": "ef31c274383e296ccebc85f4e28a4ec28247e655b6b30a071f0a14d473ba8e19",
+        "docs/mcp.md": "08fa73d363b9671456a66d3a4a62b3ad63a551498765eaba12e64fc1e704bc0d",
+        "docs/cli.md": "8b62c2120ca39a7d595d41ab4444dd632b129ce11e70d9f547213b543d9ffc00"
+      },
+      "provenance": "Current canonical Vexor documentation."
+    },
+    "zh-records": {
+      "mode": "outline",
+      "sha256": {
+        "benchmarks/retrieval/zh/collection-storage.md": "812a5b7fd6b2470b76778e420604a494934d0e9b6d2e0ec82591e96fe25d731a",
+        "benchmarks/retrieval/zh/collection-contract.md": "713d6b80e9f90abb175f8750c7216cd03b4b42bd23b78e09d4e87b0b77b31c2b",
+        "benchmarks/retrieval/zh/collection-upsert.md": "e499e1c3576dbe0514a88ba10d923aa43c410496e3af091d38e617a02feb0a28",
+        "benchmarks/retrieval/zh/collection-filters.md": "58d1705e9608cfa7224eb191d9a35fba57dfb005023d305dc6a5350de05cb794",
+        "benchmarks/retrieval/zh/ranking.md": "18728862c8a85293f8266a16ae3f00d12d3706e286cfec35225625648a985b1d",
+        "benchmarks/retrieval/zh/project-config.md": "011c193c5a13040655b2e4613f2402c851deb4d01c6ab613e0a216ed735b4476",
+        "benchmarks/retrieval/zh/mcp-setup.md": "73db28bd7995bb2cd386a96de8f5f1a283eed63599b32a2e6f73d429dcfbd23f",
+        "benchmarks/retrieval/zh/uvx-updates.md": "d8f4d642861a7e45c5d2af71c398236750f310ff268b7b8d9c1c8eb3aafd4f09",
+        "benchmarks/retrieval/zh/local-models.md": "b9a1347ab7b39bc6546d101e93603903726b1d3cb17eed4e9c63ffca54f5f5bd",
+        "benchmarks/retrieval/zh/output-formats.md": "61664d5cedc108ce7bfdc57f6954ff23902bd4baddbc8aa93290265e3e783c4c",
+        "benchmarks/retrieval/zh/index-refresh.md": "200b8a1c0490f4e67187b589bf1fa8e69dc5a6ff271060deb76f461a81eb4694",
+        "benchmarks/retrieval/zh/metadata-types.md": "e12469f098fe5c500eb5766937e42b5aeaa84a4349a4765cdcb873bd6bf06404"
+      },
+      "provenance": "Authored Chinese paraphrases of cited Vexor sources; small synthetic regression corpus, searched through the file API."
+    }
+  },
+  "arms": {
+    "off": {
+      "overall": {
+        "query_count": 36,
+        "sample_count": 108,
+        "file_mrr@10": 0.9484126984126984,
+        "evidence_mrr@10": 0.7555555555555555,
+        "evidence_recall@10": 0.8611111111111112,
+        "all_evidence_hit@10": 0.8611111111111112,
+        "mean_returned_chars": 5897.944444444444,
+        "mean_overlap_fraction": 0.09818713828632808,
+        "content_unavailable_count": 249,
+        "content_truncated_count": 165,
+        "evidence_hit@1": 0.6666666666666666,
+        "evidence_hit@5": 0.8611111111111112,
+        "evidence_hit@10": 0.8611111111111112,
+        "warm_latency_p50_ms": 19.496800000069925,
+        "warm_latency_p95_ms": 24.69220000000405
+      },
+      "by_corpus": {
+        "code": {
+          "query_count": 12,
+          "sample_count": 36,
+          "file_mrr@10": 1.0,
+          "evidence_mrr@10": 0.75,
+          "evidence_recall@10": 0.9166666666666666,
+          "all_evidence_hit@10": 0.9166666666666666,
+          "mean_returned_chars": 7951.5,
+          "mean_overlap_fraction": 0.1355983616385343,
+          "content_unavailable_count": 114,
+          "content_truncated_count": 78,
+          "evidence_hit@1": 0.5833333333333334,
+          "evidence_hit@5": 0.9166666666666666,
+          "evidence_hit@10": 0.9166666666666666,
+          "warm_latency_p50_ms": 19.476499999996122,
+          "warm_latency_p95_ms": 24.285299999974086
+        },
+        "docs": {
+          "query_count": 12,
+          "sample_count": 36,
+          "file_mrr@10": 0.8869047619047619,
+          "evidence_mrr@10": 0.5583333333333333,
+          "evidence_recall@10": 0.6666666666666666,
+          "all_evidence_hit@10": 0.6666666666666666,
+          "mean_returned_chars": 7951.416666666667,
+          "mean_overlap_fraction": 0.15896305322044993,
+          "content_unavailable_count": 135,
+          "content_truncated_count": 87,
+          "evidence_hit@1": 0.5,
+          "evidence_hit@5": 0.6666666666666666,
+          "evidence_hit@10": 0.6666666666666666,
+          "warm_latency_p50_ms": 19.41229999999905,
+          "warm_latency_p95_ms": 25.761100000067927
+        },
+        "zh-records": {
+          "query_count": 12,
+          "sample_count": 36,
+          "file_mrr@10": 0.9583333333333334,
+          "evidence_mrr@10": 0.9583333333333334,
+          "evidence_recall@10": 1.0,
+          "all_evidence_hit@10": 1,
+          "mean_returned_chars": 1790.9166666666667,
+          "mean_overlap_fraction": 0.0,
+          "content_unavailable_count": 0,
+          "content_truncated_count": 0,
+          "evidence_hit@1": 0.9166666666666666,
+          "evidence_hit@5": 1,
+          "evidence_hit@10": 1,
+          "warm_latency_p50_ms": 19.5362000000614,
+          "warm_latency_p95_ms": 25.315399999954025
+        }
+      }
+    },
+    "bm25": {
+      "overall": {
+        "query_count": 36,
+        "sample_count": 108,
+        "file_mrr@10": 0.9092592592592592,
+        "evidence_mrr@10": 0.7162037037037037,
+        "evidence_recall@10": 0.8333333333333334,
+        "all_evidence_hit@10": 0.8333333333333334,
+        "mean_returned_chars": 5884.972222222223,
+        "mean_overlap_fraction": 0.10346227580433834,
+        "content_unavailable_count": 246,
+        "content_truncated_count": 153,
+        "evidence_hit@1": 0.6388888888888888,
+        "evidence_hit@5": 0.8333333333333334,
+        "evidence_hit@10": 0.8333333333333334,
+        "warm_latency_p50_ms": 21.462599999949816,
+        "warm_latency_p95_ms": 26.849200000015117
+      },
+      "by_corpus": {
+        "code": {
+          "query_count": 12,
+          "sample_count": 36,
+          "file_mrr@10": 0.9027777777777778,
+          "evidence_mrr@10": 0.7361111111111112,
+          "evidence_recall@10": 0.9166666666666666,
+          "all_evidence_hit@10": 0.9166666666666666,
+          "mean_returned_chars": 7903.75,
+          "mean_overlap_fraction": 0.1688719689923429,
+          "content_unavailable_count": 108,
+          "content_truncated_count": 72,
+          "evidence_hit@1": 0.5833333333333334,
+          "evidence_hit@5": 0.9166666666666666,
+          "evidence_hit@10": 0.9166666666666666,
+          "warm_latency_p50_ms": 21.640400000023874,
+          "warm_latency_p95_ms": 25.353100000074846
+        },
+        "docs": {
+          "query_count": 12,
+          "sample_count": 36,
+          "file_mrr@10": 0.8666666666666667,
+          "evidence_mrr@10": 0.45416666666666666,
+          "evidence_recall@10": 0.5833333333333334,
+          "all_evidence_hit@10": 0.5833333333333334,
+          "mean_returned_chars": 7960.25,
+          "mean_overlap_fraction": 0.14151485842067213,
+          "content_unavailable_count": 138,
+          "content_truncated_count": 81,
+          "evidence_hit@1": 0.4166666666666667,
+          "evidence_hit@5": 0.5833333333333334,
+          "evidence_hit@10": 0.5833333333333334,
+          "warm_latency_p50_ms": 21.360700000059296,
+          "warm_latency_p95_ms": 29.744599999958155
+        },
+        "zh-records": {
+          "query_count": 12,
+          "sample_count": 36,
+          "file_mrr@10": 0.9583333333333334,
+          "evidence_mrr@10": 0.9583333333333334,
+          "evidence_recall@10": 1.0,
+          "all_evidence_hit@10": 1,
+          "mean_returned_chars": 1790.9166666666667,
+          "mean_overlap_fraction": 0.0,
+          "content_unavailable_count": 0,
+          "content_truncated_count": 0,
+          "evidence_hit@1": 0.9166666666666666,
+          "evidence_hit@5": 1,
+          "evidence_hit@10": 1,
+          "warm_latency_p50_ms": 21.43100000000686,
+          "warm_latency_p95_ms": 27.341399999954774
+        }
+      }
+    },
+    "hybrid": {
+      "overall": {
+        "query_count": 36,
+        "sample_count": 108,
+        "file_mrr@10": 0.9206349206349206,
+        "evidence_mrr@10": 0.7972222222222223,
+        "evidence_recall@10": 0.8888888888888888,
+        "all_evidence_hit@10": 0.8888888888888888,
+        "mean_returned_chars": 5897,
+        "mean_overlap_fraction": 0.10596434999379294,
+        "content_unavailable_count": 258,
+        "content_truncated_count": 168,
+        "evidence_hit@1": 0.7222222222222222,
+        "evidence_hit@5": 0.8888888888888888,
+        "evidence_hit@10": 0.8888888888888888,
+        "warm_latency_p50_ms": 30.31860000010056,
+        "warm_latency_p95_ms": 37.23109999998542
+      },
+      "by_corpus": {
+        "code": {
+          "query_count": 12,
+          "sample_count": 36,
+          "file_mrr@10": 0.9166666666666666,
+          "evidence_mrr@10": 0.8333333333333334,
+          "evidence_recall@10": 1.0,
+          "all_evidence_hit@10": 1,
+          "mean_returned_chars": 7949.833333333333,
+          "mean_overlap_fraction": 0.1574362896948153,
+          "content_unavailable_count": 117,
+          "content_truncated_count": 84,
+          "evidence_hit@1": 0.6666666666666666,
+          "evidence_hit@5": 1,
+          "evidence_hit@10": 1,
+          "warm_latency_p50_ms": 30.51689999995233,
+          "warm_latency_p95_ms": 40.82729999993262
+        },
+        "docs": {
+          "query_count": 12,
+          "sample_count": 36,
+          "file_mrr@10": 0.8869047619047619,
+          "evidence_mrr@10": 0.6,
+          "evidence_recall@10": 0.6666666666666666,
+          "all_evidence_hit@10": 0.6666666666666666,
+          "mean_returned_chars": 7950.25,
+          "mean_overlap_fraction": 0.1604567602865635,
+          "content_unavailable_count": 141,
+          "content_truncated_count": 84,
+          "evidence_hit@1": 0.5833333333333334,
+          "evidence_hit@5": 0.6666666666666666,
+          "evidence_hit@10": 0.6666666666666666,
+          "warm_latency_p50_ms": 29.978299999925184,
+          "warm_latency_p95_ms": 36.90919999996822
+        },
+        "zh-records": {
+          "query_count": 12,
+          "sample_count": 36,
+          "file_mrr@10": 0.9583333333333334,
+          "evidence_mrr@10": 0.9583333333333334,
+          "evidence_recall@10": 1.0,
+          "all_evidence_hit@10": 1,
+          "mean_returned_chars": 1790.9166666666667,
+          "mean_overlap_fraction": 0.0,
+          "content_unavailable_count": 0,
+          "content_truncated_count": 0,
+          "evidence_hit@1": 0.9166666666666666,
+          "evidence_hit@5": 1,
+          "evidence_hit@10": 1,
+          "warm_latency_p50_ms": 30.31860000010056,
+          "warm_latency_p95_ms": 36.29620000003797
+        }
+      }
+    }
+  },
+  "report_kind": "summary",
+  "full_report_sha256": "3f53e7045495f6afcd1a5e4504d97b13e42ce034fb0d70ce117a2748ddcfa20f",
+  "command": [
+    "python",
+    "scripts/eval_retrieval.py",
+    "--output",
+    ".cache/evaluation/bge-m3-baseline.json"
+  ]
+}

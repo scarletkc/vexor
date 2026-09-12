@@ -1,0 +1,495 @@
+{
+  "version": 1,
+  "description": "Vexor development seed: real repository code/docs plus authored Chinese paraphrases. Not an independent or representative product benchmark.",
+  "corpora": [
+    {
+      "id": "code",
+      "mode": "code",
+      "files": [
+        "vexor/services/collection_service.py",
+        "vexor/services/embedding_service.py",
+        "vexor/bm25.py",
+        "vexor/providers/openai.py",
+        "vexor/services/content_extract_service.py",
+        "vexor/services/init_service.py"
+      ],
+      "provenance": "Current Vexor runtime sources; normalized source hashes recorded per run."
+    },
+    {
+      "id": "docs",
+      "mode": "outline",
+      "files": [
+        "docs/configuration.md",
+        "docs/api/collections.md",
+        "docs/mcp.md",
+        "docs/cli.md"
+      ],
+      "provenance": "Current canonical Vexor documentation."
+    },
+    {
+      "id": "zh-records",
+      "mode": "outline",
+      "files": [
+        "benchmarks/retrieval/zh/collection-storage.md",
+        "benchmarks/retrieval/zh/collection-contract.md",
+        "benchmarks/retrieval/zh/collection-upsert.md",
+        "benchmarks/retrieval/zh/collection-filters.md",
+        "benchmarks/retrieval/zh/ranking.md",
+        "benchmarks/retrieval/zh/project-config.md",
+        "benchmarks/retrieval/zh/mcp-setup.md",
+        "benchmarks/retrieval/zh/uvx-updates.md",
+        "benchmarks/retrieval/zh/local-models.md",
+        "benchmarks/retrieval/zh/output-formats.md",
+        "benchmarks/retrieval/zh/index-refresh.md",
+        "benchmarks/retrieval/zh/metadata-types.md"
+      ],
+      "provenance": "Authored Chinese paraphrases of cited Vexor sources; small synthetic regression corpus, searched through the file API."
+    }
+  ],
+  "queries": [
+    {
+      "id": "code-filter-order",
+      "corpus": "code",
+      "language": "en",
+      "query": "Where are collection filters applied before loading candidate vectors?",
+      "evidence": [
+        {
+          "path": "vexor/services/collection_service.py",
+          "anchor": "candidate_ids = collection_store.resolve_filter_ids(info.id, filters, snapshot)\n        if not candidate_ids:\n            return []\n        record_ids, matrix = collection_store.load_vectors("
+        }
+      ]
+    },
+    {
+      "id": "code-snapshot-rerank",
+      "corpus": "code",
+      "language": "zh",
+      "query": "集合搜索为什么不在数据库读事务里调用远程重排？",
+      "evidence": [
+        {
+          "path": "vexor/services/collection_service.py",
+          "anchor": "# Model loading and remote calls can be slow, so rerank only after the read\n    # snapshot closes instead of pinning the collection WAL for their duration."
+        }
+      ]
+    },
+    {
+      "id": "code-embed-dedup",
+      "corpus": "code",
+      "language": "en",
+      "query": "How are duplicate uncached texts deduplicated before an embedding request?",
+      "evidence": [
+        {
+          "path": "vexor/services/embedding_service.py",
+          "anchor": "if (vector is None or vector.size == 0) and text_hash not in missing:\n            missing[text_hash] = label"
+        }
+      ]
+    },
+    {
+      "id": "code-embed-dimension",
+      "corpus": "code",
+      "language": "zh",
+      "query": "相同文本使用不同嵌入维度时，代码如何避免缓存冲突？",
+      "evidence": [
+        {
+          "path": "vexor/services/embedding_service.py",
+          "anchor": "hashes = [embedding_cache_key(label, dimension=embedding_dimension) for label in labels]\n    cached = load_embedding_cache(model_name, hashes, dimension=embedding_dimension)"
+        }
+      ]
+    },
+    {
+      "id": "code-tokenize",
+      "corpus": "code",
+      "language": "en",
+      "query": "What does BM25 tokenization do when the tokenizer is unavailable?",
+      "evidence": [
+        {
+          "path": "vexor/bm25.py",
+          "anchor": "if tokenizer is None:\n        return _TOKEN_RE.findall(text.lower())"
+        }
+      ]
+    },
+    {
+      "id": "code-rrf",
+      "corpus": "code",
+      "language": "en",
+      "query": "Find the dense reciprocal-rank contribution in rrf_fuse.",
+      "evidence": [
+        {
+          "path": "vexor/bm25.py",
+          "anchor": "for rank, row in enumerate(dense_order, start=1):\n        if 0 <= row < total_rows:\n            fused[row] += RRF_DENSE_WEIGHT * (k + 1.0) / (k + rank)"
+        }
+      ]
+    },
+    {
+      "id": "code-voyage-dimensions",
+      "corpus": "code",
+      "language": "en",
+      "query": "How does the compatible adapter send a custom output width to Voyage?",
+      "evidence": [
+        {
+          "path": "vexor/providers/openai.py",
+          "anchor": "if self.model_name.startswith(\"voyage\"):\n                        # Pass Voyage-specific params via extra_body\n                        create_kwargs[\"extra_body\"] = {\"output_dimension\": self.dimensions}"
+        }
+      ]
+    },
+    {
+      "id": "code-retry",
+      "corpus": "code",
+      "language": "en",
+      "query": "Find the bounded retry loop for failed embedding batches.",
+      "evidence": [
+        {
+          "path": "vexor/providers/openai.py",
+          "anchor": "if _should_retry_openai_error(exc) and attempt < _MAX_RETRIES:\n                    _sleep(_backoff_delay(attempt))\n                    attempt += 1\n                    continue"
+        }
+      ]
+    },
+    {
+      "id": "code-content-invalid",
+      "corpus": "code",
+      "language": "en",
+      "query": "Which guard rejects invalid line ranges and nonpositive content budgets?",
+      "evidence": [
+        {
+          "path": "vexor/services/content_extract_service.py",
+          "anchor": "if start_line < 1 or end_line < start_line or max_chars <= 0:\n        return None"
+        }
+      ]
+    },
+    {
+      "id": "code-content-truncate",
+      "corpus": "code",
+      "language": "zh",
+      "query": "单行文本已经超过正文字符预算时，返回内容如何截断并标记？",
+      "evidence": [
+        {
+          "path": "vexor/services/content_extract_service.py",
+          "anchor": "if len(body) > max_chars:\n        # A single line longer than the whole budget still has to be cut somewhere.\n        body = body[:max_chars]\n        truncated = True"
+        }
+      ]
+    },
+    {
+      "id": "code-init-file",
+      "corpus": "code",
+      "language": "en",
+      "query": "What currently makes should_auto_run_init skip onboarding when a config file exists?",
+      "evidence": [
+        {
+          "path": "vexor/services/init_service.py",
+          "anchor": "if config_path.exists():\n        return False"
+        }
+      ]
+    },
+    {
+      "id": "code-init-tty",
+      "corpus": "code",
+      "language": "zh",
+      "query": "初始化向导在非交互终端和 MCP 命令下分别如何跳过？",
+      "evidence": [
+        {
+          "path": "vexor/services/init_service.py",
+          "anchor": "if not is_tty:\n        return False"
+        },
+        {
+          "path": "vexor/services/init_service.py",
+          "anchor": "if tokens and tokens[0] in {\"init\", \"config\", \"mcp\"}:\n        return False"
+        }
+      ]
+    },
+    {
+      "id": "docs-project-precedence",
+      "corpus": "docs",
+      "language": "en",
+      "query": "Which config sources win over project configuration?",
+      "evidence": [
+        {
+          "path": "docs/configuration.md",
+          "anchor": "4. Environment overrides, including `VEXOR_CONFIG_JSON`\n5. Explicit runtime or API arguments"
+        }
+      ]
+    },
+    {
+      "id": "docs-cache-upgrade",
+      "corpus": "docs",
+      "language": "en",
+      "query": "Does a cache schema upgrade require paying to embed every unchanged file again?",
+      "evidence": [
+        {
+          "path": "docs/configuration.md",
+          "anchor": "When an upgrade changes the index cache schema, existing index caches are\ninvalidated and rebuilt automatically on next use; cached embeddings are\nreused, so the migration does not re-embed unchanged content."
+        }
+      ]
+    },
+    {
+      "id": "docs-project-secrets",
+      "corpus": "docs",
+      "language": "zh",
+      "query": "项目配置能写入 API 密钥和远程服务端点吗？",
+      "evidence": [
+        {
+          "path": "docs/configuration.md",
+          "anchor": "Project\nconfig explicitly rejects credentials and endpoints (`api_key`, `base_url`,\nand the entire `remote_rerank` object)"
+        }
+      ]
+    },
+    {
+      "id": "docs-long-records",
+      "corpus": "docs",
+      "language": "en",
+      "query": "Does the collection API automatically chunk text that is too long for the model?",
+      "evidence": [
+        {
+          "path": "docs/api/collections.md",
+          "anchor": "One record is one vector. V1 does not chunk long text, and text that exceeds the\nembedding provider's limit surfaces the provider error rather than being\nsilently truncated. Split long documents yourself before upserting them."
+        }
+      ]
+    },
+    {
+      "id": "docs-negative-filter",
+      "corpus": "docs",
+      "language": "en",
+      "query": "How do I exclude a metadata value while also requiring the field to exist?",
+      "evidence": [
+        {
+          "path": "docs/api/collections.md",
+          "anchor": "Because\n`ne` and `nin` include records without the key, combine a negative condition\nwith `exists: True` when the key itself is required."
+        }
+      ]
+    },
+    {
+      "id": "docs-upsert",
+      "corpus": "docs",
+      "language": "en",
+      "query": "What happens to metadata and embeddings when an upsert keeps identical text?",
+      "evidence": [
+        {
+          "path": "docs/api/collections.md",
+          "anchor": "An upsert replaces the record's metadata wholesale. When its text has not\nchanged, Vexor keeps the existing embedding and BM25 postings instead of\nembedding it again, but still rewrites the metadata."
+        }
+      ]
+    },
+    {
+      "id": "docs-mcp-init",
+      "corpus": "docs",
+      "language": "en",
+      "query": "Will the MCP server open the setup wizard if provider configuration is missing?",
+      "evidence": [
+        {
+          "path": "docs/mcp.md",
+          "anchor": "the MCP server is non-interactive and reports missing configuration as\ntool errors instead of launching the setup wizard."
+        }
+      ]
+    },
+    {
+      "id": "docs-uvx-update",
+      "corpus": "docs",
+      "language": "zh",
+      "query": "uvx 启动的 Vexor 如何更新？能直接用内置 upgrade 命令吗？",
+      "evidence": [
+        {
+          "path": "docs/mcp.md",
+          "anchor": "uvx caches the resolved environment and does **not** auto-upgrade; use\n  `uvx vexor@latest mcp` to always run the newest release, or refresh\n  explicitly with `uvx --refresh vexor`. `vexor update --upgrade` applies\n  to PATH installs, not uvx environments."
+        }
+      ]
+    },
+    {
+      "id": "docs-uvx-local",
+      "corpus": "docs",
+      "language": "en",
+      "query": "What optional dependency does a uvx MCP launch need for offline embeddings?",
+      "evidence": [
+        {
+          "path": "docs/mcp.md",
+          "anchor": "Local (offline) models need the `local` extra, which the default\n  environment does not include"
+        },
+        {
+          "path": "docs/mcp.md",
+          "anchor": "\"command\": \"uvx\", \"args\": [\"--from\", \"vexor[local]\", \"vexor\", \"mcp\"]"
+        }
+      ]
+    },
+    {
+      "id": "docs-json",
+      "corpus": "docs",
+      "language": "en",
+      "query": "Which search output format includes the full response with chunk content?",
+      "evidence": [
+        {
+          "path": "docs/cli.md",
+          "anchor": "| `--format json` | Full response as JSON, including chunk content |"
+        }
+      ]
+    },
+    {
+      "id": "docs-rerank-config",
+      "corpus": "docs",
+      "language": "en",
+      "query": "Is reranking selected by a search command flag or by configuration?",
+      "evidence": [
+        {
+          "path": "docs/cli.md",
+          "anchor": "Reranking is a config setting rather than a search flag"
+        }
+      ]
+    },
+    {
+      "id": "docs-content",
+      "corpus": "docs",
+      "language": "zh",
+      "query": "如何在终端搜索结果表下面显示匹配片段的原文？",
+      "evidence": [
+        {
+          "path": "docs/cli.md",
+          "anchor": "| `--content` | Print each match's source text below the results table |"
+        }
+      ]
+    },
+    {
+      "id": "zh-storage",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "清理文件索引会不会一起删掉数据库导入的记录？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/collection-storage.md",
+          "anchor": "清除全部文件索引不会删除集合；删除集合必须使用单独的集合删除操作。"
+        }
+      ]
+    },
+    {
+      "id": "zh-contract",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "换了一个输出维度相同的模型，能直接搜索旧集合吗？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/collection-contract.md",
+          "anchor": "后续写入和搜索必须符合创建时固定的提供商、模型及向量维度，否则会报错并要求重建集合。仅维度相同也不够，不同模型的向量空间可能不兼容。"
+        }
+      ]
+    },
+    {
+      "id": "zh-upsert",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "只改标签不改正文还要重新计算向量吗，标签是合并还是覆盖？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/collection-upsert.md",
+          "anchor": "更新记录时，元数据会被整体替换。文本未变化时，已有向量和 BM25 倒排记录会被复用，元数据仍会重写。"
+        }
+      ]
+    },
+    {
+      "id": "zh-long-text",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "导入很长的消息时，集合会替我分段吗？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/collection-upsert.md",
+          "anchor": "每条记录对应一个向量，集合不会自动切分长文本。超过提供商长度限制时会返回错误，调用方应在写入前自行分段。"
+        }
+      ]
+    },
+    {
+      "id": "zh-filter",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "远程重排会看到已经被过滤掉的其他聊天记录吗？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/collection-filters.md",
+          "anchor": "查询过滤先得到符合条件的记录 ID，再进行相似度计算和重排。被过滤排除的记录不会通过重排重新进入结果。"
+        }
+      ]
+    },
+    {
+      "id": "zh-ranking",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "hybrid 和 bm25 重排考虑的候选范围一样吗？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/ranking.md",
+          "anchor": "hybrid 在过滤后的全部记录上融合向量与 BM25 排名。"
+        },
+        {
+          "path": "benchmarks/retrieval/zh/ranking.md",
+          "anchor": "bm25、flashrank 和 remote 只重排扩大的向量候选窗口。"
+        }
+      ]
+    },
+    {
+      "id": "zh-project",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "最近的项目标记目录没有配置文件，会继续往外找吗？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/project-config.md",
+          "anchor": "如果最近的标记目录没有 config.json，就使用全局配置，不会继续寻找更外层项目配置。"
+        }
+      ]
+    },
+    {
+      "id": "zh-mcp",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "客户端启动搜索服务后没有出现配置向导，是正常的吗？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/mcp-setup.md",
+          "anchor": "MCP 是非交互服务，配置缺失时会返回工具错误，不会弹出初始化向导。"
+        }
+      ]
+    },
+    {
+      "id": "zh-upgrade",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "每次通过 uvx 启动是否就会获得最新版本？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/uvx-updates.md",
+          "anchor": "uvx 会缓存解析后的环境，不会自动升级。需要最新版本时可使用 vexor@latest，或使用 uvx --refresh vexor 显式刷新。"
+        }
+      ]
+    },
+    {
+      "id": "zh-output",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "程序想直接获取命中片段正文，应该选哪一种输出？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/output-formats.md",
+          "anchor": "--format json 会返回包括片段内容在内的完整结构化响应。"
+        }
+      ]
+    },
+    {
+      "id": "zh-refresh",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "升级后重建索引，未修改文件的嵌入会重复计算吗？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/index-refresh.md",
+          "anchor": "缓存格式升级时，旧索引会失效并在下次使用时重建。已经缓存的嵌入可以复用，因此重建索引不等于重新为全部未变化的内容计算向量。"
+        }
+      ]
+    },
+    {
+      "id": "zh-datetime",
+      "corpus": "zh-records",
+      "language": "zh",
+      "query": "写入日期对象后读出来为什么变成字符串，还能按时间范围过滤吗？",
+      "evidence": [
+        {
+          "path": "benchmarks/retrieval/zh/metadata-types.md",
+          "anchor": "datetime 同时保存 ISO 8601 字符串和时间戳，以便范围过滤；读回元数据得到的是字符串，调用方如需日期对象应自行解析。"
+        }
+      ]
+    }
+  ]
+}

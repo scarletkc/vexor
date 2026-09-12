@@ -83,6 +83,11 @@ never leaving the machine.
   grep-only workflows (30–50 QA tasks), feature the chart in the README.
   Benchmarks are what make these tools travel (see mgrep's launch).
   `scripts/eval_hybrid.py` and `scripts/eval_queries.jsonl` are the seed.
+  - A [retrieval baseline](evaluation.md) now provides 36 evidence-annotated
+    queries over code, documentation, and authored Chinese records, with isolated
+    corpora and reports for evidence coverage, returned characters, overlap,
+    and warm latency. Agent task runs and measured token savings remain pending;
+    the guide defines their collection protocol.
 
 ## P1 — Performance & experience
 

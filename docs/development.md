@@ -59,6 +59,13 @@ provider calls when the model is remote. Record the table in the PR, and keep
 the query set fixed while comparing arms — 30 queries is small enough that one
 rank change moves MRR@10 by about 0.03.
 
+For the multi-corpus evidence baseline, use
+`uv run python scripts/eval_retrieval.py --validate`, then run it with
+`--output .cache/evaluation/baseline.json`. The
+[evaluation guide](evaluation.md) defines the 36-query seed, source isolation,
+fragment coverage, content overlap, warm latency, and separate agent-task protocol.
+The existing 30-query scripts remain available for historical comparisons.
+
 ## Releases
 
 Bump the version on a branch and land it through a PR; merging to `main`
