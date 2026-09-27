@@ -1,8 +1,10 @@
-# Initial retrieval baseline
+# Initial retrieval baseline (2026-09-12)
 
 This records the first successful runs of the 36-query development seed described
 in [Retrieval evaluation](evaluation.md). It is a within-suite comparison, not a
 held-out evaluation or a measurement of agent task success and token savings.
+The suite and sources are preserved at
+[5988de0](https://github.com/scarletkc/vexor/tree/5988de0bceb8c903405adefac99be05a9e2fe762).
 No ranking or retrieval behavior was changed for these runs.
 
 ## Remote embedding model
@@ -10,7 +12,7 @@ No ranking or retrieval behavior was changed for these runs.
 Configuration: `BAAI/bge-m3` through the configured `custom` provider, top 10,
 2,000 characters per result, 8,000 characters total, three measured repetitions
 after a warmup for every query/arm. Each arm therefore has 36 queries and 108
-observations. Timings are warm Python API calls on the current Windows host and
+observations. Timings are warm Python API calls on Windows and
 should not be treated as general hardware-independent performance claims.
 
 ```bash
@@ -101,5 +103,6 @@ chunk boundary, or a different content budget recovers the missing evidence.
 Report the associated increase in returned content and time, not just hit rate.
 
 Add longer Chinese sources and real held-out projects with independent relevance
-review before using the benchmark to select a default ranking. Use the separate
-agent-task protocol before claiming token savings or fewer follow-up file reads.
+review before using the benchmark to select a default ranking. Use the
+[agent evaluation protocol](agent-evaluation.md) before claiming token savings
+or fewer follow-up file reads.

@@ -6,14 +6,14 @@ directories, builds isolated file indexes, and checks the text actually returned
 by the Python search API. Query text and evidence labels are never copied into
 those directories. Existing project indexes are not modified.
 
-The bundled suite is a **development seed**, not a representative benchmark or a
-claim that Vexor saves agent tokens. It contains 36 authored queries, 12 per corpus:
+The [bundled suite](../benchmarks/retrieval/suite.json) is a development seed with
+authored queries across three corpus types:
 
 | Corpus | Sources | Index mode | Query languages |
 | --- | --- | --- | --- |
-| `code` | Six current Vexor runtime modules | `code` | English and Chinese |
-| `docs` | Four canonical Vexor documentation files | `outline` | English and Chinese |
-| `zh-records` | Twelve authored Chinese paraphrases of cited Vexor sources | `outline` | Chinese |
+| `code` | Vexor runtime modules | `code` | English and Chinese |
+| `docs` | Canonical Vexor documentation | `outline` | English and Chinese |
+| `zh-records` | Authored Chinese paraphrases of cited Vexor sources | `outline` | Chinese |
 
 The Chinese records are synthetic regression material. They are searched as files;
 this runner does not evaluate the Collections API. Some queries require multiple
@@ -45,10 +45,10 @@ uv run python scripts/eval_retrieval.py --arms off bm25 hybrid flashrank remote 
   --output .cache/evaluation/all-rerankers.json
 ```
 
-The default arms are `off`, `bm25`, and `hybrid`, with top 10 and three measured
-repetitions. Content limits default to the Python API's per-result and total
-character budgets; override them with `--content-chars-per-result` and
-`--content-chars-total`. Remote embeddings and remote reranking make provider
+Use `--help` for ranking arms, repetition counts, and result limits. Content
+limits default to the Python API's character budgets; override them with
+`--content-chars-per-result` and `--content-chars-total`.
+Remote embeddings and remote reranking make provider
 calls and may incur charges. A remote reranker is invoked for warmups too.
 
 Configuration is loaded once from global settings and environment variables;
@@ -64,9 +64,6 @@ Output files are created only after a successful run and existing reports are no
 overwritten. Invalid labels fail before indexing. Provider failures, stale or empty
 indexes, unexpected source content, and invalid responses fail the run instead of
 being converted into zero-scored queries. A valid search with no hits is a miss.
-
-The old `eval_hybrid.py`, `eval_rerank_content.py`, and `eval_queries.jsonl` retain
-their original 30-query file-level contract for historical comparisons.
 
 ## Read the report
 
@@ -138,33 +135,5 @@ reports. Do not tune ranking on a query set and present gains on that same set a
 independent validation. Add held-out projects and human-reviewed labels before
 using these results to change the default ranking or make public quality claims.
 
-## Agent task evaluation protocol
-
-Retrieval quality is only one input to an agent comparison. Use the 36 questions as
-an initial answer-finding task set, then add held-out tasks. Execute each task in a
-fresh agent context under two conditions: file listing/grep/read tools, and those
-same tools plus Vexor. Keep the model revision, system prompt, tool budgets,
-reasoning settings, source snapshot, and task wording fixed. Counterbalance the
-condition order and repeat both conditions. Do not put evidence labels or the
-benchmark directory into the agent's accessible source tree.
-
-Retain actual transcripts and provider usage events. For each task and condition,
-record the following alongside the corpus and prompt fingerprints:
-
-- Correctness, judged against the annotated evidence and an explicit answer
-  rubric by a reviewer blind to the condition; retain the rationale. Finding a
-  relevant file or having the agent declare success does not establish correctness.
-- Input, cached-input, output, and reasoning token counts as reported by the
-  provider, with the provider's inclusion rules. Do not add cached/reasoning tokens
-  again when they are already included in input/output totals. Unavailable counts
-  remain unknown, never zero.
-- Task wall time, tool-call counts, and file-read counts after retrieval. Record
-  indexing/embedding time and provider costs separately, and state whether setup
-  costs are amortized across tasks.
-- Failures, timeouts, budget exhaustion, and incomplete answers, including their
-  consumed time and tokens. Keep them in the denominator.
-
-Compare paired task success rates, usage, and wall time, and inspect whether token
-savings come from shorter but worse answers. This repository currently supplies
-the retrieval runner and this collection protocol; it does not launch agents,
-collect their private transcripts, or report measured agent token savings.
+For task success, token usage, and end-to-end time, use the separate
+[agent evaluation protocol](agent-evaluation.md).
