@@ -39,7 +39,7 @@ __all__ = [
     "set_data_dir",
 ]
 
-__version__ = "0.29.0"
+__version__ = "0.30.0"
 
 _API_EXPORTS = frozenset(
     {
