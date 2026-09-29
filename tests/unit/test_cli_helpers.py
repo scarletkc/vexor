@@ -8,6 +8,7 @@ import pytest
 import typer
 
 from vexor import cli
+from vexor.services import model_service, shell_service
 
 
 def test_format_lines_variants():
@@ -54,7 +55,7 @@ def test_cli_flashrank_prepare_success_and_errors(monkeypatch, tmp_path):
     # rather than relying on ``flashrank`` being absent from the environment.
     monkeypatch.setitem(sys.modules, "flashrank", None)
     with pytest.raises(RuntimeError):
-        cli._prepare_flashrank_model(None)
+        model_service.prepare_flashrank_model(None)
 
     flashrank_module = ModuleType("flashrank")
 
@@ -66,8 +67,8 @@ def test_cli_flashrank_prepare_success_and_errors(monkeypatch, tmp_path):
 
     flashrank_module.Ranker = Ranker
     monkeypatch.setitem(sys.modules, "flashrank", flashrank_module)
-    monkeypatch.setattr(cli, "flashrank_cache_dir", lambda: tmp_path)
-    cli._prepare_flashrank_model("ranker-model")
+    monkeypatch.setattr(model_service, "flashrank_cache_dir", lambda: tmp_path)
+    model_service.prepare_flashrank_model("ranker-model")
     assert Ranker.kwargs["model_name"] == "ranker-model"
 
     class BrokenRanker:
@@ -76,31 +77,34 @@ def test_cli_flashrank_prepare_success_and_errors(monkeypatch, tmp_path):
 
     flashrank_module.Ranker = BrokenRanker
     with pytest.raises(RuntimeError, match="broken"):
-        cli._prepare_flashrank_model(None)
+        model_service.prepare_flashrank_model(None)
 
 
 def test_cli_alias_profile_helpers(monkeypatch, tmp_path):
     monkeypatch.setenv("SHELL", "/bin/bash")
-    assert cli._detect_shell_name() == "bash"
+    assert shell_service.detect_shell_name() == "bash"
     monkeypatch.setenv("SHELL", "/bin/fish")
-    assert cli._detect_shell_name() == "fish"
+    assert shell_service.detect_shell_name() == "fish"
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     ps7 = tmp_path / "Documents" / "PowerShell"
     ps7.mkdir(parents=True)
-    assert cli._resolve_powershell_profile() == ps7 / "Microsoft.PowerShell_profile.ps1"
+    assert shell_service.resolve_powershell_profile() == ps7 / "Microsoft.PowerShell_profile.ps1"
     ps7.rmdir()
     ps5 = tmp_path / "Documents" / "WindowsPowerShell"
     ps5.mkdir()
-    assert cli._resolve_powershell_profile() == ps5 / "Microsoft.PowerShell_profile.ps1"
+    assert shell_service.resolve_powershell_profile() == ps5 / "Microsoft.PowerShell_profile.ps1"
 
-    assert cli._resolve_alias_profile("bash") == Path("~/.bashrc").expanduser()
-    assert cli._resolve_alias_profile("zsh") == Path("~/.zshrc").expanduser()
-    assert cli._resolve_alias_profile("fish") == Path("~/.config/fish/config.fish").expanduser()
-    assert cli._resolve_alias_profile(None) is None
-    assert "vexor" in cli._resolve_alias_command("fish")
-    assert "Set-Alias" in cli._resolve_alias_command("powershell")
-    assert cli._resolve_alias_command("bash").startswith("alias vx=")
+    assert shell_service.resolve_alias_profile("bash") == Path("~/.bashrc").expanduser()
+    assert shell_service.resolve_alias_profile("zsh") == Path("~/.zshrc").expanduser()
+    assert (
+        shell_service.resolve_alias_profile("fish")
+        == Path("~/.config/fish/config.fish").expanduser()
+    )
+    assert shell_service.resolve_alias_profile(None) is None
+    assert "vexor" in shell_service.resolve_alias_command("fish")
+    assert "Set-Alias" in shell_service.resolve_alias_command("powershell")
+    assert shell_service.resolve_alias_command("bash").startswith("alias vx=")
 
 
 def test_should_offer_update_notice_gating(monkeypatch):
@@ -178,9 +182,7 @@ def test_print_update_notice_silent_without_cache(monkeypatch):
 
     from vexor import cli as cli_module
 
-    monkeypatch.setattr(
-        cli_module, "check_for_update", lambda current, **kw: None
-    )
+    monkeypatch.setattr(cli_module, "check_for_update", lambda current, **kw: None)
     import io as io_module
 
     buffer = io_module.StringIO()

@@ -76,6 +76,21 @@ rank change moves MRR@10 by about 0.03.
 For retrieval comparisons scored against returned source evidence, see
 [Retrieval evaluation](evaluation.md).
 
+## Runtime boundaries
+
+- Remote batch scheduling and retry classification live in
+  [embed_batches](../vexor/providers/batching.py) and
+  [should_retry_error](../vexor/providers/retry.py). Each provider adapter owns
+  its SDK requests, response decoding, and exception handling.
+- [rerank_candidates](../vexor/services/ranking_service.py) ranks prepared
+  documents from file search and collections. Each source service owns its
+  candidate loading, filtering, and hybrid corpus statistics.
+- [_insert_indexed_chunks](../vexor/cache.py) writes chunk metadata and lexical
+  postings within the full or incremental writer's transaction.
+- [search_response_payload](../vexor/services/result_serialization.py) owns
+  shared search fields; CLI and MCP choose their transport-specific envelope
+  and fields.
+
 ## Releases
 
 Bump the version on a branch and land it through a PR; merging to `main`

@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from ..text_chunks import chunk_text
+
 HEAD_CHAR_LIMIT = 1000
 # Also bounds how far ``read_chunk_content`` will read back: no indexer chunks past
 # this point, so no chunk can carry a line range beyond it either. Raising the limit
@@ -166,22 +168,8 @@ def extract_full_chunks(
         return []
     if text is None:
         return []
-    normalized = text.replace("\r\n", "\n").strip()
-    if not normalized:
-        return []
-    size = max(int(chunk_size), 1)
-    stride = max(size - max(int(overlap), 0), 1)
-    chunks: list[str] = []
-    start = 0
-    length = len(normalized)
-    while start < length:
-        window = normalized[start : start + size].strip()
-        if window:
-            chunks.append(window)
-        if start + size >= length:
-            break
-        start += stride
-    return chunks
+    return chunk_text(text, chunk_size=chunk_size, overlap=overlap)
+
 
 
 def extract_full_chunks_with_lines(

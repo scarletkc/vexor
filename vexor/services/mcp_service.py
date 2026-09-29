@@ -19,7 +19,8 @@ from typing import IO, Any, TextIO
 from .. import __version__
 from ..modes import available_modes
 from ..text import Messages
-from ..utils import format_path, resolve_directory
+from ..utils import resolve_directory
+from .result_serialization import search_response_payload
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 LATEST_PROTOCOL_VERSION = PROTOCOL_VERSIONS[0]
@@ -549,41 +550,11 @@ class VexorMcpServer:
             )
         except Exception as exc:
             return _tool_error(SEARCH_TOOL, str(exc))
-        return _text_result(
-            {
-                "query": query.strip(),
-                "path": str(response.base_path),
-                "backend": response.backend,
-                "reranker": response.reranker,
-                "stale": response.is_stale,
-                "index_empty": response.index_empty,
-                "results": [
-                    {
-                        "rank": rank,
-                        "score": round(float(result.score), 4),
-                        "path": format_path(result.path, response.base_path),
-                        "absolute_path": str(result.path),
-                        "start_line": result.start_line,
-                        "end_line": result.end_line,
-                        "preview": result.preview,
-                        "content": result.content,
-                        "content_start_line": result.content_start_line,
-                        "content_end_line": result.content_end_line,
-                        "content_truncated": result.content_truncated,
-                        "content_unavailable": result.content_unavailable,
-                    }
-                    for rank, result in enumerate(response.results, start=1)
-                ],
-                "content_budget": (
-                    {
-                        "limit": response.content_budget.limit,
-                        "used": response.content_budget.used,
-                    }
-                    if response.content_budget is not None
-                    else None
-                ),
-            }
-        )
+        return _text_result({
+            "query": query.strip(),
+            **search_response_payload(response, response.base_path),
+        })
+
 
     def _tool_index(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         scan = self._resolve_scan_arguments(arguments)

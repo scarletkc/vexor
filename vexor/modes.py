@@ -20,6 +20,7 @@ from .services.keyword_service import (
     BRIEF_KEYWORD_LIMIT,
     summarize_keywords,
 )
+from .text_chunks import chunk_text
 
 PREVIEW_CHAR_LIMIT = 160
 BRIEF_PREVIEW_LIMIT = 10
@@ -167,7 +168,7 @@ class CodeStrategy(IndexModeStrategy):
         payloads: list[ModePayload] = []
         chunk_index = 0
         for chunk in code_chunks:
-            windows = _chunk_text(chunk.text, chunk_size=self.chunk_size, overlap=self.overlap)
+            windows = chunk_text(chunk.text, chunk_size=self.chunk_size, overlap=self.overlap)
             if not windows:
                 continue
             local_total = len(windows)
@@ -352,22 +353,3 @@ def normalize_preview_chunk(text: str) -> str | None:
 
 # Retained for callers pinned to the pre-0.27 private name.
 _normalize_preview_chunk = normalize_preview_chunk
-
-
-def _chunk_text(text: str, *, chunk_size: int, overlap: int) -> list[str]:
-    normalized = text.replace("\r\n", "\n").strip()
-    if not normalized:
-        return []
-    size = max(int(chunk_size), 1)
-    stride = max(size - max(int(overlap), 0), 1)
-    chunks: list[str] = []
-    start = 0
-    length = len(normalized)
-    while start < length:
-        window = normalized[start : start + size].strip()
-        if window:
-            chunks.append(window)
-        if start + size >= length:
-            break
-        start += stride
-    return chunks

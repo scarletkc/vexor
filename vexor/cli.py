@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import shlex
 import shutil
 import subprocess
@@ -37,7 +36,6 @@ from .cache import (
 )
 from .config import (
     DEFAULT_BATCH_SIZE,
-    DEFAULT_FLASHRANK_MAX_LENGTH,
     DEFAULT_FLASHRANK_MODEL,
     DEFAULT_RERANK,
     SUPPORTED_EXTRACT_BACKENDS,
@@ -54,14 +52,13 @@ from .providers.capabilities import (
     DEFAULT_LOCAL_MODEL,
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
-    DIMENSION_SUPPORTED_MODELS,
     SUPPORTED_PROVIDERS,
-    get_supported_dimensions,
     resolve_api_key,
     resolve_default_model,
-    supports_dimensions,
+    validate_embedding_dimensions_for_model,
 )
 from .providers.local import LocalEmbeddingBackend, resolve_fastembed_cache_dir
+from .services import model_service, shell_service
 from .services.cache_service import load_index_metadata_safe
 from .services.config_service import (
     apply_config_updates,
@@ -70,6 +67,7 @@ from .services.config_service import (
 )
 from .services.index_service import IndexStatus, build_index, clear_index_entries
 from .services.init_service import run_init_wizard, should_auto_run_init
+from .services.result_serialization import search_response_payload
 from .services.search_service import SearchPhase, SearchRequest, perform_search
 from .services.skill_service import (
     DEFAULT_SKILL_NAME,
@@ -216,24 +214,6 @@ def _load_config_or_exit(directory: Path | str | None = None) -> config_module.C
     except (ValueError, OSError, UnicodeDecodeError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
-
-
-def _prepare_flashrank_model(model_name: str | None) -> None:
-    try:
-        from flashrank import Ranker
-    except ImportError as exc:
-        raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
-    cache_dir = flashrank_cache_dir()
-    try:
-        effective_model = model_name or DEFAULT_FLASHRANK_MODEL
-        kwargs = {
-            "max_length": DEFAULT_FLASHRANK_MAX_LENGTH,
-            "cache_dir": str(cache_dir),
-            "model_name": effective_model,
-        }
-        Ranker(**kwargs)
-    except Exception as exc:
-        raise RuntimeError(Messages.ERROR_FLASHRANK_SETUP.format(reason=str(exc))) from exc
 
 
 def _format_extensions_display(values: Sequence[str] | None) -> str:
@@ -965,19 +945,12 @@ def config(
         if effective_embedding_dimensions > 0:
             # Resolve effective model from provider + model to account for provider defaults
             effective_model = resolve_default_model(pending_provider, pending_model)
-            if not supports_dimensions(effective_model):
-                raise typer.BadParameter(
-                    f"Model '{effective_model}' does not support custom dimensions. "
-                    "Supported model names/prefixes: "
-                    f"{', '.join(DIMENSION_SUPPORTED_MODELS.keys())}"
+            try:
+                validate_embedding_dimensions_for_model(
+                    effective_embedding_dimensions, effective_model,
                 )
-            supported = get_supported_dimensions(effective_model)
-            if supported and effective_embedding_dimensions not in supported:
-                raise typer.BadParameter(
-                    f"Dimension {effective_embedding_dimensions} is not supported "
-                    f"for model '{effective_model}'. "
-                    f"Supported dimensions: {supported}"
-                )
+            except ValueError as exc:
+                raise typer.BadParameter(str(exc)) from exc
 
     updates = apply_config_updates(
         api_key=set_api_key_option,
@@ -1062,7 +1035,7 @@ def config(
             )
             console.print(_styled(Messages.INFO_FLASHRANK_SETUP_START, Styles.INFO))
             try:
-                _prepare_flashrank_model(flashrank_model)
+                model_service.prepare_flashrank_model(flashrank_model)
             except RuntimeError as exc:
                 console.print(_styled(str(exc), Styles.ERROR))
                 raise typer.Exit(code=1) from exc
@@ -1731,15 +1704,15 @@ def update(
 @app.command(help=Messages.HELP_ALIAS)
 def alias() -> None:
     """Print a shell alias that maps `vx` to `vexor`."""
-    shell_name = _detect_shell_name()
-    alias_command = _resolve_alias_command(shell_name)
+    shell_name = shell_service.detect_shell_name()
+    alias_command = shell_service.resolve_alias_command(shell_name)
     typer.echo(alias_command)
     if not sys.stdin.isatty():
         return
     if not typer.confirm(Messages.PROMPT_ALIAS_APPLY):
         return
 
-    profile_path = _resolve_alias_profile(shell_name)
+    profile_path = shell_service.resolve_alias_profile(shell_name)
     if profile_path is None:
         console.print(_styled(Messages.WARNING_ALIAS_PROFILE_MISSING, Styles.WARNING))
         return
@@ -1859,39 +1832,7 @@ def _render_search_progress(phase: SearchPhase, directory: Path) -> None:
 
 def _render_results_json(response, base: Path) -> None:
     """Emit the full response, including chunk content, as one JSON object."""
-    payload = {
-        "path": str(base),
-        "backend": response.backend,
-        "reranker": response.reranker,
-        "stale": response.is_stale,
-        "index_empty": response.index_empty,
-        "results": [
-            {
-                "rank": idx,
-                "score": round(float(result.score), 4),
-                "path": format_path(result.path, base),
-                "absolute_path": str(result.path),
-                "chunk_index": result.chunk_index,
-                "start_line": result.start_line,
-                "end_line": result.end_line,
-                "preview": result.preview,
-                "content": result.content,
-                "content_start_line": result.content_start_line,
-                "content_end_line": result.content_end_line,
-                "content_truncated": result.content_truncated,
-                "content_unavailable": result.content_unavailable,
-            }
-            for idx, result in enumerate(response.results, start=1)
-        ],
-        "content_budget": (
-            {
-                "limit": response.content_budget.limit,
-                "used": response.content_budget.used,
-            }
-            if response.content_budget is not None
-            else None
-        ),
-    }
+    payload = search_response_payload(response, base, include_chunk_index=True)
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
@@ -2023,48 +1964,6 @@ def _format_lines(start_line: int | None, end_line: int | None) -> str:
     if end_line is None or end_line <= start_line:
         return f"L{start_line}"
     return f"L{start_line}-{end_line}"
-
-
-def _detect_shell_name() -> str | None:
-    shell_env = os.environ.get("SHELL", "")
-    if shell_env:
-        name = Path(shell_env).name.lower()
-        if name in {"bash", "zsh", "fish"}:
-            return name
-    if os.name == "nt":
-        return "powershell"
-    return None
-
-
-def _resolve_powershell_profile() -> Path:
-    home = Path.home()
-    ps7_dir = home / "Documents" / "PowerShell"
-    ps5_dir = home / "Documents" / "WindowsPowerShell"
-    if ps7_dir.exists():
-        return ps7_dir / "Microsoft.PowerShell_profile.ps1"
-    if ps5_dir.exists():
-        return ps5_dir / "Microsoft.PowerShell_profile.ps1"
-    return ps7_dir / "Microsoft.PowerShell_profile.ps1"
-
-
-def _resolve_alias_profile(shell_name: str | None) -> Path | None:
-    if shell_name == "bash":
-        return Path("~/.bashrc").expanduser()
-    if shell_name == "zsh":
-        return Path("~/.zshrc").expanduser()
-    if shell_name == "fish":
-        return Path("~/.config/fish/config.fish").expanduser()
-    if shell_name == "powershell":
-        return _resolve_powershell_profile()
-    return None
-
-
-def _resolve_alias_command(shell_name: str | None) -> str:
-    if shell_name == "fish":
-        return Messages.INFO_ALIAS_FISH
-    if shell_name == "powershell":
-        return Messages.INFO_ALIAS_POWERSHELL
-    return Messages.INFO_ALIAS_VX
 
 
 _UPDATE_NOTICE_SKIP_COMMANDS = {"mcp", "update", "init"}

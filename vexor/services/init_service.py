@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import shlex
 import subprocess
 import sys
@@ -19,9 +18,7 @@ from rich.text import Text
 from .. import __version__
 from .. import config as config_module
 from ..config import (
-    DEFAULT_FLASHRANK_MAX_LENGTH,
     DEFAULT_FLASHRANK_MODEL,
-    flashrank_cache_dir,
     load_config,
     normalize_remote_rerank_url,
     resolve_remote_rerank_api_key,
@@ -48,6 +45,7 @@ from ..services.system_service import (
     run_all_doctor_checks,
 )
 from ..text import Messages, Styles
+from . import model_service, shell_service
 
 console = Console()
 
@@ -366,10 +364,10 @@ def _prompt_alias_setup(*, dry_run: bool) -> None:
         _note_dry_run("writing shell alias")
         console.print()
         return
-    shell_name = _detect_shell_name()
-    alias_command = _resolve_alias_command(shell_name)
+    shell_name = shell_service.detect_shell_name()
+    alias_command = shell_service.resolve_alias_command(shell_name)
     console.print(alias_command)
-    profile_path = _resolve_alias_profile(shell_name)
+    profile_path = shell_service.resolve_alias_profile(shell_name)
     if profile_path is None:
         console.print(_styled(Messages.WARNING_ALIAS_PROFILE_MISSING, Styles.WARNING))
         console.print()
@@ -713,29 +711,11 @@ def _maybe_prepare_flashrank_model(*, dry_run: bool) -> None:
         return
     console.print(_styled(Messages.INFO_FLASHRANK_SETUP_START, Styles.INFO))
     try:
-        _prepare_flashrank_model(DEFAULT_FLASHRANK_MODEL)
+        model_service.prepare_flashrank_model(DEFAULT_FLASHRANK_MODEL)
     except RuntimeError as exc:
         console.print(_styled(str(exc), Styles.ERROR))
         return
     console.print(_styled(Messages.INFO_FLASHRANK_SETUP_DONE, Styles.SUCCESS))
-
-
-def _prepare_flashrank_model(model_name: str | None) -> None:
-    try:
-        from flashrank import Ranker
-    except ImportError as exc:
-        raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
-    cache_dir = flashrank_cache_dir()
-    try:
-        effective_model = model_name or DEFAULT_FLASHRANK_MODEL
-        kwargs = {
-            "max_length": DEFAULT_FLASHRANK_MAX_LENGTH,
-            "cache_dir": str(cache_dir),
-            "model_name": effective_model,
-        }
-        Ranker(**kwargs)
-    except Exception as exc:
-        raise RuntimeError(Messages.ERROR_FLASHRANK_SETUP.format(reason=str(exc))) from exc
 
 
 def _install_extras(extras: str, *, dry_run: bool) -> bool:
@@ -816,48 +796,6 @@ def _note_dry_run(action: str) -> None:
     console.print(
         _styled(Messages.INIT_DRY_RUN_SKIPPED.format(action=action), Styles.INFO)
     )
-
-
-def _detect_shell_name() -> str | None:
-    shell_env = os.environ.get("SHELL", "")
-    if shell_env:
-        name = Path(shell_env).name.lower()
-        if name in {"bash", "zsh", "fish"}:
-            return name
-    if os.name == "nt":
-        return "powershell"
-    return None
-
-
-def _resolve_powershell_profile() -> Path:
-    home = Path.home()
-    ps7_dir = home / "Documents" / "PowerShell"
-    ps5_dir = home / "Documents" / "WindowsPowerShell"
-    if ps7_dir.exists():
-        return ps7_dir / "Microsoft.PowerShell_profile.ps1"
-    if ps5_dir.exists():
-        return ps5_dir / "Microsoft.PowerShell_profile.ps1"
-    return ps7_dir / "Microsoft.PowerShell_profile.ps1"
-
-
-def _resolve_alias_profile(shell_name: str | None) -> Path | None:
-    if shell_name == "bash":
-        return Path("~/.bashrc").expanduser()
-    if shell_name == "zsh":
-        return Path("~/.zshrc").expanduser()
-    if shell_name == "fish":
-        return Path("~/.config/fish/config.fish").expanduser()
-    if shell_name == "powershell":
-        return _resolve_powershell_profile()
-    return None
-
-
-def _resolve_alias_command(shell_name: str | None) -> str:
-    if shell_name == "fish":
-        return Messages.INFO_ALIAS_FISH
-    if shell_name == "powershell":
-        return Messages.INFO_ALIAS_POWERSHELL
-    return Messages.INFO_ALIAS_VX
 
 
 def _styled(text: str, style: str) -> str:

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from vexor.config import DEFAULT_LOCAL_MODEL, RemoteRerankConfig
-from vexor.services import init_service
+from vexor.services import init_service, model_service, shell_service
 from vexor.services.skill_service import SkillInstallResult, SkillInstallStatus
 from vexor.services.system_service import DoctorCheckResult, InstallInfo, InstallMethod
 
@@ -167,33 +167,33 @@ def test_collect_rerank_settings_variants(monkeypatch):
 
 def test_alias_helpers_and_prompt_alias_setup(monkeypatch, tmp_path):
     monkeypatch.setenv("SHELL", "/bin/zsh")
-    assert init_service._detect_shell_name() == "zsh"
+    assert shell_service.detect_shell_name() == "zsh"
     monkeypatch.setenv("SHELL", "/usr/bin/fish")
-    assert init_service._detect_shell_name() == "fish"
+    assert shell_service.detect_shell_name() == "fish"
     monkeypatch.setenv("SHELL", "/bin/unknown")
     # Patching the process-wide os.name makes pathlib and pytest fail on Windows.
     monkeypatch.setattr(
-        init_service, "os", SimpleNamespace(name="posix", environ=init_service.os.environ)
+        shell_service, "os", SimpleNamespace(name="posix", environ=shell_service.os.environ)
     )
-    assert init_service._detect_shell_name() is None
+    assert shell_service.detect_shell_name() is None
 
-    assert "vexor" in init_service._resolve_alias_command("fish")
-    assert "Set-Alias" in init_service._resolve_alias_command("powershell")
-    assert init_service._resolve_alias_command("bash").startswith("alias vx=")
+    assert "vexor" in shell_service.resolve_alias_command("fish")
+    assert "Set-Alias" in shell_service.resolve_alias_command("powershell")
+    assert shell_service.resolve_alias_command("bash").startswith("alias vx=")
 
     profile = tmp_path / ".bashrc"
-    monkeypatch.setattr(init_service, "_detect_shell_name", lambda: "bash")
-    monkeypatch.setattr(init_service, "_resolve_alias_profile", lambda _shell: profile)
+    monkeypatch.setattr(shell_service, "detect_shell_name", lambda: "bash")
+    monkeypatch.setattr(shell_service, "resolve_alias_profile", lambda _shell: profile)
     _confirm_sequence(monkeypatch, [True])
     init_service._prompt_alias_setup(dry_run=False)
-    assert init_service._resolve_alias_command("bash") in profile.read_text(encoding="utf-8")
+    assert shell_service.resolve_alias_command("bash") in profile.read_text(encoding="utf-8")
 
     _confirm_sequence(monkeypatch, [True])
     init_service._prompt_alias_setup(dry_run=False)
     assert profile.read_text(encoding="utf-8").count("alias vx=") == 1
 
     _confirm_sequence(monkeypatch, [True])
-    monkeypatch.setattr(init_service, "_resolve_alias_profile", lambda _shell: None)
+    monkeypatch.setattr(shell_service, "resolve_alias_profile", lambda _shell: None)
     init_service._prompt_alias_setup(dry_run=False)
 
     _confirm_sequence(monkeypatch, [True])
@@ -382,8 +382,8 @@ def test_flashrank_prepare_and_install_extras(monkeypatch, tmp_path):
     with monkeypatch.context() as patch:
         _confirm_sequence(patch, [True])
         patch.setattr(
-            init_service,
-            "_prepare_flashrank_model",
+            model_service,
+            "prepare_flashrank_model",
             lambda _model: (_ for _ in ()).throw(RuntimeError("bad model")),
         )
         init_service._maybe_prepare_flashrank_model(dry_run=False)
@@ -398,13 +398,13 @@ def test_flashrank_prepare_and_install_extras(monkeypatch, tmp_path):
 
     flashrank_module.Ranker = DummyRanker
     monkeypatch.setitem(sys.modules, "flashrank", flashrank_module)
-    monkeypatch.setattr(init_service, "flashrank_cache_dir", lambda: tmp_path)
-    init_service._prepare_flashrank_model(None)
+    monkeypatch.setattr(model_service, "flashrank_cache_dir", lambda: tmp_path)
+    model_service.prepare_flashrank_model(None)
     assert DummyRanker.kwargs["cache_dir"] == str(tmp_path)
 
     monkeypatch.setitem(sys.modules, "flashrank", ModuleType("flashrank"))
     with pytest.raises(RuntimeError):
-        init_service._prepare_flashrank_model("model")
+        model_service.prepare_flashrank_model("model")
 
 
 def test_install_extras_and_build_commands(monkeypatch, tmp_path):

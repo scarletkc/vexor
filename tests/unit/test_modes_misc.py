@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from vexor import modes
+from vexor.text_chunks import chunk_text
 
 
 def test_get_strategy_rejects_invalid_mode():
@@ -58,8 +59,8 @@ def test_normalize_preview_chunk_returns_none_for_whitespace():
 
 
 def test_chunk_text_empty_and_multi_window():
-    assert modes._chunk_text(" \n", chunk_size=10, overlap=0) == []  # type: ignore[attr-defined]
-    assert modes._chunk_text("abcdefghijklmno", chunk_size=10, overlap=0) == [  # type: ignore[attr-defined]
+    assert chunk_text(" \n", chunk_size=10, overlap=0) == []  # type: ignore[attr-defined]
+    assert chunk_text("abcdefghijklmno", chunk_size=10, overlap=0) == [  # type: ignore[attr-defined]
         "abcdefghij",
         "klmno",
     ]

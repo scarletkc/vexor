@@ -1634,7 +1634,9 @@ def test_config_sets_flashrank_and_prefetches(tmp_path, monkeypatch):
         called["ok"] = True
 
     monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
-    monkeypatch.setattr("vexor.cli._prepare_flashrank_model", fake_prepare_flashrank_model)
+    monkeypatch.setattr(
+        "vexor.services.model_service.prepare_flashrank_model", fake_prepare_flashrank_model
+    )
 
     result = runner.invoke(app, ["config", "--rerank", "flashrank"])
 
