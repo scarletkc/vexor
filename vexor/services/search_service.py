@@ -7,6 +7,7 @@ import json
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TypeVar
@@ -65,6 +66,12 @@ CONTENT_BUDGET_EXHAUSTED = "budget_exhausted"
 CONTENT_UNREADABLE = "unreadable"
 
 
+class SearchPhase(str, Enum):
+    INDEXING = "indexing"
+    SEARCHING = "searching"
+    SEARCHING_IN_MEMORY = "searching_in_memory"
+
+
 @dataclass(slots=True)
 class SearchRequest:
     query: str
@@ -101,6 +108,11 @@ class SearchRequest:
         compare=False,
     )
     freshness_tracker: FreshnessTracker | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    on_progress: Callable[[SearchPhase, Path], None] | None = field(
         default=None,
         repr=False,
         compare=False,
@@ -1050,6 +1062,11 @@ def _load_filtered_index(
     )
 
 
+def _report_progress(request: SearchRequest, phase: SearchPhase, directory: Path) -> None:
+    if request.on_progress is not None:
+        request.on_progress(phase, directory)
+
+
 def _build_index_for_request(
     request: SearchRequest,
     build_index,
@@ -1059,6 +1076,7 @@ def _build_index_for_request(
     exclude_patterns,
     extensions,
 ):
+    _report_progress(request, SearchPhase.INDEXING, root)
     return build_index(
         root,
         include_hidden=request.include_hidden,
@@ -1095,6 +1113,7 @@ def perform_search_many(
     if not queries:
         return []
     if request.temporary_index or request.no_cache:
+        _report_progress(request, SearchPhase.SEARCHING_IN_MEMORY, request.directory)
         return _perform_search_with_temporary_index(request, queries)
 
     from ..cache import list_cache_entries, load_index_vectors  # local import
@@ -1150,6 +1169,7 @@ def perform_search_many(
     if not len(state.paths):
         return [_empty_response(request.directory, is_stale=state.stale) for _ in queries]
 
+    _report_progress(request, SearchPhase.SEARCHING, request.directory)
     return _search_prepared(
         request, queries,
         paths=state.paths,

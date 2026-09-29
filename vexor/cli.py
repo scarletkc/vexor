@@ -62,7 +62,7 @@ from .providers.capabilities import (
     supports_dimensions,
 )
 from .providers.local import LocalEmbeddingBackend, resolve_fastembed_cache_dir
-from .services.cache_service import is_cache_current, load_index_metadata_safe
+from .services.cache_service import load_index_metadata_safe
 from .services.config_service import (
     apply_config_updates,
     get_config_origin_labels,
@@ -70,7 +70,7 @@ from .services.config_service import (
 )
 from .services.index_service import IndexStatus, build_index, clear_index_entries
 from .services.init_service import run_init_wizard, should_auto_run_init
-from .services.search_service import SearchRequest, _select_cache_superset, perform_search
+from .services.search_service import SearchPhase, SearchRequest, perform_search
 from .services.skill_service import (
     DEFAULT_SKILL_NAME,
     SkillInstallStatus,
@@ -96,10 +96,8 @@ from .services.system_service import (
 )
 from .text import Messages, Styles
 from .utils import (
-    build_exclude_spec,
     ensure_positive,
     format_path,
-    is_excluded_path,
     normalize_exclude_patterns,
     normalize_extensions,
     resolve_directory,
@@ -250,119 +248,6 @@ def _format_patterns_display(values: Sequence[str] | None) -> str:
     return ", ".join(values)
 
 
-def _filter_snapshot_by_directory(
-    entries: Sequence[dict],
-    relative_dir: Path,
-    *,
-    recursive: bool,
-) -> list[dict]:
-    filtered: list[dict] = []
-    for entry in entries:
-        rel_path = entry.get("path", "")
-        try:
-            rel_subpath = Path(rel_path).relative_to(relative_dir)
-        except ValueError:
-            continue
-        if not recursive and len(rel_subpath.parts) > 1:
-            continue
-        updated = dict(entry)
-        updated["path"] = rel_subpath.as_posix()
-        filtered.append(updated)
-    return filtered
-
-
-def _filter_snapshot_by_extensions(
-    entries: Sequence[dict],
-    extensions: Sequence[str],
-) -> list[dict]:
-    ext_set = {ext.lower() for ext in extensions if ext}
-    if not ext_set:
-        return list(entries)
-    filtered: list[dict] = []
-    for entry in entries:
-        rel_path = entry.get("path", "")
-        if Path(rel_path).suffix.lower() in ext_set:
-            filtered.append(entry)
-    return filtered
-
-
-def _filter_snapshot_by_exclude_patterns(
-    entries: Sequence[dict],
-    exclude_spec,
-) -> list[dict]:
-    if exclude_spec is None:
-        return list(entries)
-    filtered: list[dict] = []
-    for entry in entries:
-        rel_path = entry.get("path", "")
-        rel_posix = Path(rel_path).as_posix() if rel_path else ""
-        if is_excluded_path(exclude_spec, rel_posix, is_dir=False):
-            continue
-        filtered.append(entry)
-    return filtered
-
-
-def _should_index_before_search(request: SearchRequest) -> bool:
-    metadata = load_index_metadata_safe(
-        request.directory,
-        request.model_name,
-        request.include_hidden,
-        request.respect_gitignore,
-        request.mode,
-        request.recursive,
-        exclude_patterns=request.exclude_patterns,
-        extensions=request.extensions,
-    )
-    file_snapshot = metadata.get("files", []) if metadata else []
-    if metadata is None:
-        superset_entry = _select_cache_superset(request, list_cache_entries)
-        if superset_entry is None:
-            return True
-        superset_root = Path(superset_entry.get("root_path", "")).expanduser().resolve()
-        superset_recursive = bool(superset_entry.get("recursive"))
-        superset_extensions = tuple(superset_entry.get("extensions") or ())
-        superset_excludes = tuple(superset_entry.get("exclude_patterns") or ())
-        superset_metadata = load_index_metadata_safe(
-            superset_root,
-            request.model_name,
-            request.include_hidden,
-            request.respect_gitignore,
-            request.mode,
-            superset_recursive,
-            exclude_patterns=superset_excludes,
-            extensions=superset_extensions,
-        )
-        if not superset_metadata:
-            return True
-        file_snapshot = superset_metadata.get("files", [])
-        if superset_root != request.directory:
-            try:
-                relative_dir = request.directory.resolve().relative_to(superset_root)
-            except ValueError:
-                return True
-            file_snapshot = _filter_snapshot_by_directory(
-                file_snapshot,
-                relative_dir,
-                recursive=request.recursive,
-            )
-    if request.extensions:
-        file_snapshot = _filter_snapshot_by_extensions(file_snapshot, request.extensions)
-    exclude_spec = build_exclude_spec(request.exclude_patterns)
-    if exclude_spec is not None:
-        file_snapshot = _filter_snapshot_by_exclude_patterns(file_snapshot, exclude_spec)
-    if not file_snapshot:
-        return False
-    return not is_cache_current(
-        request.directory,
-        request.include_hidden,
-        request.respect_gitignore,
-        file_snapshot,
-        recursive=request.recursive,
-        exclude_patterns=request.exclude_patterns,
-        extensions=request.extensions,
-    )
-
-
 @app.callback()
 def main(
     version: bool = typer.Option(
@@ -498,32 +383,10 @@ def search(
         remote_rerank=remote_rerank,
         embedding_dimensions=config.embedding_dimensions,
         include_content=show_content or output_format == SearchOutputFormat.json,
+        on_progress=(
+            _render_search_progress if output_format == SearchOutputFormat.rich else None
+        ),
     )
-    if output_format == SearchOutputFormat.rich:
-        if no_cache:
-            console.print(
-                _styled(
-                    Messages.INFO_SEARCH_RUNNING_NO_CACHE.format(path=directory),
-                    Styles.INFO,
-                )
-            )
-        else:
-            with project_cache_context(directory):
-                should_index_first = (
-                    _should_index_before_search(request) if auto_index else False
-                )
-            if should_index_first:
-                console.print(
-                    _styled(
-                        Messages.INFO_INDEX_RUNNING.format(path=directory), Styles.INFO
-                    )
-                )
-            else:
-                console.print(
-                    _styled(
-                        Messages.INFO_SEARCH_RUNNING.format(path=directory), Styles.INFO
-                    )
-                )
     try:
         with project_cache_context(directory):
             response = perform_search(request)
@@ -1983,6 +1846,15 @@ def feedback() -> None:
             _styled(Messages.ERROR_FEEDBACK_LAUNCH.format(url=url, reason=str(exc)), Styles.ERROR)
         )
         raise typer.Exit(code=1) from exc
+
+
+def _render_search_progress(phase: SearchPhase, directory: Path) -> None:
+    message = {
+        SearchPhase.INDEXING: Messages.INFO_INDEX_RUNNING,
+        SearchPhase.SEARCHING: Messages.INFO_SEARCH_RUNNING,
+        SearchPhase.SEARCHING_IN_MEMORY: Messages.INFO_SEARCH_RUNNING_NO_CACHE,
+    }[phase]
+    console.print(_styled(message.format(path=directory), Styles.INFO))
 
 
 def _render_results_json(response, base: Path) -> None:

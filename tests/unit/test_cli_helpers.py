@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 
 import pytest
 import typer
@@ -77,92 +77,6 @@ def test_cli_flashrank_prepare_success_and_errors(monkeypatch, tmp_path):
     flashrank_module.Ranker = BrokenRanker
     with pytest.raises(RuntimeError, match="broken"):
         cli._prepare_flashrank_model(None)
-
-
-def test_cli_snapshot_filters(tmp_path):
-    entries = [
-        {"path": "pkg/a.py"},
-        {"path": "pkg/nested/b.py"},
-        {"path": "docs/readme.md"},
-    ]
-    assert cli._filter_snapshot_by_extensions(entries, ()) == entries
-    assert cli._filter_snapshot_by_extensions(entries, (".py",)) == entries[:2]
-
-    filtered = cli._filter_snapshot_by_directory(entries, Path("pkg"), recursive=False)
-    assert filtered == [{"path": "a.py"}]
-    filtered_recursive = cli._filter_snapshot_by_directory(entries, Path("pkg"), recursive=True)
-    assert filtered_recursive == [{"path": "a.py"}, {"path": "nested/b.py"}]
-
-    spec = SimpleNamespace(
-        check_file=lambda path: SimpleNamespace(include=path.endswith("nested/b.py"))
-    )
-    assert cli._filter_snapshot_by_exclude_patterns(entries, None) == entries
-    assert cli._filter_snapshot_by_exclude_patterns(entries, spec) == [
-        {"path": "pkg/a.py"},
-        {"path": "docs/readme.md"},
-    ]
-
-
-def test_cli_should_index_before_search_direct_and_superset(monkeypatch, tmp_path):
-    request = cli.SearchRequest(
-        query="q",
-        directory=tmp_path / "pkg",
-        include_hidden=False,
-        respect_gitignore=True,
-        mode="name",
-        recursive=False,
-        top_k=1,
-        model_name="model",
-        batch_size=0,
-        provider="openai",
-        base_url=None,
-        api_key="key",
-        local_cuda=False,
-        exclude_patterns=(),
-        extensions=(".py",),
-    )
-
-    monkeypatch.setattr(cli, "load_index_metadata_safe", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(cli, "list_cache_entries", lambda: [])
-    assert cli._should_index_before_search(request) is True
-
-    root = tmp_path
-    metadata = {
-        "files": [
-            {"path": "pkg/a.py", "mtime": 1.0, "size": 1},
-            {"path": "pkg/nested/b.py", "mtime": 1.0, "size": 1},
-            {"path": "pkg/c.md", "mtime": 1.0, "size": 1},
-        ]
-    }
-
-    def fake_load(root_arg, *_args, **_kwargs):
-        if Path(root_arg) == request.directory:
-            return None
-        return metadata
-
-    monkeypatch.setattr(cli, "load_index_metadata_safe", fake_load)
-    monkeypatch.setattr(
-        cli,
-        "list_cache_entries",
-        lambda: [
-            {
-                "root_path": str(root),
-                "model": "model",
-                "include_hidden": False,
-                "respect_gitignore": True,
-                "recursive": True,
-                "mode": "name",
-                "exclude_patterns": (),
-                "extensions": (),
-                "file_count": 3,
-            }
-        ],
-    )
-    monkeypatch.setattr(cli, "is_cache_current", lambda *_args, **_kwargs: True)
-    assert cli._should_index_before_search(request) is False
-
-    monkeypatch.setattr(cli, "is_cache_current", lambda *_args, **_kwargs: False)
-    assert cli._should_index_before_search(request) is True
 
 
 def test_cli_alias_profile_helpers(monkeypatch, tmp_path):

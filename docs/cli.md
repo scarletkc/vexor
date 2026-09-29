@@ -50,6 +50,11 @@ Porcelain output fields: `rank`, `similarity`, `path`, `chunk_index`,
 This column set is a compatibility contract and does not carry chunk content —
 use `--format json` when you need the source text.
 
+Rich output reports indexing when a rebuild starts, then searching when the
+prepared index is ready. If a search refreshes a parent directory's cached
+index, the indexing message names that parent. Machine-readable formats omit
+these progress messages.
+
 ## Chunk Content
 
 `--content` and `--format json` return each match's source text, not just its
