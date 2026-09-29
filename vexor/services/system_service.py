@@ -355,9 +355,9 @@ def check_rerank_configured(
             message=Messages.DOCTOR_RERANK_REMOTE_SKIPPED.format(model=model),
         )
     try:
-        from .search_service import _remote_rerank_request
+        from .ranking_service import remote_rerank_request
 
-        _remote_rerank_request(
+        remote_rerank_request(
             config=RemoteRerankConfig(
                 base_url=base_url,
                 api_key=api_key,

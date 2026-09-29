@@ -432,7 +432,7 @@ def test_remote_rerank_api_failure_and_success(monkeypatch):
     def fail_request(**_kwargs):
         raise RuntimeError("bad gateway")
 
-    monkeypatch.setattr("vexor.services.search_service._remote_rerank_request", fail_request)
+    monkeypatch.setattr("vexor.services.ranking_service.remote_rerank_request", fail_request)
     failed = system_service.check_rerank_configured(
         "remote",
         flashrank_model=None,
@@ -442,7 +442,7 @@ def test_remote_rerank_api_failure_and_success(monkeypatch):
     assert failed is not None and failed.passed is False
 
     monkeypatch.setattr(
-        "vexor.services.search_service._remote_rerank_request",
+        "vexor.services.ranking_service.remote_rerank_request",
         lambda **_kwargs: {"results": [{"index": 0}]},
     )
     ready = system_service.check_rerank_configured(

@@ -12,7 +12,7 @@ import pytest
 
 from vexor.config import RemoteRerankConfig
 from vexor.search import SearchResult
-from vexor.services import search_service
+from vexor.services import ranking_service, search_service
 
 
 def _result(name: str, score: float, preview: str | None = None) -> SearchResult:
@@ -20,28 +20,31 @@ def _result(name: str, score: float, preview: str | None = None) -> SearchResult
 
 
 def test_bm25_helpers_fallbacks(monkeypatch):
-    search_service._get_bm25_tokenizer.cache_clear()
+    ranking_service._get_bm25_tokenizer.cache_clear()
     monkeypatch.setitem(sys.modules, "tokenizers.pre_tokenizers", None)
-    monkeypatch.setattr(search_service, "_get_bm25_tokenizer", lambda: None)
+    monkeypatch.setattr(ranking_service, "_get_bm25_tokenizer", lambda: None)
 
-    assert search_service._bm25_tokenize("Alpha_beta 中文!") == ["alpha_beta"]
-    assert search_service._normalize_by_max([]) == []
-    assert search_service._normalize_by_max([0.0, -1.0]) == [0.0, 0.0]
+    assert ranking_service._bm25_tokenize("Alpha_beta 中文!") == ["alpha_beta"]
+    assert ranking_service._normalize_by_max([]) == []
+    assert ranking_service._normalize_by_max([0.0, -1.0]) == [0.0, 0.0]
     assert search_service._top_indices(np.array([0.1, 0.9]), 0) == []
     assert search_service._top_indices(np.array([0.1, 0.9]), 5) == [1, 0]
-    assert search_service._bm25_scores(["alpha"], []) == []
-    assert search_service._apply_bm25_rerank("", [_result("a.txt", 0.1)]) == [
-        _result("a.txt", 0.1)
-    ]
+    assert ranking_service._bm25_scores(["alpha"], []) == []
+    assert ranking_service.rerank_candidates(
+        "",
+        [_result("a.txt", 0.1)],
+        search_service._build_rerank_documents([_result("a.txt", 0.1)]),
+        rerank="bm25",
+    ) == [_result("a.txt", 0.1)]
 
 
 def test_rank_documents_bm25_is_independent_of_search_results():
     documents = ["alpha alpha beta", "gamma delta", "beta gamma"]
     base_scores = [0.1, 0.9, 0.2]
 
-    assert search_service._rank_documents_bm25("", documents, base_scores) is None
+    assert ranking_service.rank_documents_bm25("", documents, base_scores) is None
 
-    ranking = search_service._rank_documents_bm25("alpha", documents, base_scores)
+    ranking = ranking_service.rank_documents_bm25("alpha", documents, base_scores)
 
     assert [index for index, _ in ranking] == [1, 0, 2]
     assert all(0.0 <= score <= 1.0 for _, score in ranking)
@@ -54,7 +57,7 @@ def test_rank_documents_bm25_rejects_mismatched_score_count():
     holding unfused retrieval scores.
     """
     with pytest.raises(ValueError, match="line up"):
-        search_service._rank_documents_bm25("alpha", ["one", "two"], [0.5])
+        ranking_service.rank_documents_bm25("alpha", ["one", "two"], [0.5])
 
 
 def test_rank_documents_answer_an_empty_document_list_locally(monkeypatch):
@@ -63,18 +66,18 @@ def test_rank_documents_answer_an_empty_document_list_locally(monkeypatch):
     def fail(**_kwargs):  # pragma: no cover - must not run
         raise AssertionError("no request should be sent")
 
-    monkeypatch.setattr(search_service, "_remote_rerank_request", fail)
+    monkeypatch.setattr(ranking_service, "remote_rerank_request", fail)
     monkeypatch.setitem(sys.modules, "flashrank", None)
-    search_service._get_flashranker.cache_clear()
+    ranking_service._get_flashranker.cache_clear()
 
-    assert search_service._rank_documents_remote("alpha", [], None) == []
-    assert search_service._rank_documents_flashrank("alpha", [], None) == []
+    assert ranking_service.rank_documents_remote("alpha", [], None) == []
+    assert ranking_service.rank_documents_flashrank("alpha", [], None) == []
 
 
 def test_apply_ranking_drops_bad_indices_and_keeps_the_tail():
     results = [_result("a.txt", 0.1), _result("b.txt", 0.2), _result("c.txt", 0.3)]
 
-    ordered = search_service._apply_ranking(
+    ordered = ranking_service.apply_ranking(
         results,
         [(2, 0.9), (99, 1.0), (-1, 1.0), (2, 0.5), (0, None)],
     )
@@ -90,9 +93,15 @@ def test_flashrank_rerank_import_error_and_success(monkeypatch, tmp_path):
     # ``None`` entry in sys.modules makes the import raise whether or not the
     # machine running the suite has ``flashrank`` installed.
     monkeypatch.setitem(sys.modules, "flashrank", None)
-    search_service._get_flashranker.cache_clear()
+    ranking_service._get_flashranker.cache_clear()
     with pytest.raises(RuntimeError):
-        search_service._apply_flashrank_rerank("q", [_result("a.txt", 0.1)], None)
+        ranking_service.rerank_candidates(
+            "q",
+            [_result("a.txt", 0.1)],
+            search_service._build_rerank_documents([_result("a.txt", 0.1)]),
+            rerank="flashrank",
+            flashrank_model=None,
+        )
 
     flashrank_module = ModuleType("flashrank")
 
@@ -118,10 +127,16 @@ def test_flashrank_rerank_import_error_and_success(monkeypatch, tmp_path):
     flashrank_module.Ranker = Ranker
     monkeypatch.setitem(sys.modules, "flashrank", flashrank_module)
     monkeypatch.setattr("vexor.config.flashrank_cache_dir", lambda: tmp_path)
-    search_service._get_flashranker.cache_clear()
+    ranking_service._get_flashranker.cache_clear()
 
     results = [_result("a.txt", 0.2), _result("b.txt", 0.1)]
-    ordered = search_service._apply_flashrank_rerank("alpha", results, "ranker-model")
+    ordered = ranking_service.rerank_candidates(
+        "alpha",
+        results,
+        search_service._build_rerank_documents(results),
+        rerank="flashrank",
+        flashrank_model="ranker-model",
+    )
 
     assert [item.path.name for item in ordered] == ["b.txt", "a.txt"]
     assert ordered[0].score == 0.95
@@ -129,15 +144,15 @@ def test_flashrank_rerank_import_error_and_success(monkeypatch, tmp_path):
 
 def test_remote_rerank_config_validation(monkeypatch):
     with pytest.raises(RuntimeError):
-        search_service._resolve_remote_rerank_config(None)
+        ranking_service._resolve_remote_rerank_config(None)
 
     with pytest.raises(RuntimeError):
-        search_service._resolve_remote_rerank_config(
+        ranking_service._resolve_remote_rerank_config(
             RemoteRerankConfig(base_url="", api_key=None, model="")
         )
 
     monkeypatch.setenv("VEXOR_REMOTE_RERANK_API_KEY", "env-key")
-    resolved = search_service._resolve_remote_rerank_config(
+    resolved = ranking_service._resolve_remote_rerank_config(
         RemoteRerankConfig(
             base_url="https://rerank.example.com",
             api_key=None,
@@ -176,8 +191,8 @@ def test_remote_rerank_request_success_and_errors(monkeypatch):
         captured["body"] = json.loads(request.data.decode("utf-8"))
         return DummyResponse('{"results":[{"index":0,"score":1.0}]}')
 
-    monkeypatch.setattr(search_service.urlrequest, "urlopen", ok_urlopen)
-    payload = search_service._remote_rerank_request(
+    monkeypatch.setattr(ranking_service.urlrequest, "urlopen", ok_urlopen)
+    payload = ranking_service.remote_rerank_request(
         config=config,
         query="alpha",
         documents=["doc"],
@@ -195,21 +210,21 @@ def test_remote_rerank_request_success_and_errors(monkeypatch):
             fp=io.BytesIO(b"server exploded"),
         )
 
-    monkeypatch.setattr(search_service.urlrequest, "urlopen", http_error)
+    monkeypatch.setattr(ranking_service.urlrequest, "urlopen", http_error)
     with pytest.raises(RuntimeError, match="HTTP 500"):
-        search_service._remote_rerank_request(config=config, query="q", documents=["d"])
+        ranking_service.remote_rerank_request(config=config, query="q", documents=["d"])
 
     monkeypatch.setattr(
-        search_service.urlrequest,
+        ranking_service.urlrequest,
         "urlopen",
         lambda _request: (_ for _ in ()).throw(urlerror.URLError("offline")),
     )
     with pytest.raises(RuntimeError, match="offline"):
-        search_service._remote_rerank_request(config=config, query="q", documents=["d"])
+        ranking_service.remote_rerank_request(config=config, query="q", documents=["d"])
 
-    monkeypatch.setattr(search_service.urlrequest, "urlopen", lambda _request: DummyResponse("{"))
+    monkeypatch.setattr(ranking_service.urlrequest, "urlopen", lambda _request: DummyResponse("{"))
     with pytest.raises(RuntimeError, match="Invalid JSON"):
-        search_service._remote_rerank_request(config=config, query="q", documents=["d"])
+        ranking_service.remote_rerank_request(config=config, query="q", documents=["d"])
 
 
 def test_remote_rerank_item_parsing_and_apply(monkeypatch):
@@ -222,13 +237,13 @@ def test_remote_rerank_item_parsing_and_apply(monkeypatch):
             "bad",
         ]
     }
-    assert search_service._extract_remote_rerank_items(payload) == [(1, 0.8), (0, None)]
-    assert search_service._extract_remote_rerank_items([]) == []
-    assert search_service._extract_remote_rerank_items({"results": "bad"}) == []
+    assert ranking_service._extract_remote_rerank_items(payload) == [(1, 0.8), (0, None)]
+    assert ranking_service._extract_remote_rerank_items([]) == []
+    assert ranking_service._extract_remote_rerank_items({"results": "bad"}) == []
 
     monkeypatch.setattr(
-        search_service,
-        "_remote_rerank_request",
+        ranking_service,
+        "remote_rerank_request",
         lambda **_kwargs: {
             "results": [
                 {"index": -1, "score": 9.0},
@@ -238,10 +253,12 @@ def test_remote_rerank_item_parsing_and_apply(monkeypatch):
         },
     )
     results = [_result("a.txt", 0.2), _result("b.txt", 0.1)]
-    ordered = search_service._apply_remote_rerank(
+    ordered = ranking_service.rerank_candidates(
         "alpha",
         results,
-        RemoteRerankConfig(
+        search_service._build_rerank_documents(results),
+        rerank="remote",
+        remote_rerank=RemoteRerankConfig(
             base_url="https://rerank.example.com/rerank",
             api_key="secret",
             model="model-x",
@@ -251,19 +268,24 @@ def test_remote_rerank_item_parsing_and_apply(monkeypatch):
     assert ordered[0].score == 0.9
 
     monkeypatch.setattr(
-        search_service,
-        "_remote_rerank_request",
+        ranking_service,
+        "remote_rerank_request",
         lambda **_kwargs: {"results": []},
     )
-    assert search_service._apply_remote_rerank(
-        "alpha",
-        results,
-        RemoteRerankConfig(
-            base_url="https://rerank.example.com/rerank",
-            api_key="secret",
-            model="model-x",
-        ),
-    ) == results
+    assert (
+        ranking_service.rerank_candidates(
+            "alpha",
+            results,
+            search_service._build_rerank_documents(results),
+            rerank="remote",
+            remote_rerank=RemoteRerankConfig(
+                base_url="https://rerank.example.com/rerank",
+                api_key="secret",
+                model="model-x",
+            ),
+        )
+        == results
+    )
 
 
 def test_filter_helpers_cover_empty_and_directory_cases(tmp_path):

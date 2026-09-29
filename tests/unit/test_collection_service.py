@@ -14,7 +14,7 @@ import vexor.cache as cache
 from vexor.collection_store import CollectionError
 from vexor.config import RemoteRerankConfig
 from vexor.search import VexorSearcher
-from vexor.services import collection_service
+from vexor.services import collection_service, ranking_service
 
 
 @pytest.fixture
@@ -139,7 +139,7 @@ def test_bm25_reranks_dense_candidates_from_record_text(
         captured.update(query=query, documents=documents, base_scores=base_scores)
         return [(1, 0.95), (0, 0.25)]
 
-    monkeypatch.setattr(collection_service, "_rank_documents_bm25", fake_rank)
+    monkeypatch.setattr(ranking_service, "rank_documents_bm25", fake_rank)
 
     results = _search("records", "query", backend, top_k=1, rerank="bm25")
 
@@ -179,7 +179,7 @@ def test_flashrank_uses_configured_model_and_record_text(
         captured.update(query=query, documents=documents, model_name=model_name)
         return [(1, 0.9), (0, 0.4)]
 
-    monkeypatch.setattr(collection_service, "_rank_documents_flashrank", fake_rank)
+    monkeypatch.setattr(ranking_service, "rank_documents_flashrank", fake_rank)
 
     results = _search(
         "records",
@@ -238,7 +238,7 @@ def test_remote_rerank_only_receives_filtered_candidates(
         captured.update(query=query, documents=documents, config=config)
         return [(1, 0.85), (0, None)]
 
-    monkeypatch.setattr(collection_service, "_rank_documents_remote", fake_rank)
+    monkeypatch.setattr(ranking_service, "rank_documents_remote", fake_rank)
 
     results = _search(
         "records",

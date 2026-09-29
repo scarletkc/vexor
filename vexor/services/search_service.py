@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TypeVar
-from urllib import error as urlerror
-from urllib import request as urlrequest
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -21,14 +17,11 @@ from ..config import (
     DEFAULT_EMBED_CONCURRENCY,
     DEFAULT_EXTRACT_BACKEND,
     DEFAULT_EXTRACT_CONCURRENCY,
-    DEFAULT_FLASHRANK_MAX_LENGTH,
-    DEFAULT_FLASHRANK_MODEL,
     DEFAULT_RERANK,
     RemoteRerankConfig,
-    normalize_remote_rerank_url,
-    resolve_remote_rerank_api_key,
 )
 from ..utils import build_exclude_spec, is_excluded_path, normalize_exclude_patterns
+from . import ranking_service as ranking
 from .cache_service import is_cache_current
 from .query_service import normalize_queries, validate_embedding_vectors
 
@@ -136,32 +129,6 @@ class SearchResponse:
     index_empty: bool
     reranker: str | None = None
     content_budget: ContentBudget | None = None
-
-
-_TOKEN_RE = bm25._TOKEN_RE
-_BM25_K1 = bm25.BM25_K1
-_BM25_B = bm25.BM25_B
-_FUSION_SEMANTIC_WEIGHT = 0.7
-
-
-_get_bm25_tokenizer = bm25._get_bm25_tokenizer
-
-
-def _bm25_tokenize(text: str) -> list[str]:
-    # Keep the local getter indirection for callers that monkeypatch this
-    # long-standing private compatibility surface.
-    tokenizer = _get_bm25_tokenizer()
-    if tokenizer is None:
-        return _TOKEN_RE.findall(text.lower())
-    tokens = [token for token, _ in tokenizer.pre_tokenize_str(text)]
-    normalized: list[str] = []
-    for token in tokens:
-        cleaned = token.strip()
-        if not cleaned:
-            continue
-        if any(ch.isalnum() for ch in cleaned):
-            normalized.append(cleaned.lower())
-    return normalized
 
 
 def _hybrid_scorer_from_cache(
@@ -366,55 +333,6 @@ def _build_rerank_documents(results: Sequence[SearchResult]) -> list[str]:
     return [_build_rerank_document(result) for result in results]
 
 
-class _ScoredResult(Protocol):
-    score: float
-
-
-_ScoredResultT = TypeVar("_ScoredResultT", bound=_ScoredResult)
-
-
-def _apply_ranking(
-    results: Sequence[_ScoredResultT],
-    ranking: Sequence[tuple[int, float | None]],
-) -> list[_ScoredResultT]:
-    """Reorder *results* by a reranker's ``(index, score)`` pairs.
-
-    Unknown, duplicate, and out-of-range indices are dropped, and anything the
-    reranker left out keeps its original relative order at the tail, so a partial
-    response degrades to "reranked head, dense tail" instead of losing results.
-    """
-
-    ordered: list[_ScoredResultT] = []
-    seen: set[int] = set()
-    for index, score in ranking:
-        if index < 0 or index >= len(results) or index in seen:
-            continue
-        result = results[index]
-        if score is not None:
-            result.score = float(score)
-        ordered.append(result)
-        seen.add(index)
-    if len(ordered) < len(results):
-        for index, result in enumerate(results):
-            if index not in seen:
-                ordered.append(result)
-    return ordered
-
-
-def _normalize_by_max(scores: Sequence[float]) -> list[float]:
-    if not scores:
-        return []
-    max_score = max(scores)
-    if max_score <= 0:
-        return [0.0 for _ in scores]
-    return [score / max_score for score in scores]
-
-
-def _resolve_rerank_candidates(top_k: int) -> int:
-    candidate = int(top_k * 2)
-    return max(20, min(candidate, 150))
-
-
 def _top_indices(scores: np.ndarray, limit: int) -> list[int]:
     if limit <= 0:
         return []
@@ -422,266 +340,6 @@ def _top_indices(scores: np.ndarray, limit: int) -> list[int]:
         return sorted(range(scores.size), key=lambda idx: (-scores[idx], idx))
     indices = np.argpartition(-scores, limit - 1)[:limit]
     return sorted(indices.tolist(), key=lambda idx: (-scores[idx], idx))
-
-
-def _bm25_scores(
-    query_tokens: Sequence[str],
-    documents: Sequence[Sequence[str]],
-) -> list[float]:
-    if not documents:
-        return []
-    from rank_bm25 import BM25L
-
-    # BM25L avoids zero-idf scores on tiny candidate sets.
-    bm25 = BM25L(documents, k1=_BM25_K1, b=_BM25_B)
-    scores = bm25.get_scores(query_tokens)
-    return [float(score) for score in scores]
-
-
-def _rank_documents_bm25(
-    query: str,
-    documents: Sequence[str],
-    base_scores: Sequence[float],
-) -> list[tuple[int, float]] | None:
-    """Fuse lexical scores over *documents* with the retrieval scores behind them.
-
-    Returns ``None`` when the query carries no usable tokens, which leaves the
-    caller's original order untouched.
-    """
-
-    if len(documents) != len(base_scores):
-        raise ValueError(
-            "rerank documents and base scores must line up: "
-            f"got {len(documents)} documents and {len(base_scores)} scores"
-        )
-    query_tokens = _bm25_tokenize(query)
-    if not query_tokens:
-        return None
-    tokenized = [_bm25_tokenize(document) for document in documents]
-    lexical_norm = _normalize_by_max(_bm25_scores(query_tokens, tokenized))
-    base_norm = _normalize_by_max([max(score, 0.0) for score in base_scores])
-    fused = [
-        (
-            index,
-            _FUSION_SEMANTIC_WEIGHT * base
-            + (1.0 - _FUSION_SEMANTIC_WEIGHT) * lexical,
-        )
-        for index, (base, lexical) in enumerate(
-            zip(base_norm, lexical_norm, strict=True)
-        )
-    ]
-    fused.sort(key=lambda item: item[1], reverse=True)
-    return fused
-
-
-def _apply_bm25_rerank(query: str, results: Sequence[SearchResult]) -> list[SearchResult]:
-    if not results:
-        return []
-    ranking = _rank_documents_bm25(
-        query,
-        _build_rerank_documents(results),
-        [result.score for result in results],
-    )
-    if ranking is None:
-        return list(results)
-    return _apply_ranking(results, ranking)
-
-
-@lru_cache(maxsize=4)
-def _get_flashranker(model_name: str | None, max_length: int):
-    from flashrank import Ranker
-
-    from ..config import flashrank_cache_dir
-
-    cache_dir = flashrank_cache_dir()
-    kwargs = {"max_length": max_length, "cache_dir": str(cache_dir)}
-    if model_name:
-        kwargs["model_name"] = model_name
-    return Ranker(**kwargs)
-
-
-def _rank_documents_flashrank(
-    query: str,
-    documents: Sequence[str],
-    model_name: str | None,
-) -> list[tuple[int, float | None]]:
-    if not documents:
-        # Nothing to rank, and loading a ranker model to say so would be waste.
-        return []
-    try:
-        from flashrank import RerankRequest
-    except ImportError as exc:
-        from ..text import Messages
-
-        raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
-    try:
-        effective_model = model_name or DEFAULT_FLASHRANK_MODEL
-        ranker = _get_flashranker(effective_model, DEFAULT_FLASHRANK_MAX_LENGTH)
-    except ImportError as exc:
-        from ..text import Messages
-
-        raise RuntimeError(Messages.ERROR_FLASHRANK_MISSING) from exc
-    passages = [
-        {"id": index, "text": document} for index, document in enumerate(documents)
-    ]
-    reranked = ranker.rerank(RerankRequest(query=query, passages=passages))
-    ranking: list[tuple[int, float | None]] = []
-    for item in reranked:
-        index = item.get("id")
-        if index is None:
-            continue
-        try:
-            position = int(index)
-        except (TypeError, ValueError):
-            continue
-        score = item.get("score")
-        ranking.append((position, float(score) if score is not None else None))
-    return ranking
-
-
-def _apply_flashrank_rerank(
-    query: str,
-    results: Sequence[SearchResult],
-    model_name: str | None,
-) -> list[SearchResult]:
-    if not results:
-        return []
-    ranking = _rank_documents_flashrank(
-        query,
-        _build_rerank_documents(results),
-        model_name,
-    )
-    return _apply_ranking(results, ranking)
-
-
-def _resolve_remote_rerank_config(
-    config: RemoteRerankConfig | None,
-) -> RemoteRerankConfig:
-    if not config:
-        from ..text import Messages
-
-        raise RuntimeError(Messages.ERROR_REMOTE_RERANK_INCOMPLETE)
-    base_url = normalize_remote_rerank_url(config.base_url)
-    api_key = resolve_remote_rerank_api_key(config.api_key)
-    if not (base_url and config.model and api_key):
-        from ..text import Messages
-
-        raise RuntimeError(Messages.ERROR_REMOTE_RERANK_INCOMPLETE)
-    if base_url != config.base_url or api_key != config.api_key:
-        return RemoteRerankConfig(
-            base_url=base_url,
-            api_key=api_key,
-            model=config.model,
-        )
-    return config
-
-
-def _remote_rerank_request(
-    *,
-    config: RemoteRerankConfig,
-    query: str,
-    documents: Sequence[str],
-) -> dict:
-    from ..text import Messages
-
-    payload = {
-        "model": config.model,
-        "query": query,
-        "documents": list(documents),
-    }
-    data = json.dumps(payload).encode("utf-8")
-    request = urlrequest.Request(config.base_url, data=data, method="POST")
-    request.add_header("Content-Type", "application/json")
-    request.add_header("Authorization", f"Bearer {config.api_key}")
-    try:
-        with urlrequest.urlopen(request) as response:
-            body = response.read().decode("utf-8", errors="replace")
-    except urlerror.HTTPError as exc:
-        reason = f"HTTP {exc.code}"
-        try:
-            detail = exc.read().decode("utf-8", errors="replace").strip()
-        except Exception:
-            detail = ""
-        if detail:
-            reason = f"{reason}: {detail[:200]}"
-        raise RuntimeError(Messages.ERROR_REMOTE_RERANK_FAILED.format(reason=reason)) from exc
-    except urlerror.URLError as exc:
-        raise RuntimeError(
-            Messages.ERROR_REMOTE_RERANK_FAILED.format(reason=str(exc))
-        ) from exc
-    except Exception as exc:  # pragma: no cover - network edge cases
-        raise RuntimeError(
-            Messages.ERROR_REMOTE_RERANK_FAILED.format(reason=str(exc))
-        ) from exc
-    try:
-        return json.loads(body)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            Messages.ERROR_REMOTE_RERANK_FAILED.format(reason="Invalid JSON response")
-        ) from exc
-
-
-def _extract_remote_rerank_items(payload: object) -> list[tuple[int, float | None]]:
-    if not isinstance(payload, dict):
-        return []
-    items = payload.get("results")
-    if not isinstance(items, list):
-        items = payload.get("data")
-    if not isinstance(items, list):
-        return []
-    parsed: list[tuple[int, float | None]] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        index = item.get("index")
-        if index is None:
-            continue
-        try:
-            idx = int(index)
-        except (TypeError, ValueError):
-            continue
-        score = item.get("relevance_score")
-        if score is None:
-            score = item.get("score")
-        try:
-            parsed_score = float(score) if score is not None else None
-        except (TypeError, ValueError):
-            parsed_score = None
-        parsed.append((idx, parsed_score))
-    return parsed
-
-
-def _rank_documents_remote(
-    query: str,
-    documents: Sequence[str],
-    config: RemoteRerankConfig | None,
-) -> list[tuple[int, float | None]]:
-    if not documents:
-        # Rerank endpoints reject an empty document array, so answer locally
-        # rather than turning "nothing to rank" into a provider error.
-        return []
-    resolved = _resolve_remote_rerank_config(config)
-    payload = _remote_rerank_request(
-        config=resolved,
-        query=query,
-        documents=documents,
-    )
-    return _extract_remote_rerank_items(payload)
-
-
-def _apply_remote_rerank(
-    query: str,
-    results: Sequence[SearchResult],
-    config: RemoteRerankConfig | None,
-) -> list[SearchResult]:
-    if not results:
-        return []
-    ranking = _rank_documents_remote(
-        query,
-        _build_rerank_documents(results),
-        config,
-    )
-    return _apply_ranking(results, ranking)
 
 
 def _empty_response(directory: Path, *, is_stale: bool) -> SearchResponse:
@@ -839,6 +497,33 @@ def _chunk_meta_from_cache(chunk_ids: Sequence[int], chunk_entries: Sequence[dic
     return prepare
 
 
+def _build_search_results(
+    paths: Sequence[Path],
+    scores: np.ndarray,
+    top_indices: Sequence[int],
+    chunk_meta_getter: Callable[[Sequence[int]], Callable[[int], dict]],
+) -> list[SearchResult]:
+    from ..search import SearchResult
+
+    chunk_meta_for = chunk_meta_getter(top_indices)
+    scored: list[SearchResult] = []
+    for idx in top_indices:
+        chunk_meta = chunk_meta_for(idx) or {}
+        start_line = chunk_meta.get("start_line")
+        end_line = chunk_meta.get("end_line")
+        scored.append(
+            SearchResult(
+                path=paths[idx],
+                score=float(scores[idx]),
+                preview=chunk_meta.get("preview"),
+                chunk_index=int(chunk_meta.get("chunk_index", 0)),
+                start_line=int(start_line) if start_line is not None else None,
+                end_line=int(end_line) if end_line is not None else None,
+            )
+        )
+    return scored
+
+
 def _rank_results(
     request: SearchRequest,
     *,
@@ -853,13 +538,11 @@ def _rank_results(
     Chunk content is attached last, after reranking has settled the final order, so the
     shared budget is spent on the results the caller actually sees first.
     """
-    from ..search import SearchResult  # local import
-
     reranker = None
     rerank = (request.rerank or DEFAULT_RERANK).strip().lower()
-    use_rerank = rerank in {"bm25", "flashrank", "remote"}
+    use_rerank = rerank in ranking.CANDIDATE_RERANKERS
     candidate_limit = (
-        _resolve_rerank_candidates(request.top_k) if use_rerank else request.top_k
+        ranking.resolve_rerank_candidates(request.top_k) if use_rerank else request.top_k
     )
     candidate_count = min(len(paths), candidate_limit)
 
@@ -890,54 +573,16 @@ def _rank_results(
                     dense_order, bm25_scores_by_row, len(paths)
                 )
                 top_indices = _top_indices(fused, request.top_k)
-                chunk_meta_for = chunk_meta_getter(top_indices)
-                scored: list[SearchResult] = []
-                for idx in top_indices:
-                    chunk_meta = chunk_meta_for(idx) or {}
-                    start_line = chunk_meta.get("start_line")
-                    end_line = chunk_meta.get("end_line")
-                    scored.append(
-                        SearchResult(
-                            path=paths[idx],
-                            score=float(fused[idx]),
-                            preview=chunk_meta.get("preview"),
-                            chunk_index=int(chunk_meta.get("chunk_index", 0)),
-                            start_line=(
-                                int(start_line) if start_line is not None else None
-                            ),
-                            end_line=int(end_line) if end_line is not None else None,
-                        )
-                    )
+                scored = _build_search_results(paths, fused, top_indices, chunk_meta_getter)
                 return scored, "hybrid", _attach_chunk_content(request, scored)
     top_indices = _top_indices(similarities, candidate_count)
-    chunk_meta_for = chunk_meta_getter(top_indices)
-    scored: list[SearchResult] = []
-    for idx in top_indices:
-        chunk_meta = chunk_meta_for(idx) or {}
-        start_line = chunk_meta.get("start_line")
-        end_line = chunk_meta.get("end_line")
-        scored.append(
-            SearchResult(
-                path=paths[idx],
-                score=float(similarities[idx]),
-                preview=chunk_meta.get("preview"),
-                chunk_index=int(chunk_meta.get("chunk_index", 0)),
-                start_line=int(start_line) if start_line is not None else None,
-                end_line=int(end_line) if end_line is not None else None,
-            )
-        )
+    scored = _build_search_results(paths, similarities, top_indices, chunk_meta_getter)
     if use_rerank:
-        if rerank == "bm25":
-            scored = _apply_bm25_rerank(request.query, scored)
-            reranker = "bm25"
-        elif rerank == "flashrank":
-            scored = _apply_flashrank_rerank(
-                request.query, scored, request.flashrank_model
-            )
-            reranker = "flashrank"
-        else:
-            scored = _apply_remote_rerank(request.query, scored, request.remote_rerank)
-            reranker = "remote"
+        scored = ranking.rerank_candidates(
+            request.query, scored, _build_rerank_documents(scored), rerank=rerank,
+            flashrank_model=request.flashrank_model, remote_rerank=request.remote_rerank,
+        )
+        reranker = rerank
     final = scored[: request.top_k]
     return final, reranker, _attach_chunk_content(request, final)
 

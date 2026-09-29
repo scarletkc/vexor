@@ -17,7 +17,7 @@ import vexor
 from vexor import api, cache, collection_store
 from vexor.config import RemoteRerankConfig
 from vexor.search import VexorSearcher
-from vexor.services import collection_service, search_service
+from vexor.services import ranking_service, search_service
 from vexor.services.query_service import validate_embedding_vectors
 from vexor.services.search_service import SearchResponse
 
@@ -112,8 +112,8 @@ def test_batch_matches_single_queries_and_embeds_once(
         """Keep candidate order fixed without loading or calling an external reranker."""
         return [(i, float(len(documents) - i)) for i in range(len(documents))]
 
-    monkeypatch.setattr(search_service, "_rank_documents_flashrank", rank_documents)
-    monkeypatch.setattr(search_service, "_rank_documents_remote", rank_documents)
+    monkeypatch.setattr(ranking_service, "rank_documents_flashrank", rank_documents)
+    monkeypatch.setattr(ranking_service, "rank_documents_remote", rank_documents)
     batch: Callable[..., list[SearchResponse]]
     single: Callable[..., SearchResponse]
     options = file_options(root, rerank)
@@ -283,8 +283,8 @@ def test_collection_batch_shares_snapshot_and_reranks_after_close(
         assert not active
         return [(i, float(len(documents) - i)) for i in range(len(documents))]
 
-    monkeypatch.setattr(collection_service, "_rank_documents_flashrank", rank)
-    monkeypatch.setattr(collection_service, "_rank_documents_remote", rank)
+    monkeypatch.setattr(ranking_service, "rank_documents_flashrank", rank)
+    monkeypatch.setattr(ranking_service, "rank_documents_remote", rank)
     with api.VexorClient(use_config=False) as client:
         handle = make_collection(client)
         monkeypatch.setattr(collection_store, "read_snapshot", snapshot)

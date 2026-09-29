@@ -7,6 +7,7 @@ import pytest
 
 import vexor.search as search_module
 from vexor.config import RemoteRerankConfig
+from vexor.services import ranking_service
 from vexor.services.index_service import IndexResult, IndexStatus
 from vexor.services.search_service import SearchRequest, perform_search
 
@@ -24,9 +25,7 @@ class DummySearcher:
 
 
 def test_bm25_tokenizer_handles_cjk() -> None:
-    from vexor.services import search_service as search_service_module
-
-    tokens = search_service_module._bm25_tokenize("中文测试")
+    tokens = ranking_service._bm25_tokenize("中文测试")
     assert tokens
 
 
@@ -1059,7 +1058,7 @@ def test_perform_search_reranks_with_remote(monkeypatch, tmp_path: Path) -> None
     monkeypatch.setattr("vexor.cache.load_index_vectors", fake_load_index_vectors)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
     monkeypatch.setattr(
-        "vexor.services.search_service._remote_rerank_request",
+        "vexor.services.ranking_service.remote_rerank_request",
         fake_remote_rerank_request,
     )
     import importlib
@@ -1121,7 +1120,7 @@ def test_remote_rerank_uses_env_api_key(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("vexor.cache.load_index_vectors", fake_load_index_vectors)
     monkeypatch.setattr("vexor.services.search_service.is_cache_current", lambda *_a, **_k: True)
     monkeypatch.setattr(
-        "vexor.services.search_service._remote_rerank_request",
+        "vexor.services.ranking_service.remote_rerank_request",
         fake_remote_rerank_request,
     )
     import importlib
@@ -1160,16 +1159,14 @@ def test_remote_rerank_uses_env_api_key(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_resolve_rerank_candidates() -> None:
-    from vexor.services import search_service as search_service_module
-
-    assert search_service_module._resolve_rerank_candidates(1) == 20
-    assert search_service_module._resolve_rerank_candidates(9) == 20
-    assert search_service_module._resolve_rerank_candidates(10) == 20
-    assert search_service_module._resolve_rerank_candidates(11) == 22
-    assert search_service_module._resolve_rerank_candidates(50) == 100
-    assert search_service_module._resolve_rerank_candidates(75) == 150
-    assert search_service_module._resolve_rerank_candidates(100) == 150
-    assert search_service_module._resolve_rerank_candidates(200) == 150
+    assert ranking_service.resolve_rerank_candidates(1) == 20
+    assert ranking_service.resolve_rerank_candidates(9) == 20
+    assert ranking_service.resolve_rerank_candidates(10) == 20
+    assert ranking_service.resolve_rerank_candidates(11) == 22
+    assert ranking_service.resolve_rerank_candidates(50) == 100
+    assert ranking_service.resolve_rerank_candidates(75) == 150
+    assert ranking_service.resolve_rerank_candidates(100) == 150
+    assert ranking_service.resolve_rerank_candidates(200) == 150
 
 
 def test_perform_search_raises_on_dimension_mismatch(monkeypatch, tmp_path: Path) -> None:

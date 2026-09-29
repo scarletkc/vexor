@@ -29,15 +29,9 @@ from ..collection_store import (
 )
 from ..config import DEFAULT_RERANK, SUPPORTED_RERANKERS, RemoteRerankConfig
 from ..text import Messages
+from . import ranking_service as ranking
 from .embedding_service import embed_texts_with_cache
 from .query_service import normalize_queries, validate_embedding_vectors
-from .search_service import (
-    _apply_ranking,
-    _rank_documents_bm25,
-    _rank_documents_flashrank,
-    _rank_documents_remote,
-    _resolve_rerank_candidates,
-)
 
 SUPPORTED_COLLECTION_RERANKERS = SUPPORTED_RERANKERS
 DEFAULT_COLLECTION_RERANK = DEFAULT_RERANK
@@ -409,9 +403,9 @@ def _collect_candidates(
         )
 
     order = sorted(range(len(record_ids)), key=lambda idx: (-scores[idx], idx))
-    use_candidate_rerank = rerank in {"bm25", "flashrank", "remote"}
+    use_candidate_rerank = rerank in ranking.CANDIDATE_RERANKERS
     candidate_limit = (
-        _resolve_rerank_candidates(top_k) if use_candidate_rerank else top_k
+        ranking.resolve_rerank_candidates(top_k) if use_candidate_rerank else top_k
     )
     candidate_rows = order[: int(candidate_limit)]
     selected_ids = [record_ids[row] for row in candidate_rows]
@@ -442,33 +436,11 @@ def _rerank_candidates(
     flashrank_model: str | None,
     remote_rerank: RemoteRerankConfig | None,
 ) -> list[RecordResult]:
-    if rerank == "bm25":
-        ranking = _rank_documents_bm25(
-            query,
-            [result.text for result in candidates],
-            [result.score for result in candidates],
-        )
-        if ranking is not None:
-            candidates = _apply_ranking(candidates, ranking)
-    elif rerank == "flashrank":
-        candidates = _apply_ranking(
-            candidates,
-            _rank_documents_flashrank(
-                query,
-                [result.text for result in candidates],
-                flashrank_model,
-            ),
-        )
-    elif rerank == "remote":
-        candidates = _apply_ranking(
-            candidates,
-            _rank_documents_remote(
-                query,
-                [result.text for result in candidates],
-                remote_rerank,
-            ),
-        )
-    return candidates[: int(top_k)]
+    return ranking.rerank_candidates(
+        query, candidates, [result.text for result in candidates], rerank=rerank,
+        flashrank_model=flashrank_model, remote_rerank=remote_rerank,
+    )[: int(top_k)]
+
 
 
 def _fuse_hybrid(
