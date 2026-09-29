@@ -7,7 +7,7 @@ import os
 import sqlite3
 import uuid
 from collections import OrderedDict
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -655,6 +655,93 @@ def _prune_unreferenced_vector_files(
                 continue
 
 
+def _insert_indexed_files(
+    conn: sqlite3.Connection, index_id: int, entries: Sequence[IndexedChunk],
+) -> dict[str, int]:
+    """Insert file rows in the caller's transaction and resolve their IDs."""
+    rows: dict[str, tuple] = {}
+    for entry in entries:
+        if entry.rel_path in rows:
+            continue
+        size_bytes, mtime = entry.size_bytes, entry.mtime
+        if size_bytes is None or mtime is None:
+            stat = entry.path.stat()
+            size_bytes, mtime = stat.st_size, stat.st_mtime
+        rows[entry.rel_path] = (index_id, entry.rel_path, str(entry.path), size_bytes, mtime)
+    conn.executemany(
+        """INSERT INTO indexed_file (index_id, rel_path, abs_path, size_bytes, mtime)
+           VALUES (?, ?, ?, ?, ?)""",
+        rows.values(),
+    )
+    file_ids: dict[str, int] = {}
+    for chunk in _chunk_values(list(rows), 900):
+        placeholders = ", ".join("?" for _ in chunk)
+        for row in conn.execute(
+            f"SELECT id, rel_path FROM indexed_file "
+            f"WHERE index_id = ? AND rel_path IN ({placeholders})",
+            (index_id, *chunk),
+        ):
+            file_ids[row["rel_path"]] = int(row["id"])
+    return file_ids
+
+
+def _write_chunk_metadata(conn: sqlite3.Connection, rows: Iterable[tuple]) -> None:
+    conn.executemany(
+        """INSERT OR REPLACE INTO chunk_meta
+           (chunk_id, preview, label_hash, start_line, end_line) VALUES (?, ?, ?, ?, ?)""",
+        rows,
+    )
+
+
+def _insert_indexed_chunks(
+    conn: sqlite3.Connection,
+    index_id: int,
+    entries: Sequence[IndexedChunk],
+    file_ids: Mapping[str, int],
+    positions: Sequence[int],
+) -> None:
+    """Keep chunk metadata and postings attached to explicit file/chunk identities."""
+    conn.executemany(
+        """INSERT INTO indexed_chunk (index_id, file_id, chunk_index, position)
+           VALUES (?, ?, ?, ?)""",
+        (
+            (index_id, file_ids[entry.rel_path], entry.chunk_index, position)
+            for entry, position in zip(entries, positions, strict=True)
+        ),
+    )
+    chunk_ids: dict[tuple[int, int], int] = {}
+    for chunk in _chunk_values(list(file_ids.values()), 900):
+        placeholders = ", ".join("?" for _ in chunk)
+        for row in conn.execute(
+            f"SELECT id, file_id, chunk_index FROM indexed_chunk "
+            f"WHERE index_id = ? AND file_id IN ({placeholders})",
+            (index_id, *chunk),
+        ):
+            chunk_ids[(int(row["file_id"]), int(row["chunk_index"]))] = int(row["id"])
+    metadata_rows: list[tuple] = []
+    doc_rows: list[tuple[int, int]] = []
+    posting_rows: list[tuple[int, int, str, int]] = []
+    for entry in entries:
+        chunk_id = chunk_ids[(file_ids[entry.rel_path], entry.chunk_index)]
+        metadata_rows.append((
+            chunk_id, entry.preview or "", entry.label_hash or "",
+            entry.start_line, entry.end_line,
+        ))
+        if entry.bm25_terms is not None:
+            doc_rows.append((chunk_id, int(entry.bm25_doc_len or 0)))
+            posting_rows.extend(
+                (index_id, chunk_id, term, int(tf)) for term, tf in entry.bm25_terms.items()
+            )
+    conn.executemany(
+        "INSERT INTO bm25_doc (chunk_id, token_count) VALUES (?, ?)", doc_rows,
+    )
+    conn.executemany(
+        "INSERT INTO bm25_posting (index_id, chunk_id, term, tf) VALUES (?, ?, ?, ?)",
+        posting_rows,
+    )
+    _write_chunk_metadata(conn, metadata_rows)
+
+
 def store_index(
     *,
     root: Path,
@@ -741,125 +828,8 @@ def store_index(
             )
             index_id = cursor.lastrowid
 
-            file_rows_by_rel: dict[str, tuple] = {}
-            for entry in entries:
-                if entry.rel_path in file_rows_by_rel:
-                    continue
-                size_bytes = entry.size_bytes
-                mtime = entry.mtime
-                if size_bytes is None or mtime is None:
-                    stat = entry.path.stat()
-                    size_bytes = stat.st_size
-                    mtime = stat.st_mtime
-                file_rows_by_rel[entry.rel_path] = (
-                    index_id,
-                    entry.rel_path,
-                    str(entry.path),
-                    size_bytes,
-                    mtime,
-                )
-
-            conn.executemany(
-                """
-                INSERT INTO indexed_file (
-                    index_id,
-                    rel_path,
-                    abs_path,
-                    size_bytes,
-                    mtime
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                list(file_rows_by_rel.values()),
-            )
-
-            file_id_map: dict[str, int] = {}
-            rel_paths = list(file_rows_by_rel.keys())
-            for chunk in _chunk_values(rel_paths, 900):
-                placeholders = ", ".join("?" for _ in chunk)
-                rows = conn.execute(
-                    f"""
-                    SELECT id, rel_path
-                    FROM indexed_file
-                    WHERE index_id = ? AND rel_path IN ({placeholders})
-                    """,
-                    (index_id, *chunk),
-                ).fetchall()
-                for row in rows:
-                    file_id_map[row["rel_path"]] = int(row["id"])
-
-            chunk_rows: list[tuple] = []
-            meta_rows: list[tuple] = []
-            for position, entry in enumerate(entries):
-                file_id = file_id_map.get(entry.rel_path)
-                if file_id is None:
-                    continue
-                chunk_rows.append(
-                    (index_id, file_id, entry.chunk_index, position)
-                )
-                meta_rows.append(
-                    (
-                        entry.preview or "",
-                        entry.label_hash or "",
-                        entry.start_line,
-                        entry.end_line,
-                    )
-                )
-
-            conn.executemany(
-                """
-                INSERT INTO indexed_chunk (
-                    index_id,
-                    file_id,
-                    chunk_index,
-                    position
-                ) VALUES (?, ?, ?, ?)
-                """,
-                chunk_rows,
-            )
-
-            inserted_ids = conn.execute(
-                "SELECT id FROM indexed_chunk WHERE index_id = ? ORDER BY position ASC",
-                (index_id,),
-            ).fetchall()
-            bm25_doc_rows: list[tuple[int, int]] = []
-            bm25_posting_rows: list[tuple[int, int, str, int]] = []
-            for idx, row in enumerate(inserted_ids):
-                entry = entries[idx]
-                if entry.bm25_terms is None:
-                    continue
-                chunk_id = int(row["id"])
-                doc_len = int(entry.bm25_doc_len or 0)
-                bm25_doc_rows.append((chunk_id, doc_len))
-                bm25_posting_rows.extend(
-                    (int(index_id), chunk_id, term, int(tf))
-                    for term, tf in entry.bm25_terms.items()
-                )
-            conn.executemany(
-                "INSERT INTO bm25_doc (chunk_id, token_count) VALUES (?, ?)",
-                bm25_doc_rows,
-            )
-            conn.executemany(
-                """
-                INSERT INTO bm25_posting (index_id, chunk_id, term, tf)
-                VALUES (?, ?, ?, ?)
-                """,
-                bm25_posting_rows,
-            )
-            conn.executemany(
-                """
-                INSERT OR REPLACE INTO chunk_meta (
-                    chunk_id,
-                    preview,
-                    label_hash,
-                    start_line,
-                    end_line
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    (row["id"], *meta_rows[idx])
-                    for idx, row in enumerate(inserted_ids)
-                ),
-            )
+            file_ids = _insert_indexed_files(conn, int(index_id), entries)
+            _insert_indexed_chunks(conn, int(index_id), entries, file_ids, range(len(entries)))
 
         vector_committed = True
         _prune_unreferenced_vector_files(conn, db_path)
@@ -1006,133 +976,13 @@ def apply_index_updates(
                         (index_id, rel_path),
                     )
 
-                file_rows_by_rel: dict[str, tuple] = {}
-                for rel_path, chunk_list in chunk_map.items():
-                    chunk_list.sort(key=lambda item: item.chunk_index)
-                    sample = chunk_list[0]
-                    size_bytes = sample.size_bytes
-                    mtime = sample.mtime
-                    if size_bytes is None or mtime is None:
-                        stat = sample.path.stat()
-                        size_bytes = stat.st_size
-                        mtime = stat.st_mtime
-                    file_rows_by_rel[rel_path] = (
-                        index_id,
-                        rel_path,
-                        str(sample.path),
-                        size_bytes,
-                        mtime,
-                    )
-
-                if file_rows_by_rel:
-                    conn.executemany(
-                        """
-                        INSERT INTO indexed_file (
-                            index_id,
-                            rel_path,
-                            abs_path,
-                            size_bytes,
-                            mtime
-                        ) VALUES (?, ?, ?, ?, ?)
-                        """,
-                        list(file_rows_by_rel.values()),
-                    )
-
-                file_id_map: dict[str, int] = {}
-                rel_paths = list(file_rows_by_rel.keys())
-                for chunk in _chunk_values(rel_paths, 900):
-                    placeholders = ", ".join("?" for _ in chunk)
-                    rows = conn.execute(
-                        f"""
-                        SELECT id, rel_path
-                        FROM indexed_file
-                        WHERE index_id = ? AND rel_path IN ({placeholders})
-                        """,
-                        (index_id, *chunk),
-                    ).fetchall()
-                    for row in rows:
-                        file_id_map[row["rel_path"]] = int(row["id"])
-
-                for rel_path, chunk_list in chunk_map.items():
-                    file_id = file_id_map.get(rel_path)
-                    if file_id is None:
-                        continue
-                    chunk_list.sort(key=lambda item: item.chunk_index)
-                    chunk_rows: list[tuple] = []
-                    meta_rows: list[tuple] = []
-                    for chunk in chunk_list:
-                        chunk_rows.append(
-                            (index_id, file_id, chunk.chunk_index, 0)
-                        )
-                        meta_rows.append(
-                            (
-                                chunk.preview or "",
-                                chunk.label_hash or "",
-                                chunk.start_line,
-                                chunk.end_line,
-                            )
-                        )
-
-                    conn.executemany(
-                        """
-                        INSERT INTO indexed_chunk (
-                            index_id,
-                            file_id,
-                            chunk_index,
-                            position
-                        ) VALUES (?, ?, ?, ?)
-                        """,
-                        chunk_rows,
-                    )
-
-                    inserted_ids = conn.execute(
-                        """
-                        SELECT id FROM indexed_chunk
-                        WHERE index_id = ? AND file_id = ?
-                        ORDER BY chunk_index ASC
-                        """,
-                        (index_id, file_id),
-                    ).fetchall()
-                    bm25_doc_rows: list[tuple[int, int]] = []
-                    bm25_posting_rows: list[tuple[int, int, str, int]] = []
-                    for idx, row in enumerate(inserted_ids):
-                        entry = chunk_list[idx]
-                        if entry.bm25_terms is None:
-                            continue
-                        chunk_id = int(row["id"])
-                        bm25_doc_rows.append(
-                            (chunk_id, int(entry.bm25_doc_len or 0))
-                        )
-                        bm25_posting_rows.extend(
-                            (int(index_id), chunk_id, term, int(tf))
-                            for term, tf in entry.bm25_terms.items()
-                        )
-                    conn.executemany(
-                        "INSERT INTO bm25_doc (chunk_id, token_count) VALUES (?, ?)",
-                        bm25_doc_rows,
-                    )
-                    conn.executemany(
-                        """
-                        INSERT INTO bm25_posting (index_id, chunk_id, term, tf)
-                        VALUES (?, ?, ?, ?)
-                        """,
-                        bm25_posting_rows,
-                    )
-                    conn.executemany(
-                        """
-                        INSERT OR REPLACE INTO chunk_meta (
-                            chunk_id,
-                            preview,
-                            label_hash,
-                            start_line,
-                            end_line
-                        ) VALUES (?, ?, ?, ?, ?)
-                        """,
-                        (
-                            (row["id"], *meta_rows[idx])
-                            for idx, row in enumerate(inserted_ids)
-                        ),
-                    )
+                prepared_entries: list[IndexedChunk] = []
+                for chunk_list in chunk_map.values():
+                    prepared_entries.extend(sorted(chunk_list, key=lambda item: item.chunk_index))
+                file_ids = _insert_indexed_files(conn, int(index_id), prepared_entries)
+                _insert_indexed_chunks(
+                    conn, int(index_id), prepared_entries, file_ids, [0] * len(prepared_entries),
+                )
 
             if touched_entries:
                 file_updates: dict[str, tuple[int, float]] = {}
@@ -1201,18 +1051,7 @@ def apply_index_updates(
                         )
                     )
                 if meta_rows:
-                    conn.executemany(
-                        """
-                        INSERT OR REPLACE INTO chunk_meta (
-                            chunk_id,
-                            preview,
-                            label_hash,
-                            start_line,
-                            end_line
-                        ) VALUES (?, ?, ?, ?, ?)
-                        """,
-                        meta_rows,
-                    )
+                    _write_chunk_metadata(conn, meta_rows)
 
             if ordered_entries and chunk_id_map:
                 position_updates = []
