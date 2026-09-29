@@ -139,7 +139,7 @@
       "evidence": [
         {
           "path": "vexor/providers/openai.py",
-          "anchor": "if _should_retry_openai_error(exc) and attempt < _MAX_RETRIES:\n                    _sleep(_backoff_delay(attempt))\n                    attempt += 1\n                    continue"
+          "anchor": "if should_retry_error(exc) and attempt < MAX_RETRIES:\n                    _sleep(backoff_delay(attempt))\n                    attempt += 1\n                    continue"
         }
       ]
     },

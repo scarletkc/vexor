@@ -6,7 +6,7 @@ from typing import ClassVar
 
 import pytest
 
-from vexor.providers import gemini, local, openai
+from vexor.providers import gemini, local, openai, retry
 
 
 class DummyOpenAIClient:
@@ -78,12 +78,12 @@ def test_openai_retry_helpers_accept_status_name_and_message():
     class ResponseProblem(Exception):
         response = SimpleNamespace(status_code=503)
 
-    assert openai._should_retry_openai_error(StatusError("nope")) is True
-    assert openai._should_retry_openai_error(TimeoutProblem("ordinary")) is True
-    assert openai._should_retry_openai_error(ResponseProblem("down")) is True
-    assert openai._should_retry_openai_error(Exception("service unavailable")) is True
-    assert openai._should_retry_openai_error(Exception("bad request")) is False
-    assert openai._backoff_delay(20) == openai._RETRY_MAX_DELAY
+    assert retry.should_retry_error(StatusError("nope")) is True
+    assert retry.should_retry_error(TimeoutProblem("ordinary")) is True
+    assert retry.should_retry_error(ResponseProblem("down")) is True
+    assert retry.should_retry_error(Exception("service unavailable")) is True
+    assert retry.should_retry_error(Exception("bad request")) is False
+    assert retry.backoff_delay(20) == retry.RETRY_MAX_DELAY
     assert "boom" in openai._format_openai_error(Exception("boom"))
 
 
@@ -144,10 +144,10 @@ def test_gemini_backend_empty_missing_key_and_retry_helpers(monkeypatch):
 
     backend = gemini.GeminiEmbeddingBackend(model_name="m", api_key="secret")
     assert backend.embed([]).shape == (0, 0)
-    assert gemini._extract_status_code(SimpleNamespace(status=500)) == 500
-    assert gemini._should_retry_genai_error(Exception("too many requests")) is True
-    assert gemini._should_retry_genai_error(Exception("bad request")) is False
-    assert gemini._backoff_delay(20) == gemini._RETRY_MAX_DELAY
+    assert retry.extract_status_code(SimpleNamespace(status=500)) == 500
+    assert retry.should_retry_error(Exception("too many requests")) is True
+    assert retry.should_retry_error(Exception("bad request")) is False
+    assert retry.backoff_delay(20) == retry.RETRY_MAX_DELAY
 
 
 def test_gemini_backend_raises_when_response_has_no_embeddings(monkeypatch):

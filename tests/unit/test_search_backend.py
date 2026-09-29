@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from vexor.providers import batching
 from vexor.providers import gemini as gemini_backend
 from vexor.providers import local as local_backend
 from vexor.providers import openai as openai_backend
@@ -179,8 +180,8 @@ def test_format_genai_error_messages():
 
 def test_chunk_helper():
     items = ["a", "b", "c", "d"]
-    assert list(gemini_backend._chunk(items, None)) == [items]
-    assert list(gemini_backend._chunk(items, 2)) == [["a", "b"], ["c", "d"]]
+    assert list(batching.chunk_texts(items, None)) == [items]
+    assert list(batching.chunk_texts(items, 2)) == [["a", "b"], ["c", "d"]]
 
 
 class FakeOpenAIEmbeddings:
@@ -364,7 +365,7 @@ def test_openai_backend_retries_transient_errors(monkeypatch):
 
 def test_openai_chunk_helper():
     items = ["a", "b"]
-    assert list(openai_backend._chunk(items, None)) == [items]
+    assert list(batching.chunk_texts(items, None)) == [items]
 
 
 def test_format_openai_error_prefers_message_attr():
