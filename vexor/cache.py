@@ -700,7 +700,7 @@ def _insert_indexed_chunks(
     file_ids: Mapping[str, int],
     positions: Sequence[int],
 ) -> None:
-    """Keep chunk metadata and postings attached to explicit file/chunk identities."""
+    """Write explicit chunk identities, streaming postings in the caller's transaction."""
     conn.executemany(
         """INSERT INTO indexed_chunk (index_id, file_id, chunk_index, position)
            VALUES (?, ?, ?, ?)""",
@@ -720,7 +720,6 @@ def _insert_indexed_chunks(
             chunk_ids[(int(row["file_id"]), int(row["chunk_index"]))] = int(row["id"])
     metadata_rows: list[tuple] = []
     doc_rows: list[tuple[int, int]] = []
-    posting_rows: list[tuple[int, int, str, int]] = []
     for entry in entries:
         chunk_id = chunk_ids[(file_ids[entry.rel_path], entry.chunk_index)]
         metadata_rows.append((
@@ -729,15 +728,22 @@ def _insert_indexed_chunks(
         ))
         if entry.bm25_terms is not None:
             doc_rows.append((chunk_id, int(entry.bm25_doc_len or 0)))
-            posting_rows.extend(
-                (index_id, chunk_id, term, int(tf)) for term, tf in entry.bm25_terms.items()
-            )
+
+    def posting_rows() -> Iterator[tuple[int, int, str, int]]:
+        """Keep the extra posting buffer constant even for large incremental updates."""
+        for entry in entries:
+            if entry.bm25_terms is None:
+                continue
+            chunk_id = chunk_ids[(file_ids[entry.rel_path], entry.chunk_index)]
+            for term, tf in entry.bm25_terms.items():
+                yield index_id, chunk_id, term, int(tf)
+
     conn.executemany(
         "INSERT INTO bm25_doc (chunk_id, token_count) VALUES (?, ?)", doc_rows,
     )
     conn.executemany(
         "INSERT INTO bm25_posting (index_id, chunk_id, term, tf) VALUES (?, ?, ?, ?)",
-        posting_rows,
+        posting_rows(),
     )
     _write_chunk_metadata(conn, metadata_rows)
 
