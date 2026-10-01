@@ -88,8 +88,8 @@ For retrieval comparisons scored against returned source evidence, see
 - [_insert_indexed_chunks](../vexor/cache.py) writes chunk metadata and lexical
   postings within the full or incremental writer's transaction. Postings stream
   directly into SQLite: do not buffer all term tuples for a rebuild or update.
-  `tests/unit/test_index_write_contract.py` checks production/consumption at the
-  SQLite boundary across corpus sizes, without allocator-dependent memory limits.
+  `tests/unit/test_index_write_contract.py` enforces this by checking that SQLite
+  stores each posting before the next one is produced.
 - [search_response_payload](../vexor/services/result_serialization.py) owns
   shared search fields; CLI and MCP choose their transport-specific envelope
   and fields.
