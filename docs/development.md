@@ -13,6 +13,13 @@ uv run ruff check .
 Tests rely on fake embedding backends, so no network access is required after
 the environment is synced.
 
+Runtime copy lives in [`Messages`](../vexor/text.py).
+[`test_text_contract.py`](../tests/unit/test_text_contract.py) checks exception messages,
+CLI output and help, prompts, diagnostic labels, and MCP descriptions. It also scans
+for prose assigned before output; this is a static guard, not a complete data-flow
+analysis. SQL, protocol values, indexed source snippets, and external-error match
+patterns remain runtime data rather than message templates.
+
 Ruff is the lint gate, configured under `[tool.ruff]` in `pyproject.toml` and
 run by the `ruff` job in `.github/workflows/publish.yml`, which a release now
 depends on. Its version is pinned in the `dev` dependency group and captured in

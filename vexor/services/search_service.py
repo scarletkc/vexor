@@ -20,6 +20,7 @@ from ..config import (
     DEFAULT_RERANK,
     RemoteRerankConfig,
 )
+from ..text import Messages
 from ..utils import build_exclude_spec, is_excluded_path, normalize_exclude_patterns
 from . import ranking_service as ranking
 from .cache_service import is_cache_current
@@ -428,9 +429,11 @@ def _resolve_query_vectors(
         matrix = validate_embedding_vectors(searcher.embed_texts(missing), len(missing))
         if matrix.shape[1] != expected_dim:
             raise ValueError(
-                f"Embedding dimension mismatch: index has {expected_dim}-dim vectors, "
-                f"but query embedding is {matrix.shape[1]}-dim. "
-                f"Rebuild the index with: vexor index {request.directory}"
+                Messages.ERROR_SEARCH_DIMENSION_MISMATCH_REBUILD.format(
+                    index_dimension=expected_dim,
+                    query_dimension=matrix.shape[1],
+                    directory=request.directory,
+                )
             )
         resolved.update(zip(missing, matrix, strict=True))
         if not request.no_cache:
@@ -553,11 +556,11 @@ def _rank_results(
     query_dimension = query_vector.shape[0]
     if index_dimension != query_dimension:
         raise ValueError(
-            f"Embedding dimension mismatch: index has {index_dimension}-dim vectors, "
-            f"but query embedding is {query_dimension}-dim. "
-            f"This typically happens when embedding_dimensions was changed "
-            f"after building the index. "
-            f"Rebuild the index with: vexor index {request.directory}"
+            Messages.ERROR_SEARCH_DIMENSION_MISMATCH.format(
+                index_dimension=index_dimension,
+                query_dimension=query_dimension,
+                directory=request.directory,
+            )
         )
 
     similarities = np.asarray(file_vectors @ query_vector, dtype=np.float32)
@@ -986,8 +989,9 @@ def _load_index_vectors_for_request(
             and cached_dimension != requested_dimension
         ):
             raise FileNotFoundError(
-                f"Cached index has dimension {cached_dimension}, "
-                f"but requested {requested_dimension}"
+                Messages.ERROR_CACHE_DIMENSION_MISMATCH.format(
+                    cached_dimension=cached_dimension, requested_dimension=requested_dimension
+                )
             )
         return (
             paths,

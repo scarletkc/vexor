@@ -8,6 +8,8 @@ from enum import Enum
 from importlib import resources
 from pathlib import Path
 
+from ..text import Messages
+
 
 class SkillInstallStatus(str, Enum):
     installed = "installed"
@@ -39,7 +41,7 @@ def resolve_skill_roots(targets: str, *, home: Path | None = None) -> list[Path]
 
     raw = targets.strip()
     if not raw:
-        raise ValueError("Missing --skills target.")
+        raise ValueError(Messages.ERROR_SKILL_TARGET_MISSING)
 
     lowered = raw.lower()
     if lowered in {"auto", "all"}:
@@ -93,13 +95,13 @@ def _resolve_target_list(parts: list[str], *, home: Path | None) -> list[Path]:
         lowered = part.lower()
         if lowered not in _SKILL_INSTALL_LOCATIONS:
             allowed = ", ".join(sorted(_SKILL_INSTALL_LOCATIONS))
-            raise ValueError(f"Unknown --skills target '{part}'. Allowed: {allowed}.")
+            raise ValueError(Messages.ERROR_SKILL_TARGET_UNKNOWN.format(part=part, allowed=allowed))
         if lowered in seen:
             continue
         seen.add(lowered)
         roots.append(_default_skill_root(lowered, home=home))
     if not roots:
-        raise ValueError("Missing --skills target.")
+        raise ValueError(Messages.ERROR_SKILL_TARGET_MISSING)
     return roots
 
 
@@ -124,8 +126,7 @@ def _resolve_skill_source_dir(skill_name: str) -> Path:
         pass
 
     raise FileNotFoundError(
-        f"Unable to locate bundled skill '{skill_name}'. "
-        "Reinstall Vexor from PyPI or run from the source repository."
+        Messages.ERROR_SKILL_BUNDLE_MISSING.format(skill_name=skill_name)
     )
 
 

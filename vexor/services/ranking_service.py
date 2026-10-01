@@ -120,8 +120,9 @@ def rank_documents_bm25(
 
     if len(documents) != len(base_scores):
         raise ValueError(
-            "rerank documents and base scores must line up: "
-            f"got {len(documents)} documents and {len(base_scores)} scores"
+            Messages.ERROR_RERANK_SCORE_COUNT.format(
+                documents=len(documents), scores=len(base_scores)
+            )
         )
     query_tokens = _bm25_tokenize(query)
     if not query_tokens:
@@ -228,7 +229,7 @@ def remote_rerank_request(
         with urlrequest.urlopen(request) as response:
             body = response.read().decode("utf-8", errors="replace")
     except urlerror.HTTPError as exc:
-        reason = f"HTTP {exc.code}"
+        reason = Messages.ERROR_HTTP_STATUS.format(status=exc.code)
         try:
             detail = exc.read().decode("utf-8", errors="replace").strip()
         except Exception:
@@ -248,7 +249,7 @@ def remote_rerank_request(
         return json.loads(body)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            Messages.ERROR_REMOTE_RERANK_FAILED.format(reason="Invalid JSON response")
+            Messages.ERROR_REMOTE_RERANK_FAILED.format(reason=Messages.ERROR_REMOTE_RERANK_JSON_INVALID)
         ) from exc
 
 

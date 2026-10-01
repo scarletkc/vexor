@@ -78,7 +78,7 @@ def _string_list(value: Any, field: str) -> tuple[str, ...]:
         return tuple(value)
     raise InvalidToolArguments(
         Messages.MCP_INVALID_ARGUMENTS.format(
-            reason=f"'{field}' must be a list of strings"
+            reason=Messages.MCP_STRING_LIST_INVALID.format(field=field)
         )
     )
 
@@ -89,7 +89,7 @@ def _bool_argument(value: Any, field: str, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
     raise InvalidToolArguments(
-        Messages.MCP_INVALID_ARGUMENTS.format(reason=f"'{field}' must be a boolean")
+        Messages.MCP_INVALID_ARGUMENTS.format(reason=Messages.MCP_BOOLEAN_INVALID.format(field=field))
     )
 
 
@@ -98,7 +98,7 @@ def _mode_argument(value: Any) -> str:
     if not isinstance(mode, str) or mode not in available_modes():
         raise InvalidToolArguments(
             Messages.MCP_INVALID_ARGUMENTS.format(
-                reason=f"'mode' must be one of: {', '.join(available_modes())}"
+                reason=Messages.MCP_MODE_INVALID.format(allowed=', '.join(available_modes()))
             )
         )
     return mode
@@ -114,7 +114,7 @@ def _top_argument(value: Any) -> int:
     ):
         raise InvalidToolArguments(
             Messages.MCP_INVALID_ARGUMENTS.format(
-                reason=f"'top' must be an integer between 1 and {MAX_TOP}"
+                reason=Messages.MCP_TOP_INVALID.format(maximum=MAX_TOP)
             )
         )
     return value
@@ -131,8 +131,9 @@ def _content_budget_argument(value: Any) -> int:
         raise InvalidToolArguments(
             Messages.MCP_INVALID_ARGUMENTS.format(
                 reason=(
-                    "'content_budget' must be an integer between "
-                    f"{MIN_CONTENT_BUDGET} and {MAX_CONTENT_BUDGET}"
+                    Messages.MCP_CONTENT_BUDGET_INVALID.format(
+                        minimum=MIN_CONTENT_BUDGET, maximum=MAX_CONTENT_BUDGET
+                    )
                 )
             )
         )
@@ -292,7 +293,7 @@ def build_tool_definitions(default_path: Path) -> list[dict[str, Any]]:
     index_properties["local"] = {
         "type": "boolean",
         "default": False,
-        "description": "Create <path>/.vexor and store this project's index there",
+        "description": Messages.MCP_ARG_LOCAL,
     }
     return [
         {
@@ -378,7 +379,7 @@ class VexorMcpServer:
         """Handle one decoded JSON-RPC message; return a response or None."""
         if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
             return _error_response(
-                None, JSONRPC_INVALID_REQUEST, "Invalid JSON-RPC request."
+                None, JSONRPC_INVALID_REQUEST, Messages.MCP_INVALID_REQUEST
             )
         method = message.get("method")
         has_id = "id" in message
@@ -388,7 +389,7 @@ class VexorMcpServer:
             # frames: answer only when the peer expects a reply.
             if has_id:
                 return _error_response(
-                    request_id, JSONRPC_INVALID_REQUEST, "Invalid JSON-RPC request."
+                    request_id, JSONRPC_INVALID_REQUEST, Messages.MCP_INVALID_REQUEST
                 )
             return None
         try:
@@ -450,7 +451,7 @@ class VexorMcpServer:
             return _error_response(
                 request_id,
                 JSONRPC_INVALID_PARAMS,
-                Messages.MCP_INVALID_ARGUMENTS.format(reason="params must be an object"),
+                Messages.MCP_INVALID_ARGUMENTS.format(reason=Messages.MCP_PARAMS_INVALID),
             )
         name = params.get("name")
         if not isinstance(name, str):
@@ -467,7 +468,7 @@ class VexorMcpServer:
                 request_id,
                 JSONRPC_INVALID_PARAMS,
                 Messages.MCP_INVALID_ARGUMENTS.format(
-                    reason="arguments must be an object"
+                    reason=Messages.MCP_ARGUMENTS_INVALID
                 ),
             )
         handlers = {SEARCH_TOOL: self._tool_search, INDEX_TOOL: self._tool_index}
@@ -488,7 +489,7 @@ class VexorMcpServer:
         raw_path = arguments.get("path")
         if raw_path is not None and not isinstance(raw_path, str):
             raise InvalidToolArguments(
-                Messages.MCP_INVALID_ARGUMENTS.format(reason="'path' must be a string")
+                Messages.MCP_INVALID_ARGUMENTS.format(reason=Messages.MCP_PATH_INVALID)
             )
         if raw_path:
             candidate = Path(raw_path).expanduser()
@@ -520,7 +521,7 @@ class VexorMcpServer:
         if not isinstance(query, str) or not query.strip():
             raise InvalidToolArguments(
                 Messages.MCP_INVALID_ARGUMENTS.format(
-                    reason="'query' must be a non-empty string"
+                    reason=Messages.MCP_QUERY_INVALID
                 )
             )
         top = _top_argument(arguments.get("top"))

@@ -35,7 +35,7 @@ _CUSTOM_TEXT_MODELS: dict[str, dict[str, object]] = {
         "hf": "intfloat/multilingual-e5-small",
         "dim": 384,
         "model_file": "onnx/model.onnx",
-        "description": "Multilingual E5 model for cross-lingual retrieval",
+        "description": Messages.LOCAL_MODEL_DESCRIPTION,
         "license": "MIT",
         "size_in_gb": 0.12,
     },

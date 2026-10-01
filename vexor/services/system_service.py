@@ -52,12 +52,12 @@ def check_command_on_path() -> DoctorCheckResult:
     path = find_command_on_path("vexor")
     if path:
         return DoctorCheckResult(
-            name="Command",
+            name=Messages.DOCTOR_NAME_COMMAND,
             passed=True,
             message=Messages.DOCTOR_CMD_FOUND.format(path=path),
         )
     return DoctorCheckResult(
-        name="Command",
+        name=Messages.DOCTOR_NAME_COMMAND,
         passed=False,
         message=Messages.DOCTOR_CMD_MISSING,
         detail=Messages.DOCTOR_CMD_MISSING_DETAIL,
@@ -75,19 +75,19 @@ def check_config_exists(
     project_exists = project_file is not None and project_file.exists()
     if config_file.exists():
         result = DoctorCheckResult(
-            name="Config",
+            name=Messages.DOCTOR_NAME_CONFIG,
             passed=True,
             message=Messages.DOCTOR_CONFIG_EXISTS.format(path=config_file),
         )
     elif project_exists:
         result = DoctorCheckResult(
-            name="Config",
+            name=Messages.DOCTOR_NAME_CONFIG,
             passed=True,
             message=Messages.DOCTOR_PROJECT_CONFIG_EXISTS.format(path=project_file),
         )
     else:
         result = DoctorCheckResult(
-            name="Config",
+            name=Messages.DOCTOR_NAME_CONFIG,
             passed=True,
             message=(
                 Messages.DOCTOR_CONFIG_NO_GLOBAL
@@ -100,7 +100,7 @@ def check_config_exists(
     if resolution is None:
         return result
 
-    project_label = str(project_file) if project_exists else "none"
+    project_label = str(project_file) if project_exists else Messages.VALUE_NONE
     detail_lines = [Messages.DOCTOR_CONFIG_PROJECT.format(project=project_label)]
     overrides = collect_config_overrides(resolution)
     project_fields = overrides.get(ConfigOrigin.PROJECT)
@@ -128,7 +128,7 @@ def check_api_key_configured(provider: str, api_key: str | None) -> DoctorCheckR
 
     if (provider or "").lower() == "local":
         return DoctorCheckResult(
-            name="API Key",
+            name=Messages.DOCTOR_NAME_API_KEY,
             passed=True,
             message=Messages.DOCTOR_API_KEY_NOT_REQUIRED,
         )
@@ -136,12 +136,12 @@ def check_api_key_configured(provider: str, api_key: str | None) -> DoctorCheckR
     if resolved:
         masked = resolved[:4] + "..." + resolved[-4:] if len(resolved) > 12 else "****"
         return DoctorCheckResult(
-            name="API Key",
+            name=Messages.DOCTOR_NAME_API_KEY,
             passed=True,
             message=Messages.DOCTOR_API_KEY_CONFIGURED.format(masked=masked),
         )
     return DoctorCheckResult(
-        name="API Key",
+        name=Messages.DOCTOR_NAME_API_KEY,
         passed=False,
         message=Messages.DOCTOR_API_KEY_MISSING,
         detail=Messages.DOCTOR_API_KEY_MISSING_DETAIL,
@@ -168,7 +168,7 @@ def check_api_connectivity(
                     import onnxruntime as ort
                 except Exception as exc:
                     return DoctorCheckResult(
-                        name="Local Model",
+                        name=Messages.DOCTOR_NAME_LOCAL_MODEL,
                         passed=False,
                         message=Messages.DOCTOR_LOCAL_CUDA_IMPORT_FAILED,
                         detail=Messages.DOCTOR_LOCAL_CUDA_IMPORT_DETAIL.format(reason=str(exc)),
@@ -177,14 +177,14 @@ def check_api_connectivity(
                     providers = ort.get_available_providers()
                 except Exception as exc:
                     return DoctorCheckResult(
-                        name="Local Model",
+                        name=Messages.DOCTOR_NAME_LOCAL_MODEL,
                         passed=False,
                         message=Messages.DOCTOR_LOCAL_CUDA_MISSING,
                         detail=Messages.DOCTOR_LOCAL_CUDA_IMPORT_DETAIL.format(reason=str(exc)),
                     )
                 if "CUDAExecutionProvider" not in providers:
                     return DoctorCheckResult(
-                        name="Local Model",
+                        name=Messages.DOCTOR_NAME_LOCAL_MODEL,
                         passed=False,
                         message=Messages.DOCTOR_LOCAL_CUDA_MISSING,
                         detail=Messages.DOCTOR_LOCAL_CUDA_MISSING_DETAIL.format(
@@ -196,18 +196,18 @@ def check_api_connectivity(
             result = backend.embed(["test"])
             if result.shape[0] == 1 and result.shape[1] > 0:
                 return DoctorCheckResult(
-                    name="Local Model",
+                    name=Messages.DOCTOR_NAME_LOCAL_MODEL,
                     passed=True,
                     message=Messages.DOCTOR_LOCAL_READY.format(model=model, dim=result.shape[1]),
                 )
             return DoctorCheckResult(
-                name="Local Model",
+                name=Messages.DOCTOR_NAME_LOCAL_MODEL,
                 passed=False,
                 message=Messages.DOCTOR_LOCAL_UNEXPECTED,
             )
         except Exception as exc:
             return DoctorCheckResult(
-                name="Local Model",
+                name=Messages.DOCTOR_NAME_LOCAL_MODEL,
                 passed=False,
                 message=Messages.DOCTOR_LOCAL_FAILED,
                 detail=str(exc),
@@ -216,13 +216,13 @@ def check_api_connectivity(
     if normalized == "custom":
         if not (base_url and base_url.strip()):
             return DoctorCheckResult(
-                name="API Test",
+                name=Messages.DOCTOR_NAME_API_TEST,
                 passed=False,
                 message=Messages.ERROR_CUSTOM_BASE_URL_REQUIRED,
             )
         if not (model and model.strip()):
             return DoctorCheckResult(
-                name="API Test",
+                name=Messages.DOCTOR_NAME_API_TEST,
                 passed=False,
                 message=Messages.ERROR_CUSTOM_MODEL_REQUIRED,
             )
@@ -230,7 +230,7 @@ def check_api_connectivity(
     resolved_key = resolve_api_key(api_key, normalized)
     if not resolved_key:
         return DoctorCheckResult(
-            name="API Test",
+            name=Messages.DOCTOR_NAME_API_TEST,
             passed=False,
             message=Messages.DOCTOR_API_SKIPPED,
         )
@@ -256,18 +256,18 @@ def check_api_connectivity(
         result = backend.embed(["test"])
         if result.shape[0] == 1 and result.shape[1] > 0:
             return DoctorCheckResult(
-                name="API Test",
+                name=Messages.DOCTOR_NAME_API_TEST,
                 passed=True,
                 message=Messages.DOCTOR_API_REACHABLE.format(model=model, dim=result.shape[1]),
             )
         return DoctorCheckResult(
-            name="API Test",
+            name=Messages.DOCTOR_NAME_API_TEST,
             passed=False,
             message=Messages.DOCTOR_API_UNEXPECTED,
         )
     except Exception as exc:
         return DoctorCheckResult(
-            name="API Test",
+            name=Messages.DOCTOR_NAME_API_TEST,
             passed=False,
             message=Messages.DOCTOR_API_FAILED,
             detail=str(exc),
@@ -288,7 +288,7 @@ def check_rerank_configured(
         return None
     if normalized not in SUPPORTED_RERANKERS:
         return DoctorCheckResult(
-            name="Rerank",
+            name=Messages.DOCTOR_NAME_RERANK,
             passed=False,
             message=Messages.ERROR_RERANK_INVALID.format(
                 value=rerank, allowed=", ".join(SUPPORTED_RERANKERS)
@@ -297,37 +297,37 @@ def check_rerank_configured(
     if normalized == "bm25":
         if importlib.util.find_spec("rank_bm25") is None:
             return DoctorCheckResult(
-                name="Rerank",
+                name=Messages.DOCTOR_NAME_RERANK,
                 passed=False,
                 message=Messages.DOCTOR_RERANK_BM25_MISSING,
             )
         return DoctorCheckResult(
-            name="Rerank",
+            name=Messages.DOCTOR_NAME_RERANK,
             passed=True,
             message=Messages.DOCTOR_RERANK_BM25_READY,
         )
     if normalized == "hybrid":
         if importlib.util.find_spec("tokenizers") is None:
             return DoctorCheckResult(
-                name="Rerank",
+                name=Messages.DOCTOR_NAME_RERANK,
                 passed=True,
                 message=Messages.DOCTOR_RERANK_HYBRID_DEGRADED,
             )
         return DoctorCheckResult(
-            name="Rerank",
+            name=Messages.DOCTOR_NAME_RERANK,
             passed=True,
             message=Messages.DOCTOR_RERANK_HYBRID_READY,
         )
     if normalized == "flashrank":
         if importlib.util.find_spec("flashrank") is None:
             return DoctorCheckResult(
-                name="Rerank",
+                name=Messages.DOCTOR_NAME_RERANK,
                 passed=False,
                 message=Messages.DOCTOR_RERANK_FLASHRANK_MISSING,
             )
         model_label = flashrank_model or DEFAULT_FLASHRANK_MODEL
         return DoctorCheckResult(
-            name="Rerank",
+            name=Messages.DOCTOR_NAME_RERANK,
             passed=True,
             message=Messages.DOCTOR_RERANK_FLASHRANK_READY.format(model=model_label),
         )
@@ -335,7 +335,7 @@ def check_rerank_configured(
     # Remote rerank
     if remote_rerank is None:
         return DoctorCheckResult(
-            name="Rerank",
+            name=Messages.DOCTOR_NAME_RERANK,
             passed=False,
             message=Messages.DOCTOR_RERANK_REMOTE_INCOMPLETE,
         )
@@ -344,13 +344,13 @@ def check_rerank_configured(
     model = (remote_rerank.model or "").strip()
     if not (base_url and api_key and model):
         return DoctorCheckResult(
-            name="Rerank",
+            name=Messages.DOCTOR_NAME_RERANK,
             passed=False,
             message=Messages.DOCTOR_RERANK_REMOTE_INCOMPLETE,
         )
     if skip_api_test:
         return DoctorCheckResult(
-            name="Rerank",
+            name=Messages.DOCTOR_NAME_RERANK,
             passed=True,
             message=Messages.DOCTOR_RERANK_REMOTE_SKIPPED.format(model=model),
         )
@@ -368,13 +368,13 @@ def check_rerank_configured(
         )
     except RuntimeError as exc:
         return DoctorCheckResult(
-            name="Rerank",
+            name=Messages.DOCTOR_NAME_RERANK,
             passed=False,
             message=Messages.DOCTOR_RERANK_REMOTE_FAILED,
             detail=str(exc),
         )
     return DoctorCheckResult(
-        name="Rerank",
+        name=Messages.DOCTOR_NAME_RERANK,
         passed=True,
         message=Messages.DOCTOR_RERANK_REMOTE_READY.format(model=model),
     )
@@ -388,13 +388,13 @@ def check_cache_directory() -> DoctorCheckResult:
         try:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             return DoctorCheckResult(
-                name="Cache Dir",
+                name=Messages.DOCTOR_NAME_CACHE_DIR,
                 passed=True,
                 message=Messages.DOCTOR_CACHE_CREATED.format(path=CONFIG_DIR),
             )
         except OSError as exc:
             return DoctorCheckResult(
-                name="Cache Dir",
+                name=Messages.DOCTOR_NAME_CACHE_DIR,
                 passed=False,
                 message=Messages.DOCTOR_CACHE_CANNOT_CREATE.format(path=CONFIG_DIR),
                 detail=str(exc),
@@ -406,13 +406,13 @@ def check_cache_directory() -> DoctorCheckResult:
         test_file.write_text("test", encoding="utf-8")
         test_file.unlink()
         return DoctorCheckResult(
-            name="Cache Dir",
+            name=Messages.DOCTOR_NAME_CACHE_DIR,
             passed=True,
             message=Messages.DOCTOR_CACHE_WRITABLE.format(path=CONFIG_DIR),
         )
     except OSError as exc:
         return DoctorCheckResult(
-            name="Cache Dir",
+            name=Messages.DOCTOR_NAME_CACHE_DIR,
             passed=False,
             message=Messages.DOCTOR_CACHE_NOT_WRITABLE.format(path=CONFIG_DIR),
             detail=str(exc),
@@ -560,7 +560,7 @@ def fetch_pypi_versions(package: str, *, timeout: float = 10.0) -> list[str]:
     try:
         with request.urlopen(url, timeout=timeout) as response:
             if response.status != 200:
-                raise RuntimeError(f"HTTP {response.status}")
+                raise RuntimeError(Messages.ERROR_HTTP_STATUS.format(status=response.status))
             payload = response.read().decode("utf-8")
     except error.URLError as exc:  # pragma: no cover - network error
         raise RuntimeError(str(exc)) from exc
@@ -568,7 +568,7 @@ def fetch_pypi_versions(package: str, *, timeout: float = 10.0) -> list[str]:
     try:
         data = json.loads(payload)
     except json.JSONDecodeError as exc:
-        raise RuntimeError("Invalid PyPI response") from exc
+        raise RuntimeError(Messages.ERROR_UPDATE_RESPONSE_INVALID) from exc
 
     releases = data.get("releases", {})
     versions: list[str] = []
@@ -588,7 +588,7 @@ def select_latest_version(versions: Sequence[str], *, include_prerelease: bool) 
             continue
         parsed_versions.append(parsed)
     if not parsed_versions:
-        raise RuntimeError("No matching versions found")
+        raise RuntimeError(Messages.ERROR_UPDATE_VERSIONS_EMPTY)
     parsed_versions.sort()
     return parsed_versions[-1].raw
 
@@ -910,14 +910,14 @@ def fetch_remote_version(url: str, *, timeout: float = 10.0) -> str:
     try:
         with request.urlopen(url, timeout=timeout) as response:
             if response.status != 200:
-                raise RuntimeError(f"HTTP {response.status}")
+                raise RuntimeError(Messages.ERROR_HTTP_STATUS.format(status=response.status))
             text = response.read().decode("utf-8")
     except error.URLError as exc:  # pragma: no cover - network error
         raise RuntimeError(str(exc)) from exc
 
     match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", text)
     if not match:
-        raise RuntimeError("Version string not found")
+        raise RuntimeError(Messages.ERROR_UPDATE_VERSION_MISSING)
     return match.group(1)
 
 

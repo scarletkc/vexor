@@ -23,6 +23,11 @@ class Messages:
         "integer indices from 0 to the batch size minus one."
     )
     APP_HELP = "Vexor - A semantic search engine for files and code."
+    HELP_SEARCH = "Run the semantic search."
+    HELP_INDEX = "Create or refresh the cached index for the given directory."
+    HELP_CONFIG = "Manage global config and inspect effective project settings."
+    HELP_DOCTOR_COMMAND = "Run diagnostic checks for Vexor installation and configuration."
+    HELP_FEEDBACK_COMMAND = "Open the GitHub issue form for feedback."
     HELP_QUERY = "Text used to semantically match files."
     HELP_SEARCH_PATH = "Root directory whose search will be performed."
     HELP_SEARCH_TOP = "Number of results to display."
@@ -668,3 +673,133 @@ class Messages:
     ERROR_COLLECTION_EMBED_FAILED = (
         "The embedding provider returned no vectors for this batch."
     )
+
+    # Shared validation, diagnostics, and presentation.
+    ERROR_MODULE_ATTRIBUTE_MISSING = "module {module!r} has no attribute {name!r}"
+    ERROR_PATH_NOT_DIRECTORY = "Path is not a directory: {dir_path}"
+    ERROR_CACHE_SCHEMA_RESET = "Schema reset required"
+    ERROR_CACHE_VECTOR_PATH_INVALID = "Invalid cached vector path: {stored_path!r}"
+    ERROR_CACHE_VECTOR_FORMAT = "Cached vector file must use the .npy format: {stored_path!r}"
+    ERROR_CACHE_VECTOR_SHAPE = (
+        "Cached vector file {vector_path} has dtype {dtype} and shape {shape}; "
+        "expected float32 {expected_shape}"
+    )
+    ERROR_CACHE_TABLE_MISSING = "Missing table: {table}"
+    ERROR_CACHE_VECTOR_PATH_ESCAPE = "Cached vector path escapes {vector_dir}: {stored_path!r}"
+    ERROR_CACHE_VECTOR_FILE_INVALID = "Invalid cached vector file: {vector_path}"
+    ERROR_INDEX_EMBEDDINGS_EMPTY = "Indexed embeddings must contain at least one value"
+    ERROR_INDEX_DIMENSION_MISMATCH = (
+        "Embedding dimension mismatch: existing index has {expected}, got {actual}"
+    )
+    ERROR_CACHE_VECTOR_COLUMN_MISSING = "Missing column: index_metadata.vector_file"
+    ERROR_EMBEDDING_DIMENSION_ROW = (
+        "Embedding dimension mismatch at row {row}: expected {expected}, got {actual}"
+    )
+    ERROR_EMBEDDING_DIMENSION_FILE = (
+        "Embedding dimension mismatch for {path}: expected {expected}, got {actual}"
+    )
+    ERROR_CACHE_VECTOR_MISSING = "Missing cached vector for {path} chunk {chunk}"
+    ERROR_CLI_DIMENSIONS_NEGATIVE = "--set-embedding-dimensions must be non-negative, got {value}"
+    INFO_VERSION = "Vexor v{version}"
+    HELP_VERSION = "Show version and exit."
+    VALUE_NOT_CONFIGURED = "not configured"
+    INFO_REMOTE_RERANK_DETAILS = "{url} (model {model}, key {key})"
+    VALUE_UNSET = "unset"
+    VALUE_FROM_ENV = "from env"
+    DOCTOR_NAME_CONFIG_JSON = "Config JSON"
+    ERROR_BROWSER_LAUNCH = "Failed to open your browser for {url}: {reason}"
+    ERROR_PROCESS_EXIT = "exit code {returncode}"
+    ERROR_CONFIG_DIMENSIONS_NEGATIVE = "embedding_dimensions must be non-negative, got {value}"
+    ERROR_CONFIG_DIMENSIONS_INCOMPATIBLE = (
+        "Current embedding_dimensions ({embedding_dimensions}) is incompatible with "
+        "model '{model}'. Clear it with `vexor config --clear-embedding-dimensions` or "
+        "set a supported value."
+    )
+    ERROR_MODE_UNSUPPORTED = "Unsupported mode: {mode}"
+    LOCAL_MODEL_DESCRIPTION = "Multilingual E5 model for cross-lingual retrieval"
+    ERROR_SEARCH_QUERY_EMPTY = "Query text must not be empty"
+    BACKEND_GEMINI = "{model} via Gemini API"
+    BACKEND_LOCAL = "{model} via local model"
+    BACKEND_VOYAGE_AI = "{model} via Voyage AI API"
+    BACKEND_OPENAI_COMPATIBLE = "{model} via OpenAI-compatible API"
+    BACKEND_OPENAI = "{model} via OpenAI API"
+    BACKEND_CUSTOM = "Custom embedding backend"
+    ERROR_FRESHNESS_MAX_REUSES = "max_reuses must be non-negative"
+    ERROR_FRESHNESS_MAX_AGE = "max_age_seconds must be positive"
+    ERROR_FRESHNESS_MAX_VALIDATIONS = "max_validations must be positive"
+    ERROR_FRESHNESS_CLOSED = "Freshness tracker is closed"
+    ERROR_INDEX_DIMENSION_MISMATCH_REBUILD = (
+        "Embedding dimension mismatch: existing index has {expected}-dim vectors, but "
+        "new embeddings are {actual}-dim. This typically happens when "
+        "embedding_dimensions config was changed. Clear the index and rebuild: vexor "
+        "index --clear {directory}"
+    )
+    INIT_STEP_HEADER = "[bold cyan]Step {step_num}:[/bold cyan] [bold]{title}[/bold]"
+    INIT_ACTION_ALIAS = "writing shell alias"
+    INIT_ACTION_SKILLS = "installing skills"
+    INIT_ACTION_DOCTOR = "running doctor checks"
+    INIT_ACTION_LOCAL_MODEL = "downloading local model"
+    INIT_ACTION_FLASHRANK_INSTALL = "installing extras (flashrank)"
+    INIT_ACTION_FLASHRANK_DOWNLOAD = "downloading FlashRank model"
+    INIT_ACTION_EXTRAS = "installing extras ({extras})"
+    MCP_ARG_LOCAL = "Create <path>/.vexor and store this project's index there"
+    MCP_STRING_LIST_INVALID = "'{field}' must be a list of strings"
+    MCP_BOOLEAN_INVALID = "'{field}' must be a boolean"
+    MCP_INVALID_REQUEST = "Invalid JSON-RPC request."
+    MCP_MODE_INVALID = "'mode' must be one of: {allowed}"
+    MCP_TOP_INVALID = "'top' must be an integer between 1 and {maximum}"
+    MCP_CONTENT_BUDGET_INVALID = (
+        "'content_budget' must be an integer between {minimum} and {maximum}"
+    )
+    MCP_PARAMS_INVALID = "params must be an object"
+    MCP_ARGUMENTS_INVALID = "arguments must be an object"
+    MCP_PATH_INVALID = "'path' must be a string"
+    MCP_QUERY_INVALID = "'query' must be a non-empty string"
+    ERROR_RERANK_SCORE_COUNT = (
+        "rerank documents and base scores must line up: got {documents} documents and "
+        "{scores} scores"
+    )
+    ERROR_REMOTE_RERANK_JSON_INVALID = "Invalid JSON response"
+    ERROR_SEARCH_DIMENSION_MISMATCH = (
+        "Embedding dimension mismatch: index has {index_dimension}-dim vectors, but "
+        "query embedding is {query_dimension}-dim. This typically happens when "
+        "embedding_dimensions was changed after building the index. Rebuild the index "
+        "with: vexor index {directory}"
+    )
+    ERROR_SEARCH_DIMENSION_MISMATCH_REBUILD = (
+        "Embedding dimension mismatch: index has {index_dimension}-dim vectors, but "
+        "query embedding is {query_dimension}-dim. Rebuild the index with: vexor index "
+        "{directory}"
+    )
+    ERROR_CACHE_DIMENSION_MISMATCH = (
+        "Cached index has dimension {cached_dimension}, but requested "
+        "{requested_dimension}"
+    )
+    ERROR_SKILL_BUNDLE_MISSING = (
+        "Unable to locate bundled skill '{skill_name}'. Reinstall Vexor from PyPI or "
+        "run from the source repository."
+    )
+    ERROR_SKILL_TARGET_MISSING = "Missing --skills target."
+    ERROR_SKILL_TARGET_UNKNOWN = "Unknown --skills target '{part}'. Allowed: {allowed}."
+    ERROR_UPDATE_VERSIONS_EMPTY = "No matching versions found"
+    ERROR_UPDATE_VERSION_MISSING = "Version string not found"
+    ERROR_UPDATE_RESPONSE_INVALID = "Invalid PyPI response"
+    DOCTOR_NAME_COMMAND = "Command"
+    DOCTOR_NAME_API_KEY = "API Key"
+    DOCTOR_NAME_RERANK = "Rerank"
+    ERROR_HTTP_STATUS = "HTTP {status}"
+    DOCTOR_NAME_CONFIG = "Config"
+    DOCTOR_NAME_API_TEST = "API Test"
+    DOCTOR_NAME_CACHE_DIR = "Cache Dir"
+    DOCTOR_NAME_LOCAL_MODEL = "Local Model"
+    ERROR_DIRECTORY_MISSING = "Directory does not exist: {dir_path}"
+    ERROR_POSITIVE_REQUIRED = "{name} must be greater than 0"
+    HELP_INSTALL_COMMAND = "Install Vexor Agent Skills for AI assistants."
+    HELP_UPDATE_COMMAND = "Check whether a newer release is available online."
+    VALUE_YES = "yes"
+    VALUE_NO = "no"
+    VALUE_ENABLED = "enabled"
+    VALUE_DISABLED = "disabled"
+    VALUE_NONE = "none"
+    VALUE_AUTO = "auto"
+    VALUE_ALL = "all"

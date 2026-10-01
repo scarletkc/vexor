@@ -6,6 +6,8 @@ import os
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from .text import Messages
+
 GITIGNORE_FILENAME = ".gitignore"
 VEXORIGNORE_FILENAME = ".vexorignore"
 
@@ -14,9 +16,9 @@ def resolve_directory(path: Path | str) -> Path:
     """Resolve and validate a user supplied directory path."""
     dir_path = Path(path).expanduser().resolve()
     if not dir_path.exists():
-        raise FileNotFoundError(f"Directory does not exist: {dir_path}")
+        raise FileNotFoundError(Messages.ERROR_DIRECTORY_MISSING.format(dir_path=dir_path))
     if not dir_path.is_dir():
-        raise NotADirectoryError(f"Path is not a directory: {dir_path}")
+        raise NotADirectoryError(Messages.ERROR_PATH_NOT_DIRECTORY.format(dir_path=dir_path))
     return dir_path
 
 
@@ -378,5 +380,5 @@ def format_path(path: Path, base: Path | None = None) -> str:
 def ensure_positive(value: int, name: str) -> int:
     """Validate that *value* is positive."""
     if value <= 0:
-        raise ValueError(f"{name} must be greater than 0")
+        raise ValueError(Messages.ERROR_POSITIVE_REQUIRED.format(name=name))
     return value

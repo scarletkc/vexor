@@ -123,7 +123,7 @@ def _print_welcome_banner() -> None:
 
 def _print_step_header(step_num: str, title: str) -> None:
     """Print a styled step header."""
-    console.print(f"[bold cyan]Step {step_num}:[/bold cyan] [bold]{title}[/bold]")
+    console.print(Messages.INIT_STEP_HEADER.format(step_num=step_num, title=title))
 
 
 def _print_option(key: str, name: str, desc: str) -> None:
@@ -361,7 +361,7 @@ def _prompt_alias_setup(*, dry_run: bool) -> None:
         console.print()
         return
     if dry_run:
-        _note_dry_run("writing shell alias")
+        _note_dry_run(Messages.INIT_ACTION_ALIAS)
         console.print()
         return
     shell_name = shell_service.detect_shell_name()
@@ -412,7 +412,7 @@ def _prompt_skill_install(*, dry_run: bool) -> None:
         console.print()
         return
     if dry_run:
-        _note_dry_run("installing skills")
+        _note_dry_run(Messages.INIT_ACTION_SKILLS)
         console.print()
         return
     console.print(f"  [bold]{Messages.INIT_STEP_SKILLS_TARGET}[/bold]")
@@ -447,7 +447,7 @@ def _prompt_doctor_check(*, dry_run: bool) -> None:
         console.print()
         return
     if dry_run:
-        _note_dry_run("running doctor checks")
+        _note_dry_run(Messages.INIT_ACTION_DOCTOR)
         console.print()
         return
     _run_doctor_checks()
@@ -464,7 +464,7 @@ def _run_doctor_checks() -> None:
     except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
         config = config_module.Config()
         config_load_error = DoctorCheckResult(
-            name="Config JSON",
+            name=Messages.DOCTOR_NAME_CONFIG_JSON,
             passed=False,
             message=Messages.DOCTOR_CONFIG_INVALID.format(path=config_module.CONFIG_FILE),
             detail=str(exc),
@@ -669,7 +669,7 @@ def _is_flashrank_available() -> bool:
 
 def _prepare_local_model(model: str, use_cuda: bool, *, dry_run: bool) -> bool:
     if dry_run:
-        _note_dry_run("downloading local model")
+        _note_dry_run(Messages.INIT_ACTION_LOCAL_MODEL)
         return True
     console.print(
         _styled(Messages.INFO_LOCAL_SETUP_START.format(model=model), Styles.INFO)
@@ -694,7 +694,7 @@ def _ensure_flashrank_available(*, dry_run: bool) -> bool:
         return True
     console.print(_styled(Messages.INIT_FLASHRANK_MISSING, Styles.WARNING))
     if dry_run:
-        _note_dry_run("installing extras (flashrank)")
+        _note_dry_run(Messages.INIT_ACTION_FLASHRANK_INSTALL)
         return True
     if not typer.confirm(Messages.INIT_CONFIRM_INSTALL_FLASHRANK, default=True):
         return False
@@ -707,7 +707,7 @@ def _maybe_prepare_flashrank_model(*, dry_run: bool) -> None:
     if not typer.confirm(Messages.INIT_CONFIRM_FLASHRANK_DOWNLOAD, default=True):
         return
     if dry_run:
-        _note_dry_run("downloading FlashRank model")
+        _note_dry_run(Messages.INIT_ACTION_FLASHRANK_DOWNLOAD)
         return
     console.print(_styled(Messages.INFO_FLASHRANK_SETUP_START, Styles.INFO))
     try:
@@ -720,7 +720,7 @@ def _maybe_prepare_flashrank_model(*, dry_run: bool) -> None:
 
 def _install_extras(extras: str, *, dry_run: bool) -> bool:
     if dry_run:
-        _note_dry_run(f"installing extras ({extras})")
+        _note_dry_run(Messages.INIT_ACTION_EXTRAS.format(extras=extras))
         return True
     install_info = detect_install_method()
     if install_info.method == InstallMethod.STANDALONE:

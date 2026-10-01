@@ -68,7 +68,11 @@ def __getattr__(name: str) -> Any:
     """Load the public Python API only when an exported object is requested."""
 
     if name not in _API_EXPORTS:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        from .text import Messages
+
+        raise AttributeError(
+            Messages.ERROR_MODULE_ATTRIBUTE_MISSING.format(module=__name__, name=name)
+        )
     from . import api
 
     value = getattr(api, name)

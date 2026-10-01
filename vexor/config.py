@@ -233,7 +233,7 @@ def config_dir_context(path: Path | str | None):
         return
     dir_path = Path(path).expanduser().resolve()
     if dir_path.exists() and not dir_path.is_dir():
-        raise NotADirectoryError(f"Path is not a directory: {dir_path}")
+        raise NotADirectoryError(Messages.ERROR_PATH_NOT_DIRECTORY.format(dir_path=dir_path))
     token = _CONFIG_DIR_OVERRIDE.set(dir_path)
     try:
         yield
@@ -527,7 +527,7 @@ def set_config_dir(path: Path | str | None) -> None:
     else:
         dir_path = Path(path).expanduser().resolve()
         if dir_path.exists() and not dir_path.is_dir():
-            raise NotADirectoryError(f"Path is not a directory: {dir_path}")
+            raise NotADirectoryError(Messages.ERROR_PATH_NOT_DIRECTORY.format(dir_path=dir_path))
         CONFIG_DIR = dir_path
     CONFIG_FILE = CONFIG_DIR / "config.json"
 
@@ -659,7 +659,7 @@ def set_embedding_dimensions(
 
     # Reject negative values explicitly
     if value is not None and value < 0:
-        raise ValueError(f"embedding_dimensions must be non-negative, got {value}")
+        raise ValueError(Messages.ERROR_CONFIG_DIMENSIONS_NEGATIVE.format(value=value))
 
     # Treat 0 and None as "clear"
     if not value or value <= 0:
@@ -734,9 +734,9 @@ def _validate_config_embedding_dimensions(config: Config) -> None:
         )
     except ValueError as exc:
         raise ValueError(
-            f"Current embedding_dimensions ({config.embedding_dimensions}) is incompatible with "
-            f"model '{effective_model}'. Clear it with "
-            "`vexor config --clear-embedding-dimensions` or set a supported value."
+            Messages.ERROR_CONFIG_DIMENSIONS_INCOMPATIBLE.format(
+                embedding_dimensions=config.embedding_dimensions, model=effective_model
+            )
         ) from exc
 
 

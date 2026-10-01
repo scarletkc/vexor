@@ -77,7 +77,7 @@ class VexorSearcher:
         )
         if backend is not None:
             self._backend = backend
-            self._device = getattr(backend, "device", "Custom embedding backend")
+            self._device = getattr(backend, "device", Messages.BACKEND_CUSTOM)
         else:
             self._backend = self._create_backend()
 
@@ -107,7 +107,7 @@ class VexorSearcher:
         """Return the *top_k* most similar files for *query*."""
         clean_query = query.strip()
         if not clean_query:
-            raise ValueError("Query text must not be empty")
+            raise ValueError(Messages.ERROR_SEARCH_QUERY_EMPTY)
         if not files:
             return []
         file_labels = [self._prepare_text(path) for path in files]
@@ -132,7 +132,7 @@ class VexorSearcher:
         if self.provider == "gemini":
             from .providers.gemini import GeminiEmbeddingBackend
 
-            self._device = f"{self.model_name} via Gemini API"
+            self._device = Messages.BACKEND_GEMINI.format(model=self.model_name)
             return GeminiEmbeddingBackend(
                 model_name=self.model_name,
                 chunk_size=self.batch_size,
@@ -143,7 +143,7 @@ class VexorSearcher:
         if self.provider == "local":
             from .providers.local import LocalEmbeddingBackend
 
-            self._device = f"{self.model_name} via local model"
+            self._device = Messages.BACKEND_LOCAL.format(model=self.model_name)
             return LocalEmbeddingBackend(
                 model_name=self.model_name,
                 chunk_size=self.batch_size,
@@ -153,7 +153,7 @@ class VexorSearcher:
         if self.provider == "voyageai":
             from .providers.openai import OpenAIEmbeddingBackend
 
-            self._device = f"{self.model_name} via Voyage AI API"
+            self._device = Messages.BACKEND_VOYAGE_AI.format(model=self.model_name)
             return OpenAIEmbeddingBackend(
                 model_name=self.model_name,
                 chunk_size=self.batch_size,
@@ -170,7 +170,7 @@ class VexorSearcher:
                 raise RuntimeError(Messages.ERROR_CUSTOM_BASE_URL_REQUIRED)
             if not self.model_name or not self.model_name.strip():
                 raise RuntimeError(Messages.ERROR_CUSTOM_MODEL_REQUIRED)
-            self._device = f"{self.model_name} via OpenAI-compatible API"
+            self._device = Messages.BACKEND_OPENAI_COMPATIBLE.format(model=self.model_name)
             return OpenAIEmbeddingBackend(
                 model_name=self.model_name,
                 chunk_size=self.batch_size,
@@ -182,7 +182,7 @@ class VexorSearcher:
         if self.provider == "openai":
             from .providers.openai import OpenAIEmbeddingBackend
 
-            self._device = f"{self.model_name} via OpenAI API"
+            self._device = Messages.BACKEND_OPENAI.format(model=self.model_name)
             return OpenAIEmbeddingBackend(
                 model_name=self.model_name,
                 chunk_size=self.batch_size,

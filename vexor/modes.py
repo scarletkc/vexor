@@ -20,6 +20,7 @@ from .services.keyword_service import (
     BRIEF_KEYWORD_LIMIT,
     summarize_keywords,
 )
+from .text import Messages
 from .text_chunks import chunk_text
 
 PREVIEW_CHAR_LIMIT = 160
@@ -323,7 +324,7 @@ def get_strategy(mode: str) -> IndexModeStrategy:
     try:
         return _STRATEGIES[mode]
     except KeyError as exc:
-        raise ValueError(f"Unsupported mode: {mode}") from exc
+        raise ValueError(Messages.ERROR_MODE_UNSUPPORTED.format(mode=mode)) from exc
 
 
 def available_modes() -> list[str]:

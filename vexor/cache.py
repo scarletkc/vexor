@@ -18,6 +18,7 @@ from threading import Lock
 import numpy as np
 
 from .sqlite_util import chunk_values, connect
+from .text import Messages
 from .utils import collect_files
 
 DEFAULT_CACHE_DIR = Path(os.path.expanduser("~")) / ".vexor"
@@ -269,7 +270,7 @@ def cache_dir_context(path: Path | str | None):
         return
     dir_path = Path(path).expanduser().resolve()
     if dir_path.exists() and not dir_path.is_dir():
-        raise NotADirectoryError(f"Path is not a directory: {dir_path}")
+        raise NotADirectoryError(Messages.ERROR_PATH_NOT_DIRECTORY.format(dir_path=dir_path))
     token = _CACHE_DIR_OVERRIDE.set(dir_path)
     try:
         yield
@@ -353,7 +354,7 @@ def set_cache_dir(path: Path | str | None) -> None:
         return
     dir_path = Path(path).expanduser().resolve()
     if dir_path.exists() and not dir_path.is_dir():
-        raise NotADirectoryError(f"Path is not a directory: {dir_path}")
+        raise NotADirectoryError(Messages.ERROR_PATH_NOT_DIRECTORY.format(dir_path=dir_path))
     CACHE_DIR = dir_path
 
 
@@ -381,10 +382,10 @@ def _ensure_schema_readonly(
     tables: Sequence[str],
 ) -> None:
     if _schema_needs_reset(conn):
-        raise sqlite3.OperationalError("Schema reset required")
+        raise sqlite3.OperationalError(Messages.ERROR_CACHE_SCHEMA_RESET)
     for table in tables:
         if not _table_exists(conn, table):
-            raise sqlite3.OperationalError(f"Missing table: {table}")
+            raise sqlite3.OperationalError(Messages.ERROR_CACHE_TABLE_MISSING.format(table=table))
 
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
@@ -554,15 +555,19 @@ def _vector_directory(db_path: Path) -> Path:
 def _resolve_vector_file(db_path: Path, stored_path: str) -> Path:
     relative = Path(stored_path)
     if not stored_path or relative.is_absolute() or ".." in relative.parts:
-        raise RuntimeError(f"Invalid cached vector path: {stored_path!r}")
+        raise RuntimeError(Messages.ERROR_CACHE_VECTOR_PATH_INVALID.format(stored_path=stored_path))
     vector_dir = _vector_directory(db_path).resolve()
     candidate = (db_path.parent / relative).resolve()
     try:
         candidate.relative_to(vector_dir)
     except ValueError as exc:
-        raise RuntimeError(f"Cached vector path escapes {vector_dir}: {stored_path!r}") from exc
+        raise RuntimeError(
+            Messages.ERROR_CACHE_VECTOR_PATH_ESCAPE.format(
+                vector_dir=vector_dir, stored_path=stored_path
+            )
+        ) from exc
     if candidate.suffix.lower() != ".npy":
-        raise RuntimeError(f"Cached vector file must use the .npy format: {stored_path!r}")
+        raise RuntimeError(Messages.ERROR_CACHE_VECTOR_FORMAT.format(stored_path=stored_path))
     return candidate
 
 
@@ -588,8 +593,9 @@ def _write_vector_file(
                 array = np.asarray(vector, dtype=np.float32).ravel()
                 if array.size != dimension:
                     raise ValueError(
-                        f"Embedding dimension mismatch at row {row}: "
-                        f"expected {dimension}, got {array.size}"
+                        Messages.ERROR_EMBEDDING_DIMENSION_ROW.format(
+                            row=row, expected=dimension, actual=array.size
+                        )
                     )
                 mapped[row] = array
             mapped.flush()
@@ -622,12 +628,18 @@ def _load_vector_file(
         mmap_mode = None if rows == 0 else "r"
         vectors = np.load(vector_path, mmap_mode=mmap_mode, allow_pickle=False)
     except (OSError, ValueError) as exc:
-        raise RuntimeError(f"Invalid cached vector file: {vector_path}") from exc
+        raise RuntimeError(
+            Messages.ERROR_CACHE_VECTOR_FILE_INVALID.format(vector_path=vector_path)
+        ) from exc
     expected_shape = (rows, dimension)
     if vectors.dtype != np.float32 or vectors.shape != expected_shape:
         raise RuntimeError(
-            f"Cached vector file {vector_path} has dtype {vectors.dtype} and shape "
-            f"{vectors.shape}; expected float32 {expected_shape}"
+            Messages.ERROR_CACHE_VECTOR_SHAPE.format(
+                vector_path=vector_path,
+                dtype=vectors.dtype,
+                shape=vectors.shape,
+                expected_shape=expected_shape,
+            )
         )
     return vectors
 
@@ -780,7 +792,7 @@ def store_index(
             np.asarray(entries[0].embedding, dtype=np.float32).size if entries else 0
         )
         if entries and dimension <= 0:
-            raise ValueError("Indexed embeddings must contain at least one value")
+            raise ValueError(Messages.ERROR_INDEX_EMBEDDINGS_EMPTY)
         vector_file = _write_vector_file(
             db_path,
             [entry.embedding for entry in entries],
@@ -932,15 +944,17 @@ def apply_index_updates(
                     vector_dimension = int(vector.size)
                 if vector.size != vector_dimension:
                     raise ValueError(
-                        f"Embedding dimension mismatch for {entry.rel_path}: "
-                        f"expected {vector_dimension}, got {vector.size}"
+                        Messages.ERROR_EMBEDDING_DIMENSION_FILE.format(
+                            path=entry.rel_path, expected=vector_dimension, actual=vector.size
+                        )
                     )
                 changed_vectors[(entry.rel_path, entry.chunk_index)] = vector
 
             if existing_dimension and vector_dimension != existing_dimension:
                 raise ValueError(
-                    f"Embedding dimension mismatch: existing index has "
-                    f"{existing_dimension}, got {vector_dimension}"
+                    Messages.ERROR_INDEX_DIMENSION_MISMATCH.format(
+                        expected=existing_dimension, actual=vector_dimension
+                    )
                 )
             if ordered_entries or removed_rel_paths or changed_entries:
                 final_keys = list(ordered_entries)
@@ -953,7 +967,9 @@ def apply_index_updates(
                     position = existing_positions.get(entry_key)
                     if position is None:
                         raise RuntimeError(
-                            f"Missing cached vector for {entry_key[0]} chunk {entry_key[1]}"
+                            Messages.ERROR_CACHE_VECTOR_MISSING.format(
+                                path=entry_key[0], chunk=entry_key[1]
+                            )
                         )
                     vector = existing_vectors[position]
                 final_vectors.append(vector)
@@ -1354,7 +1370,7 @@ def load_index_vectors(
                 ),
             )
             if not _column_exists(conn, "index_metadata", "vector_file"):
-                raise sqlite3.OperationalError("Missing column: index_metadata.vector_file")
+                raise sqlite3.OperationalError(Messages.ERROR_CACHE_VECTOR_COLUMN_MISSING)
         except sqlite3.OperationalError as exc:
             raise FileNotFoundError(db_path) from exc
         key = _cache_key(

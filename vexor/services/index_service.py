@@ -22,6 +22,7 @@ from ..config import (
     DEFAULT_EXTRACT_CONCURRENCY,
 )
 from ..modes import ModePayload, get_strategy
+from ..text import Messages
 from .cache_service import load_index_metadata_safe
 from .content_extract_service import TEXT_EXTENSIONS
 from .embedding_service import embed_texts_with_cache
@@ -672,11 +673,9 @@ def _apply_incremental_update(
             new_dimension = embeddings.shape[1] if embeddings.ndim == 2 else 0
             if new_dimension != cached_index_dimension:
                 raise ValueError(
-                    f"Embedding dimension mismatch: existing index has "
-                    f"{cached_index_dimension}-dim vectors, "
-                    f"but new embeddings are {new_dimension}-dim. "
-                    f"This typically happens when embedding_dimensions config was changed. "
-                    f"Clear the index and rebuild: vexor index --clear {directory}"
+                    Messages.ERROR_INDEX_DIMENSION_MISMATCH_REBUILD.format(
+                        expected=cached_index_dimension, actual=new_dimension, directory=directory
+                    )
                 )
 
         changed_entries = _build_index_entries(

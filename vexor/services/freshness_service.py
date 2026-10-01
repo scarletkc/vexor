@@ -10,6 +10,8 @@ from pathlib import Path
 from threading import Event, Lock
 from time import monotonic
 
+from ..text import Messages
+
 _MUTATION_EVENTS = {"created", "deleted", "modified", "moved"}
 DEFAULT_MAX_REUSES = 32
 DEFAULT_MAX_AGE_SECONDS = 5.0
@@ -72,11 +74,11 @@ class FreshnessTracker:
         clock: Callable[[], float] = monotonic,
     ) -> None:
         if max_reuses < 0:
-            raise ValueError("max_reuses must be non-negative")
+            raise ValueError(Messages.ERROR_FRESHNESS_MAX_REUSES)
         if max_age_seconds <= 0:
-            raise ValueError("max_age_seconds must be positive")
+            raise ValueError(Messages.ERROR_FRESHNESS_MAX_AGE)
         if max_validations <= 0:
-            raise ValueError("max_validations must be positive")
+            raise ValueError(Messages.ERROR_FRESHNESS_MAX_VALIDATIONS)
         self._observer_factory = observer_factory
         self._observer = None
         self._observer_lock = Lock()
@@ -128,7 +130,7 @@ class FreshnessTracker:
         resolved = root.resolve()
         with self._lock:
             if self._closed:
-                raise RuntimeError("Freshness tracker is closed")
+                raise RuntimeError(Messages.ERROR_FRESHNESS_CLOSED)
             if (
                 self._watching_unavailable.is_set()
                 or resolved in self._disabled_roots
@@ -160,7 +162,7 @@ class FreshnessTracker:
             # dispatcher invokes handlers while holding watchdog's own lock.
             with self._observer_lock:
                 if self._closed_event.is_set():
-                    raise RuntimeError("Freshness tracker is closed")
+                    raise RuntimeError(Messages.ERROR_FRESHNESS_CLOSED)
                 if self._watching_unavailable.is_set():
                     raise _WatchingUnavailable
                 if self._observer is None:
@@ -199,7 +201,7 @@ class FreshnessTracker:
         with self._lock:
             self._pending_roots.discard(resolved)
             if self._closed:
-                raise RuntimeError("Freshness tracker is closed")
+                raise RuntimeError(Messages.ERROR_FRESHNESS_CLOSED)
             self._versions.setdefault(resolved, 0)
         return resolved
 

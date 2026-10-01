@@ -182,7 +182,7 @@ class SearchOutputFormat(str, Enum):
 
 def _version_callback(value: bool) -> None:
     if value:
-        console.print(f"Vexor v{__version__}")
+        console.print(Messages.INFO_VERSION.format(version=__version__))
         raise typer.Exit()
 
 
@@ -218,13 +218,13 @@ def _load_config_or_exit(directory: Path | str | None = None) -> config_module.C
 
 def _format_extensions_display(values: Sequence[str] | None) -> str:
     if not values:
-        return "all"
+        return Messages.VALUE_ALL
     return ", ".join(values)
 
 
 def _format_patterns_display(values: Sequence[str] | None) -> str:
     if not values:
-        return "none"
+        return Messages.VALUE_NONE
     return ", ".join(values)
 
 
@@ -236,14 +236,14 @@ def main(
         "-v",
         callback=_version_callback,
         is_eager=True,
-        help="Show version and exit.",
+        help=Messages.HELP_VERSION,
     )
 ) -> None:
     """Global Typer callback for shared options."""
     return None
 
 
-@app.command()
+@app.command(help=Messages.HELP_SEARCH)
 def search(
     query: str = typer.Argument(..., help=Messages.HELP_QUERY),
     path: Path = typer.Option(
@@ -421,7 +421,7 @@ def search(
     )
 
 
-@app.command()
+@app.command(help=Messages.HELP_INDEX)
 def index(
     path: Path = typer.Option(
         Path("."),
@@ -537,9 +537,11 @@ def index(
         summary = Messages.INFO_INDEX_SHOW_SUMMARY.format(
             mode=metadata.get("mode"),
             model=metadata.get("model"),
-            hidden="yes" if metadata.get("include_hidden") else "no",
-            recursive="yes" if metadata.get("recursive") else "no",
-            gitignore="yes" if metadata.get("respect_gitignore", True) else "no",
+            hidden=Messages.VALUE_YES if metadata.get("include_hidden") else Messages.VALUE_NO,
+            recursive=Messages.VALUE_YES if metadata.get("recursive") else Messages.VALUE_NO,
+            gitignore=Messages.VALUE_YES
+            if metadata.get("respect_gitignore", True)
+            else Messages.VALUE_NO,
             exclude_patterns=_format_patterns_display(metadata.get("exclude_patterns")),
             extensions=_format_extensions_display(metadata.get("extensions")),
             files=len(files),
@@ -633,7 +635,7 @@ def init(
     run_init_wizard(dry_run=dry)
 
 
-@app.command()
+@app.command(help=Messages.HELP_CONFIG)
 def config(
     set_api_key_option: str | None = typer.Option(
         None,
@@ -939,8 +941,7 @@ def config(
     if effective_embedding_dimensions is not None:
         if effective_embedding_dimensions < 0:
             raise typer.BadParameter(
-                "--set-embedding-dimensions must be non-negative, got "
-                f"{effective_embedding_dimensions}"
+                Messages.ERROR_CLI_DIMENSIONS_NEGATIVE.format(value=effective_embedding_dimensions)
             )
         if effective_embedding_dimensions > 0:
             # Resolve effective model from provider + model to account for provider defaults
@@ -1021,7 +1022,7 @@ def config(
     if updates.base_url_cleared and clear_base_url:
         console.print(_styled(Messages.INFO_BASE_URL_CLEARED, Styles.SUCCESS))
     if updates.auto_index_set and auto_index is not None:
-        state = "enabled" if auto_index else "disabled"
+        state = Messages.VALUE_ENABLED if auto_index else Messages.VALUE_DISABLED
         console.print(_styled(Messages.INFO_AUTO_INDEX_SET.format(value=state), Styles.SUCCESS))
     if updates.rerank_set and set_rerank_option is not None:
         console.print(
@@ -1087,7 +1088,7 @@ def config(
     if updates.embedding_dimensions_cleared:
         console.print(_styled(Messages.INFO_EMBEDDING_DIMENSIONS_CLEARED, Styles.SUCCESS))
     if updates.update_check_set and update_check is not None:
-        state = "enabled" if update_check else "disabled"
+        state = Messages.VALUE_ENABLED if update_check else Messages.VALUE_DISABLED
         console.print(
             _styled(Messages.INFO_UPDATE_CHECK_SET.format(value=state), Styles.SUCCESS)
         )
@@ -1173,24 +1174,26 @@ def config(
         if rerank == "remote":
             remote_cfg = cfg.remote_rerank
             if remote_cfg is None:
-                remote_label = "not configured"
+                remote_label = Messages.VALUE_NOT_CONFIGURED
             else:
-                url_label = remote_cfg.base_url or "unset"
-                model_label = remote_cfg.model or "unset"
+                url_label = remote_cfg.base_url or Messages.VALUE_UNSET
+                model_label = remote_cfg.model or Messages.VALUE_UNSET
                 if (
                     resolution.origin_for("remote_rerank.api_key")
                     is config_module.ConfigOrigin.ENVIRONMENT
                 ):
-                    key_label = "from env"
+                    key_label = Messages.VALUE_FROM_ENV
                 else:
-                    key_label = "yes" if remote_cfg.api_key else "no"
-                remote_label = f"{url_label} (model {model_label}, key {key_label})"
+                    key_label = Messages.VALUE_YES if remote_cfg.api_key else Messages.VALUE_NO
+                remote_label = Messages.INFO_REMOTE_RERANK_DETAILS.format(
+                    url=url_label, model=model_label, key=key_label
+                )
             remote_rerank_summary = Messages.INFO_REMOTE_RERANK_SUMMARY.format(
                 value=remote_label,
                 origin=origins["remote_rerank"],
             )
             remote_rerank_line = f"{remote_rerank_summary}\n"
-        embedding_dimensions = cfg.embedding_dimensions or "auto"
+        embedding_dimensions = cfg.embedding_dimensions or Messages.VALUE_AUTO
         batch_size = (
             cfg.batch_size
             if cfg.batch_size is not None
@@ -1203,7 +1206,7 @@ def config(
         console.print(
             _styled(
                 Messages.INFO_CONFIG_SUMMARY.format(
-                    api="yes" if effective_api_key else "no",
+                    api=Messages.VALUE_YES if effective_api_key else Messages.VALUE_NO,
                     provider=provider,
                     model=resolve_default_model(provider, cfg.model),
                     embedding_dimensions=embedding_dimensions,
@@ -1211,13 +1214,13 @@ def config(
                     concurrency=cfg.embed_concurrency,
                     extract_concurrency=cfg.extract_concurrency,
                     extract_backend=cfg.extract_backend,
-                    auto_index="yes" if cfg.auto_index else "no",
-                    update_check="yes" if cfg.update_check else "no",
+                    auto_index=Messages.VALUE_YES if cfg.auto_index else Messages.VALUE_NO,
+                    update_check=Messages.VALUE_YES if cfg.update_check else Messages.VALUE_NO,
                     rerank=rerank,
                     flashrank_line=flashrank_line,
                     remote_rerank_line=remote_rerank_line,
-                    local_cuda="yes" if cfg.local_cuda else "no",
-                    base_url=cfg.base_url or "none",
+                    local_cuda=Messages.VALUE_YES if cfg.local_cuda else Messages.VALUE_NO,
+                    base_url=cfg.base_url or Messages.VALUE_NONE,
                     api_origin=api_origin,
                     provider_origin=origins["provider"],
                     model_origin=origins["model"],
@@ -1265,9 +1268,11 @@ def config(
                     str(entry["root_path"]),
                     str(entry["mode"]),
                     str(entry["model"]),
-                    "yes" if entry["include_hidden"] else "no",
-                    "yes" if entry["recursive"] else "no",
-                    "yes" if entry.get("respect_gitignore", True) else "no",
+                    Messages.VALUE_YES if entry["include_hidden"] else Messages.VALUE_NO,
+                    Messages.VALUE_YES if entry["recursive"] else Messages.VALUE_NO,
+                    Messages.VALUE_YES
+                    if entry.get("respect_gitignore", True)
+                    else Messages.VALUE_NO,
                     _format_patterns_display(entry.get("exclude_patterns")),
                     _format_extensions_display(entry.get("extensions")),
                     str(entry["file_count"]),
@@ -1394,7 +1399,7 @@ def local(
             console.print(
                 _styled(
                     Messages.DOCTOR_LOCAL_CUDA_MISSING_DETAIL.format(
-                        providers=", ".join(providers) if providers else "none"
+                        providers=", ".join(providers) if providers else Messages.VALUE_NONE
                     ),
                     Styles.ERROR,
                 )
@@ -1428,7 +1433,7 @@ def local(
     console.print(_styled(Messages.INFO_LOCAL_SETUP_DONE.format(model=clean_model), Styles.SUCCESS))
 
 
-@app.command()
+@app.command(help=Messages.HELP_INSTALL_COMMAND)
 def install(
     skills: str = typer.Option(
         ...,
@@ -1507,7 +1512,7 @@ def mcp(
     serve_stdio(default_path=path)
 
 
-@app.command()
+@app.command(help=Messages.HELP_DOCTOR_COMMAND)
 def doctor(
     skip_api_test: bool = typer.Option(
         False,
@@ -1544,7 +1549,7 @@ def doctor(
             )
             detail = str(exc)
         config_load_error = DoctorCheckResult(
-            name="Config JSON",
+            name=Messages.DOCTOR_NAME_CONFIG_JSON,
             passed=False,
             message=message,
             detail=detail,
@@ -1593,7 +1598,7 @@ def doctor(
     console.print(_styled(Messages.DOCTOR_ALL_PASSED, Styles.SUCCESS))
 
 
-@app.command()
+@app.command(help=Messages.HELP_UPDATE_COMMAND)
 def update(
     upgrade: bool = typer.Option(
         False,
@@ -1747,7 +1752,7 @@ def alias() -> None:
         raise typer.Exit(code=1) from exc
 
 
-@app.command()
+@app.command(help=Messages.HELP_STAR)
 def star() -> None:
     """Star the Vexor repository on GitHub (or use `gh` if available)."""
     gh_path = find_command_on_path("gh")
@@ -1772,14 +1777,14 @@ def star() -> None:
     except Exception as exc:  # pragma: no cover - depends on system setup
         console.print(
             _styled(
-                f"Failed to open your browser for {PROJECT_URL}: {exc}",
+                Messages.ERROR_BROWSER_LAUNCH.format(url=PROJECT_URL, reason=exc),
                 Styles.ERROR,
             )
         )
         raise typer.Exit(code=1) from exc
 
 
-@app.command()
+@app.command(help=Messages.HELP_FEEDBACK_COMMAND)
 def feedback() -> None:
     """Open the GitHub issue form for feedback."""
 
@@ -1805,7 +1810,7 @@ def feedback() -> None:
             console.print(
                 _styled(
                     Messages.WARNING_FEEDBACK_GH_FAILED.format(
-                        reason=f"exit code {completed.returncode}"
+                        reason=Messages.ERROR_PROCESS_EXIT.format(returncode=completed.returncode)
                     ),
                     Styles.WARNING,
                 )
