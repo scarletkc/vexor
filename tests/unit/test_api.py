@@ -677,7 +677,7 @@ def test_search_rejects_invalid_embedding_dimensions(tmp_path) -> None:
 
 
 def test_search_rejects_unsupported_model_for_custom_dimensions(tmp_path) -> None:
-    with pytest.raises(api_module.VexorError, match="does not support"):
+    with pytest.raises(api_module.VexorError) as exc_info:
         api_module.search(
             "hello",
             path=tmp_path,
@@ -686,10 +686,15 @@ def test_search_rejects_unsupported_model_for_custom_dimensions(tmp_path) -> Non
             model="text-embedding-ada-002",
             embedding_dimensions=512,
         )
+    assert str(exc_info.value) == (
+        "Model 'text-embedding-ada-002' does not support custom dimensions. "
+        "Supported model names/prefixes: text-embedding-3-small, text-embedding-3-large, "
+        "voyage-3, voyage-code-3"
+    )
 
 
 def test_search_rejects_unsupported_dimension_for_model(tmp_path) -> None:
-    with pytest.raises(api_module.VexorError, match="not supported"):
+    with pytest.raises(api_module.VexorError) as exc_info:
         api_module.search(
             "hello",
             path=tmp_path,
@@ -698,6 +703,10 @@ def test_search_rejects_unsupported_dimension_for_model(tmp_path) -> None:
             model="text-embedding-3-small",
             embedding_dimensions=3072,
         )
+    assert str(exc_info.value) == (
+        "Dimension 3072 is not supported for model 'text-embedding-3-small'. "
+        "Supported dimensions: (256, 512, 1024, 1536)"
+    )
 
 
 def test_config_context_yields_configured_client(tmp_path, monkeypatch) -> None:

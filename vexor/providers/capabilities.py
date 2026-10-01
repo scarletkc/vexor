@@ -8,6 +8,8 @@ provider (for example, Azure) lands.
 
 import os
 
+from ..text import Messages
+
 DEFAULT_MODEL = "text-embedding-3-small"
 DEFAULT_GEMINI_MODEL = "gemini-embedding-001"
 DEFAULT_VOYAGE_MODEL = "voyage-3-large"
@@ -74,13 +76,15 @@ def validate_embedding_dimensions_for_model(value: int | None, model: str) -> No
     supported = get_supported_dimensions(model)
     if not supported:
         raise ValueError(
-            f"Model '{model}' does not support custom dimensions. "
-            f"Supported model names/prefixes: {', '.join(DIMENSION_SUPPORTED_MODELS.keys())}"
+            Messages.ERROR_EMBEDDING_DIMENSIONS_MODEL_UNSUPPORTED.format(
+                model=model, models=", ".join(DIMENSION_SUPPORTED_MODELS)
+            )
         )
     if value not in supported:
         raise ValueError(
-            f"Dimension {value} is not supported for model '{model}'. "
-            f"Supported dimensions: {supported}"
+            Messages.ERROR_EMBEDDING_DIMENSIONS_UNSUPPORTED.format(
+                value=value, model=model, supported=supported
+            )
         )
 
 

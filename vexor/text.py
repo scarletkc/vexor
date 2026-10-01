@@ -1,4 +1,4 @@
-"""Centralized user-facing text for Vexor CLI."""
+"""Centralized user-facing text for Vexor."""
 
 from __future__ import annotations
 
@@ -429,6 +429,14 @@ class Messages:
     INFO_EMBEDDING_DIMENSIONS_SET = "Embedding dimensions set to {value}."
     INFO_EMBEDDING_DIMENSIONS_CLEARED = "Embedding dimensions cleared (using model default)."
     ERROR_EMBEDDING_DIMENSIONS_INVALID = "Embedding dimensions must be a positive integer."
+    ERROR_EMBEDDING_DIMENSIONS_MODEL_UNSUPPORTED = (
+        "Model '{model}' does not support custom dimensions. "
+        "Supported model names/prefixes: {models}"
+    )
+    ERROR_EMBEDDING_DIMENSIONS_UNSUPPORTED = (
+        "Dimension {value} is not supported for model '{model}'. "
+        "Supported dimensions: {supported}"
+    )
     INFO_FLASHRANK_SETUP_START = "Preparing FlashRank model..."
     INFO_FLASHRANK_SETUP_DONE = "FlashRank model ready."
     DOCTOR_LOCAL_CUDA_MISSING = "CUDA provider not available for local embeddings"
