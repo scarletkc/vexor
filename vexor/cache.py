@@ -7,13 +7,15 @@ import os
 import sqlite3
 import uuid
 from collections import OrderedDict
-from collections.abc import Iterable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import closing, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
 from threading import Lock
+from typing import ParamSpec, TypeVar
 
 import numpy as np
 
@@ -36,6 +38,38 @@ VECTOR_DIRNAME = "vectors"
 EMBED_CACHE_TTL_DAYS = 30
 EMBED_CACHE_MAX_ENTRIES = 50_000
 EMBED_MEMORY_CACHE_MAX_ENTRIES = 2_048
+
+
+class DamagedIndexError(RuntimeError):
+    """Committed index metadata references a missing vector sidecar."""
+
+
+class _IndexGenerationChanged(FileNotFoundError):
+    """The observed index ID now references a different immutable sidecar."""
+
+
+_LoadArgs = ParamSpec("_LoadArgs")
+_LoadResult = TypeVar("_LoadResult")
+
+
+def _retry_replaced_generation(
+    load: Callable[_LoadArgs, _LoadResult],
+) -> Callable[_LoadArgs, _LoadResult]:
+    """Retry a replaced generation once, after the failed reader closes its connection."""
+
+    @wraps(load)
+    def read_current(*args: _LoadArgs.args, **kwargs: _LoadArgs.kwargs) -> _LoadResult:
+        """Restart the complete read and bound retries under continuous replacement."""
+        try:
+            return load(*args, **kwargs)
+        except _IndexGenerationChanged:
+            try:
+                return load(*args, **kwargs)
+            except _IndexGenerationChanged as exc:
+                raise FileNotFoundError(*exc.args) from exc
+
+    return read_current
+
 
 _EMBED_MEMORY_CACHE: OrderedDict[tuple[str, str, int | None, str], np.ndarray] = (
     OrderedDict()
@@ -110,11 +144,7 @@ class IndexVectorCache:
         for db_path in database_paths:
             if not db_path.is_file():
                 continue
-            connection = _connect(db_path, readonly=True)
-            try:
-                _prune_unreferenced_vector_files(connection, db_path)
-            finally:
-                connection.close()
+            _prune_unreferenced_vector_files(db_path)
 
 
 def _cache_key(
@@ -614,19 +644,44 @@ def _write_vector_file(
     return final_path.relative_to(db_path.parent).as_posix()
 
 
+def _require_vector_file(
+    db_path: Path, stored_path: str, *, index_id: int | None = None,
+) -> Path:
+    """Report damage only while the observed generation still references a missing file."""
+    vector_path = _resolve_vector_file(db_path, stored_path)
+    if not vector_path.is_file():
+        if index_id is not None:
+            with closing(_connect(db_path, readonly=True)) as conn:
+                current = conn.execute(
+                    "SELECT vector_file FROM index_metadata WHERE id = ?", (index_id,)
+                ).fetchone()
+            if current is None:
+                raise FileNotFoundError(db_path)
+            if str(current["vector_file"]) != stored_path:
+                raise _IndexGenerationChanged(db_path)
+        raise DamagedIndexError(
+            Messages.ERROR_CACHE_VECTOR_FILE_MISSING.format(vector_path=vector_path)
+        )
+    return vector_path
+
+
 def _load_vector_file(
     db_path: Path,
     stored_path: str,
     *,
     rows: int,
     dimension: int,
+    index_id: int | None = None,
 ) -> np.ndarray:
-    vector_path = _resolve_vector_file(db_path, stored_path)
-    if not vector_path.is_file():
-        raise FileNotFoundError(vector_path)
+    """Load a sidecar and reject missing files, invalid arrays, or shape mismatches."""
+    vector_path = _require_vector_file(db_path, stored_path, index_id=index_id)
     try:
         mmap_mode = None if rows == 0 else "r"
         vectors = np.load(vector_path, mmap_mode=mmap_mode, allow_pickle=False)
+    except FileNotFoundError:
+        # Pruning can win between the presence check and opening the file.
+        _require_vector_file(db_path, stored_path, index_id=index_id)
+        raise
     except (OSError, ValueError) as exc:
         raise RuntimeError(
             Messages.ERROR_CACHE_VECTOR_FILE_INVALID.format(vector_path=vector_path)
@@ -644,27 +699,53 @@ def _load_vector_file(
     return vectors
 
 
+def is_database_busy(exc: sqlite3.OperationalError) -> bool:
+    """Recognize SQLite busy/locked errors without relabeling other failures."""
+    error_code = getattr(exc, "sqlite_errorcode", None)
+    if error_code is not None:
+        return (error_code & 0xFF) in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
+    return str(exc) in {"database is locked", "database table is locked"}
+
+
 def _prune_unreferenced_vector_files(
-    conn: sqlite3.Connection,
     db_path: Path,
 ) -> None:
+    """Prune under the publication lock, or defer cleanup while a writer is active."""
     vector_dir = _vector_directory(db_path)
-    if not vector_dir.is_dir() or not _column_exists(conn, "index_metadata", "vector_file"):
+    if not vector_dir.is_dir():
         return
-    referenced = {
-        _resolve_vector_file(db_path, str(row["vector_file"]))
-        for row in conn.execute(
-            "SELECT vector_file FROM index_metadata WHERE vector_file <> ''"
-        ).fetchall()
-    }
-    for candidate in vector_dir.glob("*.npy"):
-        resolved = candidate.resolve()
-        if resolved not in referenced:
-            try:
-                candidate.unlink()
-            except PermissionError:
-                # A live API client may still hold this generation as a read-only mmap.
-                continue
+    with closing(_connect(db_path)) as conn, conn:
+        # Cleanup is opportunistic: a busy writer must not turn a successful
+        # read or committed write into a lock error. A later prune can retry.
+        conn.execute("PRAGMA busy_timeout = 0;")
+        try:
+            conn.execute("BEGIN IMMEDIATE;")
+        except sqlite3.OperationalError as exc:
+            error_code = getattr(exc, "sqlite_errorcode", None)
+            readonly = (
+                (error_code & 0xFF) == sqlite3.SQLITE_READONLY
+                if error_code is not None
+                else str(exc) == "attempt to write a readonly database"
+            )
+            if not (is_database_busy(exc) or readonly):
+                raise
+            return
+        if not _column_exists(conn, "index_metadata", "vector_file"):
+            return
+        referenced = {
+            _resolve_vector_file(db_path, str(row["vector_file"]))
+            for row in conn.execute(
+                "SELECT vector_file FROM index_metadata WHERE vector_file <> ''"
+            ).fetchall()
+        }
+        for candidate in vector_dir.glob("*.npy"):
+            resolved = candidate.resolve()
+            if resolved not in referenced:
+                try:
+                    candidate.unlink()
+                except PermissionError:
+                    # Windows clients can still hold an older generation as a read-only mmap.
+                    continue
 
 
 def _insert_indexed_files(
@@ -772,6 +853,7 @@ def store_index(
     exclude_patterns: Sequence[str] | None = None,
     extensions: Sequence[str] | None = None,
 ) -> Path:
+    """Publish a full generation under the same SQLite write lock used by pruning."""
     db_path = cache_file(root, model, include_hidden)
     conn = _connect(db_path)
     vector_file = ""
@@ -793,11 +875,6 @@ def store_index(
         )
         if entries and dimension <= 0:
             raise ValueError(Messages.ERROR_INDEX_EMBEDDINGS_EMPTY)
-        vector_file = _write_vector_file(
-            db_path,
-            [entry.embedding for entry in entries],
-            dimension,
-        )
         include_flag = 1 if include_hidden else 0
         gitignore_flag = 1 if respect_gitignore else 0
         recursive_flag = 1 if recursive else 0
@@ -806,6 +883,13 @@ def store_index(
 
         with conn:
             conn.execute("BEGIN IMMEDIATE;")
+            # A pending sidecar must be protected before either its temporary or
+            # final file appears; pruners acquire the same database write lock.
+            vector_file = _write_vector_file(
+                db_path,
+                [entry.embedding for entry in entries],
+                dimension,
+            )
             conn.execute(
                 "DELETE FROM index_metadata WHERE cache_key = ? AND model = ?",
                 (key, model),
@@ -850,7 +934,7 @@ def store_index(
             _insert_indexed_chunks(conn, int(index_id), entries, file_ids, range(len(entries)))
 
         vector_committed = True
-        _prune_unreferenced_vector_files(conn, db_path)
+        _prune_unreferenced_vector_files(db_path)
         return db_path
     except Exception:
         if vector_file and not vector_committed:
@@ -1105,7 +1189,7 @@ def apply_index_updates(
             )
 
         vector_committed = True
-        _prune_unreferenced_vector_files(conn, db_path)
+        _prune_unreferenced_vector_files(db_path)
         return db_path
     except Exception:
         if vector_file and not vector_committed:
@@ -1224,6 +1308,7 @@ def backfill_chunk_lines(
         conn.close()
 
 
+@_retry_replaced_generation
 def load_index(
     root: Path,
     model: str,
@@ -1235,6 +1320,7 @@ def load_index(
     *,
     respect_gitignore: bool = True,
 ) -> dict:
+    """Read index metadata and chunk details, rejecting missing committed sidecars."""
     db_path = cache_file(root, model, include_hidden)
     if not db_path.exists():
         raise FileNotFoundError(db_path)
@@ -1275,6 +1361,13 @@ def load_index(
         version = int(meta["version"] or 0)
         if version < CACHE_VERSION:
             raise FileNotFoundError(db_path)
+
+        vector_row = conn.execute(
+            "SELECT vector_file FROM index_metadata WHERE id = ?", (meta["id"],)
+        ).fetchone()
+        if vector_row is None:
+            raise FileNotFoundError(db_path)
+        _require_vector_file(db_path, str(vector_row["vector_file"]), index_id=int(meta["id"]))
 
         rows = conn.execute(
             """
@@ -1342,6 +1435,7 @@ def load_index(
         conn.close()
 
 
+@_retry_replaced_generation
 def load_index_vectors(
     root: Path,
     model: str,
@@ -1354,6 +1448,7 @@ def load_index_vectors(
     respect_gitignore: bool = True,
     memory_cache: IndexVectorCache | None = None,
 ):
+    """Load immutable vectors, validating sidecar presence even on a memory-cache hit."""
     db_path = cache_file(root, model, include_hidden)
     if not db_path.exists():
         raise FileNotFoundError(db_path)
@@ -1403,6 +1498,7 @@ def load_index_vectors(
 
         index_id = meta["id"]
         dimension = int(meta["dimension"])
+        _require_vector_file(db_path, str(meta["vector_file"]), index_id=int(index_id))
         memory_key = (
             str(db_path.resolve()),
             model,
@@ -1421,9 +1517,6 @@ def load_index_vectors(
         chunk_total = int(chunk_count or 0)
 
         if chunk_total == 0 or dimension == 0:
-            vector_path = _resolve_vector_file(db_path, str(meta["vector_file"]))
-            if not vector_path.is_file():
-                raise FileNotFoundError(vector_path)
             empty = np.empty((0, dimension), dtype=np.float32)
             metadata = {
                 "index_id": int(index_id),
@@ -1448,7 +1541,7 @@ def load_index_vectors(
                     memory_key,
                     _LoadedIndexVectors((), empty, metadata),
                 )
-                _prune_unreferenced_vector_files(conn, db_path)
+                _prune_unreferenced_vector_files(db_path)
             return [], empty, metadata
 
         embeddings = _load_vector_file(
@@ -1456,6 +1549,7 @@ def load_index_vectors(
             str(meta["vector_file"]),
             rows=chunk_total,
             dimension=dimension,
+            index_id=int(index_id),
         )
         paths: list[Path] = []
         chunk_ids: list[int] = []
@@ -1522,7 +1616,7 @@ def load_index_vectors(
         if memory_cache is not None:
             loaded = _LoadedIndexVectors(tuple(paths), embeddings, metadata)
             memory_cache.store(memory_key, loaded)
-            _prune_unreferenced_vector_files(conn, db_path)
+            _prune_unreferenced_vector_files(db_path)
             return loaded.paths, loaded.vectors, loaded.metadata
         return paths, embeddings, metadata
     finally:
@@ -1938,7 +2032,7 @@ def clear_index(
             params = (key, model, mode)
         with conn:
             cursor = conn.execute(query, params)
-        _prune_unreferenced_vector_files(conn, db_path)
+        _prune_unreferenced_vector_files(db_path)
         return cursor.rowcount
     finally:
         conn.close()

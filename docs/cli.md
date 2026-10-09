@@ -155,3 +155,20 @@ vexor index --path . --local     # create/use ./.vexor/ cache storage
 
 Re-running `vexor index` only re-embeds changed files; >50% changes trigger
 full rebuild.
+
+Sidecar publication and orphan cleanup share the SQLite write lock, so concurrent
+index builds in a shared cache cannot prune another writer's pending vectors.
+The lock covers sidecar file I/O and the metadata transaction; embedding requests
+remain outside it. Cleanup is deferred while another writer holds the lock, so
+healthy cache reads can continue. Read-only databases defer cleanup as well.
+Writers retain the five-second SQLite lock timeout. Large or slow sidecar writes
+can exceed it; a competing write then reports a busy cache and asks you to retry
+after the other write finishes. A timeout does not clear the existing index or
+silently retry the write.
+Cleanup also retains files held by live memory
+maps on Windows and can remove them after those maps are released.
+
+If a committed sidecar is missing, Vexor reports a damaged index with the missing
+path. Clear the affected index using `vexor index --clear` with the same project
+path and index flags, then rerun indexing or search. A damaged index is not
+treated as an absent index or silently declared up to date.

@@ -687,6 +687,15 @@ class Messages:
     ERROR_CACHE_TABLE_MISSING = "Missing table: {table}"
     ERROR_CACHE_VECTOR_PATH_ESCAPE = "Cached vector path escapes {vector_dir}: {stored_path!r}"
     ERROR_CACHE_VECTOR_FILE_INVALID = "Invalid cached vector file: {vector_path}"
+    ERROR_CACHE_WRITE_BUSY = (
+        "Index cache is busy with another writer. "
+        "Wait for the other write to finish, then retry the command."
+    )
+    ERROR_CACHE_VECTOR_FILE_MISSING = (
+        "Damaged index cache: missing vector file {vector_path}. "
+        "Run `vexor index --clear` for the affected project with the same path and "
+        "index flags, then rerun indexing or search."
+    )
     ERROR_INDEX_EMBEDDINGS_EMPTY = "Indexed embeddings must contain at least one value"
     ERROR_INDEX_DIMENSION_MISMATCH = (
         "Embedding dimension mismatch: existing index has {expected}, got {actual}"

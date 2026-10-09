@@ -14,6 +14,10 @@ SQL = re.compile(
 )
 # These are inputs recognized in external errors or snippets of indexed source, not authored copy.
 DATA_LITERALS = {
+    # Exact SQLite errors recognized for Python 3.10, which lacks sqlite_errorcode.
+    ("cache.py", "database is locked"),
+    ("cache.py", "database table is locked"),
+    ("cache.py", "attempt to write a readonly database"),
     ("providers/gemini.py", "API key"),
     ("providers/local.py", "not supported in TextEmbedding"),
     ("providers/local.py", "already registered"),

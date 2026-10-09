@@ -6,6 +6,7 @@ import importlib.util
 import json
 import shlex
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -377,11 +378,17 @@ def search(
         else:
             typer.echo(message, err=True)
         raise typer.Exit(code=1) from None
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, sqlite3.OperationalError) as exc:
+        if isinstance(exc, sqlite3.OperationalError) and not cache.is_database_busy(exc):
+            raise
+        message = (
+            Messages.ERROR_CACHE_WRITE_BUSY
+            if isinstance(exc, sqlite3.OperationalError) else str(exc)
+        )
         if output_format == SearchOutputFormat.rich:
-            console.print(_styled(str(exc), Styles.ERROR))
+            console.print(_styled(message, Styles.ERROR))
         else:
-            typer.echo(str(exc), err=True)
+            typer.echo(message, err=True)
         raise typer.Exit(code=1) from exc
 
     if response.index_empty:
@@ -510,17 +517,21 @@ def index(
         raise typer.BadParameter(Messages.ERROR_INDEX_SHOW_CONFLICT)
 
     if show_cache:
-        with project_cache_context(directory):
-            metadata = load_index_metadata_safe(
-                directory,
-                model_name,
-                include_hidden,
-                respect_gitignore,
-                mode_value,
-                recursive,
-                exclude_patterns=normalized_excludes,
-                extensions=normalized_exts,
-            )
+        try:
+            with project_cache_context(directory):
+                metadata = load_index_metadata_safe(
+                    directory,
+                    model_name,
+                    include_hidden,
+                    respect_gitignore,
+                    mode_value,
+                    recursive,
+                    exclude_patterns=normalized_excludes,
+                    extensions=normalized_exts,
+                )
+        except cache.DamagedIndexError as exc:
+            console.print(_styled(str(exc), Styles.ERROR))
+            raise typer.Exit(code=1) from exc
         if not metadata:
             console.print(
                 _styled(
@@ -553,16 +564,22 @@ def index(
         return
 
     if clear:
-        with project_cache_context(directory):
-            removed = clear_index_entries(
-                directory,
-                include_hidden=include_hidden,
-                respect_gitignore=respect_gitignore,
-                mode=mode_value,
-                recursive=recursive,
-                exclude_patterns=normalized_excludes,
-                extensions=normalized_exts,
-            )
+        try:
+            with project_cache_context(directory):
+                removed = clear_index_entries(
+                    directory,
+                    include_hidden=include_hidden,
+                    respect_gitignore=respect_gitignore,
+                    mode=mode_value,
+                    recursive=recursive,
+                    exclude_patterns=normalized_excludes,
+                    extensions=normalized_exts,
+                )
+        except sqlite3.OperationalError as exc:
+            if not cache.is_database_busy(exc):
+                raise
+            console.print(_styled(Messages.ERROR_CACHE_WRITE_BUSY, Styles.ERROR))
+            raise typer.Exit(code=1) from exc
         if removed:
             plural = "ies" if removed > 1 else "y"
             console.print(
@@ -606,8 +623,14 @@ def index(
                 extensions=normalized_exts,
                 embedding_dimensions=config.embedding_dimensions,
             )
-    except (RuntimeError, ValueError) as exc:
-        console.print(_styled(str(exc), Styles.ERROR))
+    except (RuntimeError, ValueError, sqlite3.OperationalError) as exc:
+        if isinstance(exc, sqlite3.OperationalError) and not cache.is_database_busy(exc):
+            raise
+        message = (
+            Messages.ERROR_CACHE_WRITE_BUSY
+            if isinstance(exc, sqlite3.OperationalError) else str(exc)
+        )
+        console.print(_styled(message, Styles.ERROR))
         raise typer.Exit(code=1) from exc
     if result.status == IndexStatus.EMPTY:
         console.print(_styled(Messages.INFO_NO_FILES, Styles.WARNING))

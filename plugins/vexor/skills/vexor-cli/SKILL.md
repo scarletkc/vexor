@@ -68,6 +68,12 @@ vexor "<QUERY>" [--path <ROOT>] [--mode <MODE>] [--ext .py,.md] [--exclude-patte
 - Scriptable output: use `--format porcelain` (TSV) or `--format porcelain-z` (NUL-delimited).
 - Get detailed help: `vexor search --help`.
 - Config issues: `vexor doctor` or `vexor config --show` reports effective values and their origins.
+- Shared-cache writers use the existing five-second lock timeout. If another
+  write holds the cache longer, wait for it to finish and retry the command;
+  Vexor reports the busy cache without silently retrying or clearing the index.
+- Missing committed vector sidecars are reported as a damaged cache. Run
+  `vexor index --clear` with the same project path and index flags, then rerun
+  indexing or search; do not treat this as an absent or up-to-date index.
 
 ## Examples
 
