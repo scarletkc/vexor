@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -60,7 +60,7 @@ def _filtered_keys(
 
 
 def test_metadata_scalars_round_trip_filter_and_use_expected_columns(isolated_cache):
-    timestamp = datetime(2026, 8, 20, 12, 30, 45, tzinfo=timezone.utc)
+    timestamp = datetime(2026, 8, 20, 12, 30, 45, tzinfo=UTC)
     metadata: dict[str, store.ScalarValue] = {
         "string": "alpha",
         "integer": 7,

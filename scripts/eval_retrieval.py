@@ -11,7 +11,7 @@ import re
 import sys
 from collections import defaultdict
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path, PurePosixPath
 from statistics import mean
@@ -339,7 +339,7 @@ def run_suite(suite: dict, config: Config, args: argparse.Namespace) -> dict:
             packages[package] = None
     return {
         "schema_version": 1,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "suite_sha256": suite["suite_sha256"],
         "runner_sha256": digest(Path(__file__).read_bytes()),
         "runtime_sha256": digest(

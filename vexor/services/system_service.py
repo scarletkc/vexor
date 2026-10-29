@@ -13,7 +13,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from urllib import error, request
 from urllib.parse import urlparse
@@ -689,7 +689,7 @@ def check_for_update(
         return None
 
 
-class InstallMethod(str, Enum):
+class InstallMethod(StrEnum):
     PIP_USER = "pip-user"
     PIP_SYSTEM = "pip-system"
     PIP_VENV = "pip-venv"

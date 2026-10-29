@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -143,7 +143,7 @@ class Config:
     embedding_dimensions: int | None = None
 
 
-class ConfigOrigin(str, Enum):
+class ConfigOrigin(StrEnum):
     """Source of an effective configuration field."""
 
     DEFAULT = "default"

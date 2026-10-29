@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from importlib import resources
 from pathlib import Path
 
 from ..text import Messages
 
 
-class SkillInstallStatus(str, Enum):
+class SkillInstallStatus(StrEnum):
     installed = "installed"
     up_to_date = "up-to-date"
 

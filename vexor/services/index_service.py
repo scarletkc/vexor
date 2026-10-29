@@ -8,8 +8,8 @@ from collections import Counter
 from collections.abc import MutableMapping, Sequence
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 
 import numpy as np
@@ -35,7 +35,7 @@ _EXTRACT_PROCESS_MIN_FILES = 16
 _CPU_HEAVY_MODES = {"auto", "code", "outline", "full"}
 
 
-class IndexStatus(str, Enum):
+class IndexStatus(StrEnum):
     EMPTY = "empty"
     UP_TO_DATE = "up_to_date"
     STORED = "stored"
@@ -401,7 +401,7 @@ def build_index_in_memory(
         metadata = {
             "index_id": None,
             "version": CACHE_VERSION,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "root": str(directory),
             "model": model_name,
             "include_hidden": include_hidden,
@@ -440,7 +440,7 @@ def build_index_in_memory(
         metadata = {
             "index_id": None,
             "version": CACHE_VERSION,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "root": str(directory),
             "model": model_name,
             "include_hidden": include_hidden,
@@ -503,7 +503,7 @@ def build_index_in_memory(
     metadata = {
         "index_id": None,
         "version": CACHE_VERSION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "root": str(directory),
         "model": model_name,
         "include_hidden": include_hidden,
