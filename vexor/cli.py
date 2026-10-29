@@ -11,7 +11,7 @@ import sys
 import threading
 from collections.abc import Sequence
 from difflib import get_close_matches
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -172,7 +172,7 @@ app = typer.Typer(
 )
 
 
-class SearchOutputFormat(str, Enum):
+class SearchOutputFormat(StrEnum):
     rich = "rich"
     porcelain = "porcelain"
     porcelain_z = "porcelain-z"

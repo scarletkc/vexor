@@ -6,7 +6,7 @@ import contextlib
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -60,7 +60,7 @@ CONTENT_BUDGET_EXHAUSTED = "budget_exhausted"
 CONTENT_UNREADABLE = "unreadable"
 
 
-class SearchPhase(str, Enum):
+class SearchPhase(StrEnum):
     INDEXING = "indexing"
     SEARCHING = "searching"
     SEARCHING_IN_MEMORY = "searching_in_memory"

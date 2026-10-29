@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -305,7 +305,7 @@ def test_embedding_cache_prunes_by_ttl_and_capacity(tmp_path, monkeypatch):
     conn = cache._connect(db_path)
     try:
         cache._ensure_schema(conn)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         entries = [
             (
                 "model",

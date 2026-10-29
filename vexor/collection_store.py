@@ -16,7 +16,7 @@ import sqlite3
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -369,7 +369,7 @@ def ensure_collection(
                         )
                     )
                 return info
-            created_at = datetime.now(timezone.utc).isoformat()
+            created_at = datetime.now(UTC).isoformat()
             cursor = conn.execute(
                 """
                 INSERT INTO collection (
@@ -584,7 +584,7 @@ def upsert_records(collection_id: int, records: Sequence[PreparedRecord]) -> int
         return 0
     conn = _open()
     try:
-        updated_at = datetime.now(timezone.utc).isoformat()
+        updated_at = datetime.now(UTC).isoformat()
         written = 0
         with _write_transaction(conn):
             for record in records:
