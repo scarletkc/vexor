@@ -482,4 +482,4 @@ jobs:
       # v1.13.0 bundles a twine that rejects Metadata-Version 2.5, which current
       # hatchling emits; the 0.27.0 publish failed on exactly that.
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.14.2
+        uses: pypa/gh-action-pypi-publish@v1.14.3
